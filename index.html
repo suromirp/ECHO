@@ -35,6 +35,70 @@
   .brand-row{display:flex;align-items:center;gap:13px;margin-bottom:9px;}
   .brand-logo-plate{background:transparent;display:inline-flex;align-items:center;line-height:0;flex:none;}
   .brand-logo{height:26px;width:auto;display:block;}
+
+  /* ---- ECHO wordmark: a faint mirrored "C" trailing the real letter,
+     like a reflection of the signal bouncing back. Purely typographic,
+     static — the motion lives in the signal icon below. */
+  .echo-word{position:relative;display:inline-block;}
+
+  /* ---- ECHO signal mark: a small "signal sent out, echo comes back" icon
+     — this is the main ECHO brand mark and the vehicle for personality
+     reactions to results. The eye (👁) stays purely functional, used only
+     inline for "Worth checking" observations. Every reaction below is a
+     short, non-looping animation, fully disabled under
+     prefers-reduced-motion (see override further down). */
+  .echo-signal-wrap{position:relative;display:inline-flex;align-items:center;flex:none;}
+  .echo-signal{width:30px;height:19px;color:var(--true-blue-reg);cursor:pointer;overflow:visible;flex:none;transition:color .15s;}
+  .echo-signal:hover{color:var(--true-blue-bold);}
+  .echo-signal:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px;}
+  .echo-signal .arc{transform-origin:32px 20px;transform-box:fill-box;}
+  .echo-signal .node{transform-origin:32px 20px;transform-box:fill-box;}
+  @keyframes echoPing{0%{opacity:.35;transform:scale(.7);}60%{opacity:1;}100%{opacity:1;transform:scale(1);}}
+  @keyframes echoNodePulse{0%,100%{transform:scale(1);}50%{transform:scale(1.35);}}
+  @keyframes echoSquint{0%,100%{transform:scaleY(1);}40%,60%{transform:scaleY(.35);}}
+  @keyframes echoNudge{0%,100%{transform:translateX(0);}30%{transform:translateX(-2px);}70%{transform:translateX(2px);}}
+  .echo-signal.anim-blink .arc{animation:echoPing .55s ease-out;}
+  .echo-signal.anim-blink .arc:nth-child(2){animation-delay:.05s;}
+  .echo-signal.anim-blink .arc:nth-child(3){animation-delay:.1s;}
+  .echo-signal.anim-widen .node{animation:echoNodePulse .5s ease-in-out;}
+  .echo-signal.anim-widen .arc{animation:echoPing .6s ease-out;}
+  .echo-signal.anim-squint .arc{animation:echoSquint .5s ease-in-out;}
+  .echo-signal.anim-look{animation:echoNudge .6s ease-in-out;}
+  .eye-toast{position:absolute;top:100%;left:0;margin-top:8px;background:var(--panel-3);border:1px solid var(--border-strong);border-radius:8px;padding:7px 12px;font-size:12px;color:var(--text-dim);white-space:nowrap;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:80;box-shadow:0 6px 18px rgba(0,0,0,.4);}
+  .eye-toast.show{opacity:1;transform:translateY(0);}
+
+  /* small, muted, occasional one-liner under a verdict — never the only
+     source of information, purely decorative personality */
+  .verdict-quip{font-size:12px;color:var(--text-faint);margin-top:3px;font-style:italic;}
+
+  /* ---- reusable "code preview" block: collapsed by default, small copy
+     icon in the corner, optional EN/NL language switch. Used by "Copy for
+     Transus" and the quick EAN overview so neither can balloon the page —
+     the content only takes up space once someone actually opens it. */
+  .code-preview-panel{margin-top:18px;}
+  .code-preview-panel .toggle-bar{margin-bottom:6px;gap:10px;}
+  .code-preview-panel h2{margin:0;}
+  .code-box{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel-2);}
+  .code-box-bar{display:flex;justify-content:flex-end;padding:6px 8px;border-bottom:1px solid var(--border);}
+  .code-box pre{background:none;border:none;border-radius:0;padding:14px;font-family:var(--mono);font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;margin:0;color:var(--text);}
+  .icon-copy-btn{position:static;background:var(--panel-3);border:1px solid var(--border-strong);border-radius:6px;padding:4px 10px;cursor:pointer;color:var(--text-dim);font-size:12px;display:inline-flex;align-items:center;gap:5px;transition:color .15s,border-color .15s,transform .1s;}
+  .icon-copy-btn:hover{color:var(--accent);border-color:var(--accent);}
+  .icon-copy-btn:active{transform:scale(.96);}
+  .icon-copy-btn.copied{color:var(--ok);border-color:var(--ok);}
+  .lang-switch{display:inline-flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;flex:none;}
+  .lang-switch button{background:var(--panel-2);border:none;color:var(--text-dim);font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 12px;cursor:pointer;transition:background .15s,color .15s;}
+  .lang-switch button.active{background:var(--accent);color:var(--accent-ink);}
+  .lang-switch button:not(.active):hover{background:var(--panel-3);}
+
+  /* brief acknowledgment pulse when a file is dropped/loaded successfully */
+  @keyframes dropPulse{0%{box-shadow:0 0 0 0 rgba(103,151,229,.45);}100%{box-shadow:0 0 0 10px rgba(103,151,229,0);}}
+  .drop.pulse{animation:dropPulse .55s ease-out;}
+
+  @media (prefers-reduced-motion: reduce){
+    .echo-signal.anim-blink .arc,.echo-signal.anim-widen .node,.echo-signal.anim-widen .arc,
+    .echo-signal.anim-squint .arc,.echo-signal.anim-look,.drop.pulse{animation:none!important;}
+    .eye-toast,.raw-lines{transition:none!important;}
+  }
   .brand-divider{width:1px;height:22px;background:var(--border-strong);flex:none;}
   h1{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.03em;color:var(--text);margin:0;background:linear-gradient(135deg,var(--text) 35%,var(--true-blue-reg) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
   .brand-tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--border);padding:3px 9px;border-radius:999px;font-weight:600;}
@@ -66,6 +130,7 @@
   button.btn:active{transform:translateY(1px);}
   button.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
   button.btn.primary:hover{background:#0000c4;border-color:#0000c4;}
+  button.btn:disabled{opacity:.4;cursor:not-allowed;}
   button.btn.primary:disabled{opacity:.4;cursor:not-allowed;}
   button.btn.ghost{background:transparent;}
   .filebtn{position:relative;overflow:hidden;display:inline-flex;}
@@ -124,8 +189,11 @@
 
   .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;}
   .stat{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;}
-  .stat .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:4px;}
+  .stat .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
   .stat .v{font-family:var(--mono);font-size:18px;font-weight:700;}
+  .mini-copy-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:11px;padding:0;line-height:1;text-transform:none;letter-spacing:0;font-weight:400;margin-left:6px;}
+  .mini-copy-btn:hover{color:var(--accent);}
+  .mini-copy-btn.copied{color:var(--ok);}
   .order-row{line-height:1.7;white-space:nowrap;}
   .stat.match .v{color:var(--ok);}.stat.diff .v{color:var(--err);}
 
@@ -178,6 +246,20 @@
   .findings li.findings-cat{display:block;background:none;border:none;padding:14px 2px 6px;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:700;}
   .findings li.findings-cat:first-child{padding-top:0;}
   .findings code{font-family:var(--mono);background:var(--panel-3);padding:1px 5px;border-radius:4px;font-size:12px;}
+  /* "Worth checking" — unusual-but-not-necessarily-wrong pattern observations.
+     Deliberately styled apart from err/warn/info findings: the eye icon and
+     neutral (non-red/orange) tone signal "noticed", not "problem". */
+  .wc-list{list-style:none;padding:0;margin:0;}
+  details.wc-item{margin-bottom:7px;background:var(--panel-2);border:1px solid var(--border-strong);border-radius:7px;overflow:hidden;}
+  details.wc-item>summary{list-style:none;cursor:pointer;padding:9px 12px;font-size:13px;line-height:1.45;display:flex;gap:9px;align-items:flex-start;background:none;border:none;color:var(--text);font-weight:400;}
+  details.wc-item>summary::-webkit-details-marker{display:none;}
+  details.wc-item>summary::before{content:none;}
+  .wc-ic{flex:none;margin-top:1px;}
+  .wc-title{font-weight:600;}
+  .wc-body{padding:0 12px 12px 33px;}
+  .wc-detail{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
+  .wc-affected{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px;}
+  .wc-affected li{background:var(--panel-3);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-family:var(--mono);font-size:12px;}
   details{margin-bottom:16px;}
   details>summary{cursor:pointer;font-size:13px;color:var(--text-dim);list-style:none;padding:10px 14px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-weight:600;}
   details>summary::-webkit-details-marker{display:none;}
@@ -197,9 +279,19 @@
   .raw-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
   @media(max-width:720px){.raw-cols{grid-template-columns:1fr;}}
   .raw-box{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
-  .raw-box .rh{font-family:var(--mono);font-size:12px;padding:8px 12px;border-bottom:1px solid var(--border);font-weight:700;}
+  .raw-box .rh{font-family:var(--mono);font-size:12px;padding:8px 12px;border-bottom:1px solid var(--border);font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .raw-box.bol .rh{color:var(--tag);}.raw-box.sup .rh{color:var(--elem);}
-  .raw-lines{max-height:340px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;padding:8px 0;}
+  /* small "‹ 1 / 4 ›" widget for cycling through repeated values after a jump-to-source click */
+  .match-nav{display:inline-flex;align-items:center;gap:2px;font-family:var(--mono);font-weight:400;font-size:11px;color:var(--text-dim);background:var(--panel-3);border:1px solid var(--border-strong);border-radius:999px;padding:1px 3px;}
+  .match-nav.hidden{display:none;}
+  .match-nav button{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;font-family:var(--sans);border-radius:999px;}
+  .match-nav button:hover{color:var(--accent-ink);background:var(--accent);}
+  .match-nav .nav-count{min-width:38px;text-align:center;}
+  .raw-lines{max-height:340px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;padding:8px 0;transition:max-height .35s ease;}
+  .raw-cols.enlarged .raw-lines{max-height:76vh;}
+  .raw-toolbar{display:flex;justify-content:flex-end;margin-top:12px;margin-bottom:-4px;}
+  .enlarge-btn{background:var(--panel-2);border:1px solid var(--border-strong);border-radius:7px;padding:6px 13px;font-size:12px;font-family:var(--sans);color:var(--text-dim);cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .15s,color .15s,border-color .15s;}
+  .enlarge-btn:hover{color:var(--accent);border-color:var(--accent);}
   .rl{display:flex;white-space:pre;padding:0 10px;}
   .rl .g{flex:none;width:32px;text-align:right;padding-right:10px;color:var(--text-faint);opacity:.6;user-select:none;}
   .src-hl{background:rgba(255,224,76,.32);transition:background .25s ease;}
@@ -260,7 +352,18 @@
         <path fill="#fff" d="m148.61,148.47h97.09v80.52c19.09-7.23,38.8-10.61,59.33-10.61,76.37,0,131.74,55.93,131.74,132.59,0,57.86-39.62,126.32-129.83,126.32h-158.33V148.47Zm97.09,247.23c13.04,2.44,27.55,3.48,37.21,3.48,35.27,0,58.46-19.41,58.46-49.18s-22.71-49.18-55.56-49.18c-12.08,0-26.58,1.67-40.11,6.06v88.82Z"/>
       </svg></span>
       <span class="brand-divider"></span>
-      <h1>ECHO</h1>
+      <span class="echo-signal-wrap">
+        <svg class="echo-signal" id="echoSignal" viewBox="0 0 64 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ECHO signal mark" tabindex="0">
+          <circle class="node" cx="32" cy="20" r="2.6" fill="currentColor"/>
+          <path class="arc" d="M37 14 Q40 20 37 26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+          <path class="arc" d="M40 10 Q45 20 40 30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".75"/>
+          <path class="arc" d="M44 6 Q50 20 44 34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".5"/>
+          <path class="arc" d="M27 14 Q24 20 27 26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+          <path class="arc" d="M24 10 Q19 20 24 30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".75"/>
+          <path class="arc" d="M20 6 Q14 20 20 34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".5"/>
+        </svg>
+      </span>
+      <h1 class="echo-word">ECHO</h1>
       <span class="brand-tag">EDI message inspector</span>
       <span class="version-tag">v1.0 · July 2026</span>
     </div>
@@ -270,16 +373,15 @@
       <div class="legend-grid">
         <div><span class="pill ok">Match</span><span>The compared values are the same.</span></div>
         <div><span class="pill err">Difference</span><span>The compared values differ — worth checking.</span></div>
-        <div><span class="pill warn">Not applicable</span><span>This field isn't sent on one side, so it can't be compared.</span></div>
-        <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched to the other side.</span></div>
-        <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side, so there's nothing to compare it to.</span></div>
+        <div><span class="pill warn">Check</span><span>A minor difference — the important values still match.</span></div>
+        <div><span class="pill warn">Not applicable</span><span>This field isn't sent on either side, so it can't be compared.</span></div>
+        <div><span class="pill warn">Info</span><span>An expected, soft difference — not counted as a mismatch.</span></div>
+        <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched.</span></div>
+        <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side.</span></div>
         <div><span class="pill ok">OK</span><span>No structural issue found in this message.</span></div>
-        <div><span class="fi" style="color:var(--warn)">⚠</span><span>Something worth a closer look — not necessarily an error.</span></div>
-        <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour — good to know.</span></div>
-        <div><span class="dim">Message level / Line level</span><span>Whether a reference was sent once for the whole message, or specifically on one line.</span></div>
-        <div><span class="dim">Pallet EAN / Item EAN</span><span>A pallet can carry its own identification number, separate from the actual products on it.</span></div>
-        <div><span class="dim">SSCC</span><span>The barcode identifying one individual pallet or package.</span></div>
-        <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click the value to jump to it in the source message; click the small ↗ to open it in Summa or Purple.</span></div>
+        <div><span class="fi" style="color:var(--warn)">⚠</span><span>Worth a closer look — not necessarily an error.</span></div>
+        <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
+        <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
     </details>
   </header>
@@ -320,9 +422,12 @@
 
     <div class="panel">
       <h2>Original message</h2>
-      <div class="legend" id="quickLegend"></div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:0;">
+        <div class="legend" id="quickLegend"></div>
+        <span class="match-nav hidden" id="nav-quickOutput"><button type="button" onclick="event.stopPropagation();stepMatch('quickOutput',-1)">‹</button><span class="nav-count"></span><button type="button" onclick="event.stopPropagation();stepMatch('quickOutput',1)">›</button></span>
+      </div>
       <div class="output-scroll">
-        <div id="quickOutput"><div class="empty-state"><strong>Curious what's inside?</strong><br>Paste or import an EDI message and ECHO will break it down.</div></div>
+        <div id="quickOutput"><div class="empty-state"><strong>ECHO is listening.</strong><br>Drop a message here to start inspecting.</div></div>
       </div>
       <div class="actions">
         <button class="btn" id="quickCopyBtn">Copy</button>
@@ -361,7 +466,7 @@
         <button class="btn ghost" id="resetBtn">Reset</button>
         <span class="badge hidden" id="typeBadge"></span>
       </div>
-      <div class="status" id="compareStatus">Ready when you are. Add both messages and let ECHO compare the available business data.</div>
+      <div class="status" id="compareStatus">Two messages. One question: did the important stuff make it through? Add both below to find out.</div>
     </div>
 
     <div id="results" class="hidden">
@@ -374,23 +479,36 @@
           <label class="switch">
             <input type="checkbox" id="actionToggle">
             <span class="track"></span>
-            <span>Show action overview (accept / cancel / backorder)</span>
+            <span>Show action overview (accept / cancel / amendment)</span>
           </label>
           <span class="badge" id="actionSummaryBadge"></span>
         </div>
         <div class="action-matrix" id="actionMatrix"></div>
-        <div class="actions"><button class="btn" id="copySummaryBtn" title="A short, high-level summary of accept/cancel/backorder — separate from the full findings report">Copy summary</button></div>
+        <div class="actions"><button class="btn" id="copySummaryBtn" title="A short, high-level summary of accept/cancel/amendment — separate from the full findings report">Copy summary</button></div>
       </div>
 
       <div class="panel hidden" id="backorderPanel">
-        <h2>Backorder details</h2>
+        <h2>Amendment details</h2>
         <div id="backorderBody"></div>
       </div>
 
       <div class="panel">
         <h2>Findings</h2>
         <ul class="findings" id="findings"></ul>
-        <div class="actions"><button class="btn" id="copyReportBtn">Copy report</button></div>
+        <div class="actions">
+          <button class="btn" id="copyReportBtn">Copy report</button>
+          <button class="btn" id="copyTransusBtn" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal" onclick="copyTransusClick(this)">Copy for Transus</button>
+          <span class="lang-switch" role="group" aria-label="Report language">
+            <button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button>
+            <button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button>
+          </span>
+        </div>
+        <div id="eanBlockArea"></div>
+      </div>
+
+      <div class="panel hidden" id="wcPanel">
+        <h2 title="ECHO noticed something unusual — not necessarily wrong.">Worth checking 👁</h2>
+        <div class="wc-list" id="wcBody"></div>
       </div>
 
       <div class="panel">
@@ -407,15 +525,24 @@
       </div>
 
       <div class="panel hidden" id="ssccPanel">
-        <h2>Pallet / SSCC overview (GIN+BJ)</h2>
+        <div class="toggle-bar" style="margin-bottom:8px">
+          <h2 style="margin:0">Pallet / SSCC overview (GIN+BJ)</h2>
+          <label class="switch">
+            <input type="checkbox" id="palletFilterToggle">
+            <span class="track"></span>
+            <span>Only show differences</span>
+          </label>
+        </div>
+        <div class="note-inline" id="palletFilterNote"></div>
         <div id="ssccBody"></div>
       </div>
 
       <details id="rawDetails">
         <summary>Show original messages</summary>
-        <div class="raw-cols">
-          <div class="raw-box sup"><div class="rh">SUPPLIER</div><div class="raw-lines" id="rawSup"></div></div>
-          <div class="raw-box bol"><div class="rh">BOL / TRANSUS</div><div class="raw-lines" id="rawBol"></div></div>
+        <div class="raw-toolbar"><button type="button" class="enlarge-btn" onclick="toggleRawEnlarge('rawCols',this)">⤢ Enlarge</button></div>
+        <div class="raw-cols" id="rawCols">
+          <div class="raw-box sup"><div class="rh"><span>SUPPLIER</span><span class="match-nav hidden" id="nav-rawSup"><button type="button" onclick="event.stopPropagation();stepMatch('rawSup',-1)">‹</button><span class="nav-count"></span><button type="button" onclick="event.stopPropagation();stepMatch('rawSup',1)">›</button></span></div><div class="raw-lines" id="rawSup"></div></div>
+          <div class="raw-box bol"><div class="rh"><span>BOL / TRANSUS</span><span class="match-nav hidden" id="nav-rawBol"><button type="button" onclick="event.stopPropagation();stepMatch('rawBol',-1)">‹</button><span class="nav-count"></span><button type="button" onclick="event.stopPropagation();stepMatch('rawBol',1)">›</button></span></div><div class="raw-lines" id="rawBol"></div></div>
         </div>
       </details>
     </div>
@@ -474,6 +601,125 @@ function splitEsc(str,delim,rel){
 }
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+/* Shared status-pill markup — every "Match"/"Difference"/"Not applicable"/"OK"
+   pill in the whole tool (Compare, Quick check, pallet overview, invoice
+   tables) goes through these, so the wording and the tooltip text always
+   match the legend at the top of the page exactly, in one place. */
+function pillMatch(){return '<span class="pill ok" title="The compared values are the same.">Match</span>';}
+function pillDiff(){return '<span class="pill err" title="The compared values differ — worth checking.">Difference</span>';}
+function pillNA(text){return `<span class="pill warn" title="${esc(text||"This field isn't sent on either side, so it can't be compared.")}">Not applicable</span>`;}
+function pillOkSingle(){return '<span class="pill ok" title="No structural issue found in this message.">OK</span>';}
+function pillCheck(){return '<span class="pill warn" title="A minor difference — the important values still match.">Check</span>';}
+function pillInfo(){return '<span class="pill warn" title="An expected, soft difference — not counted as a mismatch.">Info</span>';}
+
+/* =====================================================================
+   Personality layer — deliberately secondary to the functional tool.
+   Every animation is short, non-looping and respects prefers-reduced-motion
+   (the CSS override disables the animations outright; nothing here needs
+   to branch on that itself). Functional text is never randomised — only
+   the small, muted "quip" line and the Easter egg are.
+   ===================================================================== */
+
+/* set by factsOverviewHtml/invoiceOverviewHtml just before they return, read
+   by quickFormat right after — avoids threading a return value through
+   every existing call site of those two functions. */
+let pendingEyeReaction=null;
+
+/* React the ECHO signal mark: 'blink' (clean result — quick ping out and
+   back), 'widen' (a "Worth checking" observation appeared), 'squint' (a
+   real difference was found), 'look' (a softer warning, nothing conclusive). */
+function echoSignalReact(kind){
+  const el=document.getElementById('echoSignal');
+  if(!el||!kind)return;
+  el.classList.remove('anim-blink','anim-widen','anim-squint','anim-look');
+  void el.offsetWidth; // restart the animation even if the same kind fires twice in a row
+  el.classList.add('anim-'+kind);
+  setTimeout(()=>el.classList.remove('anim-'+kind),900);
+}
+/* Turns a result into a reaction. err beats everything (something clearly
+   differs); a "Worth checking" observation beats a plain warn; anything
+   else clean gets the quiet "all good" ping. */
+function echoReactionFor(level,hasWorthChecking){
+  if(level==='err')return 'squint';
+  if(hasWorthChecking)return 'widen';
+  if(level==='warn')return 'look';
+  return 'blink';
+}
+
+/* small, muted, occasional one-liner under a verdict. Shown ~1 in 3 times
+   so it stays a nice surprise rather than background noise. The technical
+   vtitle/vsub text is never touched — this is purely decorative. */
+const QUIP_OK=['No drama detected.','Clean match. Nice.','ECHO approves. Carry on.','That was suspiciously painless.','Nothing suspicious here.','Looks good. Nothing weird found.'];
+const QUIP_NOTICE=['Hmm... this one stands out.','Worth a quick look.','Well... there it is.','Something worth a glance.'];
+const QUIP_DIFF=['Something changed here.','This one is behaving differently.','Well... there it is.','Not quite what was expected.'];
+let lastQuip=null;
+function pickQuip(level,hasWorthChecking){
+  if(Math.random()>=0.35)return '';
+  const pool=level==='err'?QUIP_DIFF:(hasWorthChecking?QUIP_NOTICE:(level==='ok'?QUIP_OK:''));
+  if(!pool)return '';
+  // avoid showing the exact same line twice in a row so the rotation
+  // actually feels like a rotation rather than a coin flip landing on the
+  // same phrase repeatedly
+  let choice=pool[Math.floor(Math.random()*pool.length)];
+  if(pool.length>1&&choice===lastQuip){
+    const alt=pool.filter(q=>q!==lastQuip);
+    choice=alt[Math.floor(Math.random()*alt.length)];
+  }
+  lastQuip=choice;
+  return choice;
+}
+function quipHtml(level,hasWorthChecking){
+  const q=pickQuip(level,hasWorthChecking);
+  return q?`<div class="verdict-quip">${esc(q)}</div>`:'';
+}
+
+/* Easter egg: the signal mark reacts to every click (small immediate
+   reward), but only shows a message after a short burst of clicks — so
+   casual clicks never accidentally reveal it, and it resets after a pause
+   so it can be found again later. Deliberately discoverable by accident,
+   not advertised. Kept harmless: no jokes implying ECHO bypasses any
+   security/IT/legal control. */
+const ECHO_EASTER_EGGS=[
+  "Did you get bored or something?","Still clicking?","Yes, I'm still an EDI inspector.",
+  "Have the new EDIFACTs arrived yet?","Nothing to see here. Probably.",
+  "You could be checking an ORDRSP right now.","Congratulations. You found... absolutely nothing.",
+  "Somewhere, a qualifier is being misunderstood.","The SSCCs know what they did.",
+  "I saw that duplicate EAN too.","CPS is watching.","This segment has been inspected enough.",
+  "Please stop poking the signal.","Still no new EDIFACTs?",
+  "Deepest Dive unlocked. Unfortunately, it's still EDIFACT."
+];
+let eggLastIdx=-1;
+function pickEasterEgg(){
+  if(ECHO_EASTER_EGGS.length<=1)return ECHO_EASTER_EGGS[0]||'';
+  let i;do{i=Math.floor(Math.random()*ECHO_EASTER_EGGS.length);}while(i===eggLastIdx);
+  eggLastIdx=i;return ECHO_EASTER_EGGS[i];
+}
+function showEyeToast(msg){
+  const wrap=document.querySelector('.echo-signal-wrap');
+  if(!wrap)return;
+  let toast=document.getElementById('eyeToast');
+  if(!toast){toast=document.createElement('div');toast.id='eyeToast';toast.className='eye-toast';wrap.appendChild(toast);}
+  toast.textContent=msg;
+  toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show');
+  clearTimeout(toast.__hideTimer);
+  toast.__hideTimer=setTimeout(()=>toast.classList.remove('show'),2600);
+}
+(function initEchoSignalClicks(){
+  const el=document.getElementById('echoSignal');
+  if(!el)return;
+  let clicks=0,resetTimer=null;
+  el.addEventListener('click',()=>{
+    echoSignalReact(clicks%2===0?'look':'blink');
+    clicks++;
+    clearTimeout(resetTimer);
+    resetTimer=setTimeout(()=>{clicks=0;},2500);
+    if(clicks>=5){showEyeToast(pickEasterEgg());clicks=0;}
+  });
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}});
+})();
+
+
+
 /* ================= QUICK VIEW ================= */
 let quickPlain='';
 function quickColorizeSegment(seg,delims){
@@ -506,6 +752,7 @@ function quickFormat(){
 
   /* ---------- 1. business overview ---------- */
   let ovHtml='',ovNote='';
+  pendingEyeReaction=null;
   try{
     if(msgType==='INVOIC'){
       const invs=parseInvoices(raw);
@@ -520,6 +767,8 @@ function quickFormat(){
     }else if(msgType==='ORDRSP'||msgType==='DESADV'){
       const facts=parseFacts(raw);
       ovHtml=`<div class="panel"><h2>Overview</h2>${factsOverviewHtml(facts)}</div>`;
+    }else if(msgType==='ORDERS'){
+      ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as it does going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.</div></div>`;
     }else if(msgType){
       ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Message type <strong>${esc(msgType)}</strong> isn't supported as a business overview yet. The original message is shown below.</div></div>`;
     }else{
@@ -529,6 +778,7 @@ function quickFormat(){
     ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Couldn't build an overview: ${esc(err.message)}. The original message is shown below.</div></div>`;
   }
   ovBox.innerHTML=ovHtml;
+  if(pendingEyeReaction)echoSignalReact(pendingEyeReaction);
 
   /* ---------- 2. original message ---------- */
   if(isXmlText(raw)){
@@ -590,7 +840,7 @@ document.getElementById('quickFileInput').addEventListener('change',e=>{
 document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickInput').value='';
   document.getElementById('quickOverview').innerHTML='';
-  document.getElementById('quickOutput').innerHTML='<div class="empty-state"><strong>Curious what&#39;s inside?</strong><br>Paste or import an EDI message and ECHO will break it down.</div>';
+  document.getElementById('quickOutput').innerHTML='<div class="empty-state"><strong>ECHO is listening.</strong><br>Drop a message here to start inspecting.</div>';
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
 });
 document.getElementById('quickCopyBtn').addEventListener('click',async()=>{
@@ -613,6 +863,19 @@ showTab('compare');
 
 /* ================= COMPARE: fact extraction ================= */
 const ACTION_NAME={'2':'Cancelled','5':'Accepted','6':'Accepted w/ amendment'};
+/* Short, plain-language explanation of each ORDRSP action code, for anyone
+   who doesn't work with EDIFACT daily — the code itself is still named so a
+   professional can look it up further if needed. */
+const ACTION_TOOLTIP={
+  '5':'Line fully confirmed as ordered, no changes. (EDIFACT LIN action code 5.)',
+  '6':'Line accepted with a change — e.g. a partial/backorder quantity or a new delivery date. (EDIFACT LIN action code 6.)',
+  '2':'Line rejected/cancelled — nothing will be delivered for it. (EDIFACT LIN action code 2.)'
+};
+function actionPillHtml(a){
+  if(!a)return '—';
+  const tip=ACTION_TOOLTIP[a]||`EDIFACT LIN action code ${a} — not one of the codes bol/Transus maps (2, 5 or 6).`;
+  return `<span class="pill a${esc(a)}" title="${esc(tip)}">${esc(a)} ${esc(ACTION_NAME[a]||'')}</span>`;
+}
 // Transus XML status -> EDIFACT action
 const STATUS_TO_ACTION={'5':'5','6':'6','3':'6','2':'2','7':'2'};
 
@@ -704,13 +967,17 @@ function parseFactsTransusXml(raw){
   try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return f;}
   if(doc.querySelector('parsererror'))return f;
   const orderEl=doc.querySelector('Order');
-  // message type: presence of OrderLines/Status => ORDRSP; DespatchLine/Article/DespatchUnit => DESADV
-  if(doc.querySelector('OrderLine')||doc.querySelector('OrderLines'))f.msgType='ORDRSP';
+  // message type: presence of OrderLines/Status => ORDRSP; DespatchLine/Article/DespatchUnit => DESADV.
+  // OrderResponseNumber is checked first because some suppliers' ORDRSP
+  // Transus XML uses <Article> as its line element too (see below) — without
+  // this, such a message would fall through to the DESADV branch below.
+  if(doc.querySelector('OrderLine')||doc.querySelector('OrderLines')||doc.querySelector('OrderResponseNumber'))f.msgType='ORDRSP';
   else if(doc.querySelector('DespatchLine')||doc.querySelector('Despatch')||doc.querySelector('Article')||doc.querySelector('DespatchUnit'))f.msgType='DESADV';
   // header status (HeaderStatus) -> bgmFunc-ish (4=change, 29 accept, 27 not accepted). Transus uses 4/9 etc.
   const hs=orderEl&&orderEl.querySelector('HeaderStatus');
   if(hs)f.bgmFunc=hs.textContent.trim();
-  const headerOrder=(orderEl&&orderEl.querySelector('OrderNumberBuyer'))?orderEl.querySelector('OrderNumberBuyer').textContent.trim():null;
+  const headerOrder=(orderEl&&orderEl.querySelector('OrderNumberBuyer'))?orderEl.querySelector('OrderNumberBuyer').textContent.trim()
+    :(doc.querySelector('OrderNumberBuyer')?doc.querySelector('OrderNumberBuyer').textContent.trim():null);
   const g=(el,tag)=>{const n=el.querySelector(tag);return n?n.textContent.trim():'';};
   const gd=tag=>{const n=doc.querySelector(tag);return n?n.textContent.trim():null;};
   f.docNumber=gd('DespatchAdviceNumber')||gd('OrderResponseNumber')||gd('DocumentNumber')||null;
@@ -747,25 +1014,55 @@ function parseFactsTransusXml(raw){
      GTIN concept in this schema) and Article = item line, linked back to its
      DespatchUnit via DespatchUnitReference. Mirrors the EDIFACT CPS/LIN model. */
   const despatchUnits=new Map();
-  doc.querySelectorAll('DespatchUnit').forEach(du=>{
-    const ln=g(du,'LineNumber');
-    const pallet={cps:ln||'',parentCps:null,palletGtin:null,sscc:g(du,'SSCC')||null,items:[]};
-    if(ln)despatchUnits.set(ln,pallet);
-    f.pallets.push(pallet);
-  });
-  doc.querySelectorAll('Article').forEach(el=>{
-    const gtin=g(el,'GTIN');
-    const delivered=g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity');
-    const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
-    const qty={};
-    const d=toInt(delivered);if(d!==null)qty['12']=String(d);
-    const orders=new Set();const ob=g(el,'OrderNumberBuyer');if(ob)orders.add(ob);
-    const line={lineNo:g(el,'LineNumber'),action:null,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,art:null,desc:g(el,'Description')||null};
-    const pallet=despatchUnits.get(g(el,'DespatchUnitReference'))||null;
-    line.__cpsRef=pallet;
-    if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
-    f.lines.push(line);
-  });
+  if(f.msgType==='DESADV'){
+    doc.querySelectorAll('DespatchUnit').forEach(du=>{
+      const ln=g(du,'LineNumber');
+      const pallet={cps:ln||'',parentCps:null,palletGtin:null,sscc:g(du,'SSCC')||null,items:[]};
+      if(ln)despatchUnits.set(ln,pallet);
+      f.pallets.push(pallet);
+    });
+    doc.querySelectorAll('Article').forEach(el=>{
+      const gtin=g(el,'GTIN');
+      const delivered=g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity');
+      const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
+      const qty={};
+      const d=toInt(delivered);if(d!==null)qty['12']=String(d);
+      const orders=new Set();const ob=g(el,'OrderNumberBuyer');if(ob)orders.add(ob);
+      const line={lineNo:g(el,'LineNumber'),action:null,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,art:null,desc:g(el,'Description')||null};
+      const pallet=despatchUnits.get(g(el,'DespatchUnitReference'))||null;
+      line.__cpsRef=pallet;
+      if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
+      f.lines.push(line);
+    });
+  }else if(f.msgType==='ORDRSP'&&!doc.querySelector('OrderLine')){
+    // Some suppliers' ORDRSP-flavoured Transus XML uses <Article> as the line
+    // element too (the same tag DESADV uses above), distinguishable only by
+    // header fields like <OrderResponseNumber>. Its action isn't a numeric
+    // <Status> like <OrderLine> uses, but a header/line <Action> string (e.g.
+    // "ACC") whose full set of possible values isn't confirmed — so the
+    // action is derived from the actual quantities instead of guessing every
+    // string that might appear, the same way STATUS_TO_ACTION derives it
+    // from a known numeric code.
+    doc.querySelectorAll('Article').forEach(el=>{
+      const gtin=g(el,'GTIN');
+      const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
+      const delivered=toInt(g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity'));
+      const backorder=toInt(g(el,'BackOrderQuantity'));
+      const rejected=toInt(g(el,'RejectedQuantity')||g(el,'CancelledQuantity'));
+      const qty={};
+      if(delivered!==null)qty['12']=String(delivered);
+      if(backorder)qty['83']=String(backorder);
+      if(rejected)qty['182']=String(rejected);
+      let action=null;
+      if(rejected&&!delivered&&!backorder)action='2';
+      else if(backorder)action='6';
+      else if(delivered!==null)action='5';
+      const orders=new Set();const ob=g(el,'OrderNumberBuyer')||headerOrder;if(ob)orders.add(ob);
+      f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,
+        art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,
+        desc:g(el,'ArticleDescription')||g(el,'Description')||null});
+    });
+  }
   return f;
 }
 
@@ -876,21 +1173,26 @@ function validateOrdrspLine(bgmFunc,line){
   const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
   const bump=l=>{if(l==='err')level='err';else if(l==='warn'&&level!=='err')level='warn';};
   if(a==='5'){
-    if(!has('12')){msgs.push('missing QTY+12 (confirmed quantity)');bump('err');}
-    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){msgs.push('missing DTM+67 (delivery date)');bump('warn');}
-    if(has('83')){msgs.push('QTY+83 not allowed with action 5');bump('err');}
-    if(has('182')){msgs.push('QTY+182 not allowed with action 5');bump('err');}
+    if(!has('12')){msgs.push("Action 5 (fully accepted) should have a confirmed quantity (QTY+12) — none was found.");bump('err');}
+    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){msgs.push('Action 5 (fully accepted) is missing a delivery date (DTM+67).');bump('warn');}
+    if(has('83')){msgs.push("Action 5 (fully accepted) shouldn't have a backorder quantity (QTY+83), but this line does.");bump('err');}
+    if(has('182')){msgs.push("Action 5 (fully accepted) shouldn't have a cancelled quantity (QTY+182), but this line does.");bump('err');}
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date. Transus XML may express as delivered 0 + backorder.
-    if(!has('83')&&!(line.qty['12']==='0')){msgs.push('action 6 without QTY+83 and without QTY+12:0');bump('warn');}
+    if(!has('83')&&!(line.qty['12']==='0')){msgs.push("Action 6 (accepted with amendment) normally needs a backorder quantity greater than zero (QTY+83) — here it's missing or zero, which doesn't match what action 6 usually means.");bump('warn');}
   }else if(a==='2'){
-    if(!has('182')){msgs.push('missing QTY+182 (cancelled quantity)');bump('err');}
-    if(has('12')){msgs.push('QTY+12 not allowed with cancel');bump('err');}
-  }else{msgs.push('unknown or missing action code');bump('warn');}
+    if(!has('182')){msgs.push("Action 2 (cancelled) should have a cancelled quantity (QTY+182) — none was found.");bump('err');}
+    if(has('12')){msgs.push("Action 2 (cancelled) shouldn't have a confirmed quantity (QTY+12), but this line does.");bump('err');}
+  }else{msgs.push(`Action code ${a??'(none)'} isn't one of the codes bol/Transus maps (2, 5 or 6) — worth confirming this was handled correctly downstream.`);bump('warn');}
   return {level,msgs};
 }
 
-/* classify action into accept/cancel/backorder buckets */
+/* classify action into accept/cancel/backorder buckets — limited to the
+   codes bol/Transus actually maps (confirmed against bol's own ORDRSP
+   mapping table: 2, 5, 6). A supplier using any other code (e.g. the
+   generic EDIFACT 1229 value 7 "Not accepted", which Transus does not map)
+   deliberately falls through to null here, so it keeps showing up as a
+   difference rather than being silently treated as equivalent to 2. */
 function actionBucket(a){ if(a==='5')return 'accept'; if(a==='2')return 'cancel'; if(a==='6')return 'backorder'; return null; }
 
 /* ---- DESADV pallet/CPS helpers ------------------------------------------
@@ -957,6 +1259,34 @@ function palletItemTotals(items){
   });
   return m;
 }
+/* A common real-world failure mode: instead of N independent pallet
+   mismatches, one side has collapsed nearly all of its item data onto a
+   single pallet while leaving almost every other pallet holding just a
+   token item (or none) — e.g. 92 of 93 bol pallets have 1 item each, and
+   the 93rd alone holds the message's entire line count. That is ONE
+   structural mapping issue, not dozens of separate ones, and deserves one
+   plain-language sentence instead of a wall of per-pallet writeups.
+   Purely statistical — no SSCC/EAN is ever hardcoded. */
+function detectPalletCollapse(mismatches,bMap,sMap){
+  if(mismatches.length<8)return null; // only worth a special-case summary once it's clearly systemic
+  const NEAR_EMPTY=2; // "1-2 items" counts as a near-empty pallet
+  let bolSmall=0,supSmall=0;
+  mismatches.forEach(m=>{
+    const bp=bMap.get(m.sscc),sp=sMap.get(m.sscc);
+    if(bp&&bp.items.length<=NEAR_EMPTY)bolSmall++;
+    if(sp&&sp.items.length<=NEAR_EMPTY)supSmall++;
+  });
+  const share=Math.max(bolSmall,supSmall)/mismatches.length;
+  if(share<0.8)return null;
+  const side=bolSmall>=supSmall?'bol':'sup';
+  const map=side==='bol'?bMap:sMap;
+  let biggest=null;
+  map.forEach(p=>{if(!biggest||p.items.length>biggest.items.length)biggest=p;});
+  if(!biggest)return null;
+  const totalItemsOnSide=[...map.values()].reduce((a,p)=>a+p.items.length,0);
+  if(!totalItemsOnSide||biggest.items.length<totalItemsOnSide*0.5)return null; // not actually "one pallet holds nearly everything"
+  return {side,collapsedSscc:biggest.sscc,collapsedCount:biggest.items.length,affectedCount:mismatches.length};
+}
 function comparePalletMapping(bol,sup,add){
   const bMap=palletsBySSCC(bol),sMap=palletsBySSCC(sup);
   if(!bMap.size&&!sMap.size)return;
@@ -977,20 +1307,26 @@ function comparePalletMapping(bol,sup,add){
     });
     if(diffs.length)mismatches.push({sscc,diffs});
   });
-  // A handful of mismatched pallets get full detail. Many at once (common when
-  // items end up grouped under the wrong pallet rather than genuinely missing)
-  // would otherwise produce an unreadable wall of text, so summarize instead —
-  // the Pallet / SSCC overview still shows every pallet individually.
-  const DETAIL_CAP=5,DIFF_CAP=6;
-  mismatches.slice(0,DETAIL_CAP).forEach(m=>{
-    const shown=m.diffs.slice(0,DIFF_CAP);
-    const extra=m.diffs.length-shown.length;
-    const text=shown.join('; ')+(extra>0?`; and ${extra} more difference(s) on this pallet`:'');
-    add('err',`SSCC <code>${esc(m.sscc)}</code>: <strong>Pallet mapping differs</strong> — ${text}.`,'diff');
-  });
-  if(mismatches.length>DETAIL_CAP){
-    const rest=mismatches.length-DETAIL_CAP;
-    add('err',`<strong>${rest} more SSCC(s) also show a pallet mapping difference</strong> — see the Pallet / SSCC overview below for each one. This many at once usually points to a structural mismatch (e.g. items not distributed across pallets the same way on both sides) rather than ${rest} separate individual issues.`,'diff');
+  const collapse=detectPalletCollapse(mismatches,bMap,sMap);
+  if(collapse){
+    const sideLabel=collapse.side==='bol'?'bol':'supplier';
+    add('err',`<strong>${collapse.affectedCount} pallets show the same structural pattern</strong> on the ${sideLabel} side, rather than ${collapse.affectedCount} separate problems: nearly all of them contain just one item, while pallet SSCC <code>${esc(collapse.collapsedSscc)}</code> alone holds ${collapse.collapsedCount} items. This points to a single mapping issue in how items were grouped under pallets on the ${sideLabel} side — the overall item quantities across the message still match (see "Quantities" above). See the Pallet / SSCC overview below for the full, per-pallet breakdown.`,'diff');
+  }else{
+    // A handful of mismatched pallets get full detail. Many at once (when the
+    // pattern above doesn't apply) would otherwise produce an unreadable wall
+    // of text, so summarize instead — the Pallet / SSCC overview still shows
+    // every pallet individually.
+    const DETAIL_CAP=5,DIFF_CAP=6;
+    mismatches.slice(0,DETAIL_CAP).forEach(m=>{
+      const shown=m.diffs.slice(0,DIFF_CAP);
+      const extra=m.diffs.length-shown.length;
+      const text=shown.join('; ')+(extra>0?`; and ${extra} more difference(s) on this pallet`:'');
+      add('err',`SSCC <code>${esc(m.sscc)}</code>: <strong>Pallet mapping differs</strong> — ${text}.`,'diff');
+    });
+    if(mismatches.length>DETAIL_CAP){
+      const rest=mismatches.length-DETAIL_CAP;
+      add('err',`<strong>${rest} more SSCC(s) also show a pallet mapping difference</strong> — see the Pallet / SSCC overview below for each one. This many at once usually points to a structural mismatch (e.g. items not distributed across pallets the same way on both sides) rather than ${rest} separate individual issues.`,'diff');
+    }
   }
   if(palletGtinUnmapped)add('info','<strong>Supplier sends pallet-level EAN</strong>. The supplier includes a pallet-level EAN in addition to the SSCC. This is uncommon in our DESADV flow, but it is not mapped to the bol output and no impact was detected on the SSCC, item or quantity mapping.','info');
 }
@@ -1016,16 +1352,28 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
     // item's row, or it reads as if the issue were specific to that item.
     const palletLevelNotes=[];
     if(hasItems&&!p.sscc)palletLevelNotes.push('Missing SSCC');
+    // A pallet whose SSCC simply doesn't exist on the other side at all is a
+    // pallet-level fact (not a quantity/EAN mismatch), so it needs its own
+    // note here too — without this, the summary badge below only looks at
+    // anyDiff/allNotes and would default to "Match", even though every item
+    // row inside is really "nothing to compare against".
+    if(!singleMode&&hasItems&&p.sscc&&otherMap&&!otherMap.has(p.sscc))palletLevelNotes.push('No match on other side');
     // Mapping status per GTIN, computed once per pallet (not per row): a GTIN can
     // legitimately appear as more than one line on the same pallet (e.g. split
     // across batches/best-before dates), so this compares the GTIN's total
     // quantity rather than pairing individual lines by position.
-    let gtinMatch=null;
+    let gtinMatch=null,allItemsDiffer=false,otherTotals=null;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
       const thisTot=palletItemTotals(p.items),otherTot=palletItemTotals(other.items);
+      otherTotals=otherTot;
       gtinMatch=new Map();
       thisTot.forEach((qty,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g)===qty));
+      // Only meaningful once there's more than one item to compare — with a
+      // single item "all differ" and "this one differs" say the same thing,
+      // so there's no redundancy to collapse.
+      const vals=[...gtinMatch.values()];
+      allItemsDiffer=vals.length>1&&vals.every(v=>!v);
     }
     let rows='',anyDiff=false;
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
@@ -1037,26 +1385,45 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
       }else if(gtinMatch){
         const ok=gtinMatch.get(it.gtin);
         if(!ok)anyDiff=true;
-        mappingPill=ok?'<span class="pill ok">Match</span>':'<span class="pill err">Difference</span>';
+        if(allItemsDiffer){
+          // Every item on this pallet differs — that's a pallet-wide mapping
+          // issue (already shown once via the "Difference" summary badge),
+          // not something worth repeating on every single row. Only a
+          // partial mismatch (some items match, some don't) is genuinely
+          // item-specific information worth flagging per row.
+          mappingPill='<span class="dim" title="This pallet\'s items differ as a whole — see the pallet-level status above.">—</span>';
+        }else{
+          // Show the actual compared quantities alongside the pill, the same
+          // way the Line comparison table does — a bare "Difference" pill on
+          // its own doesn't say what differs.
+          const otherQ=otherTotals&&otherTotals.has(it.gtin)?otherTotals.get(it.gtin):undefined;
+          const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;">(${esc(qv??'—')} → ${esc(otherQ??'—')})</span>`;
+          mappingPill=(ok?pillMatch():pillDiff())+qtyTxt;
+        }
       }else if(!p.sscc){
-        mappingPill='<span class="pill warn" title="This pallet has no SSCC, so ECHO can\'t match it to the other side.">No SSCC — can\'t match</span>';
+        // Pallet-level fact (this pallet has no SSCC at all) — already shown
+        // once on the pallet's own summary badge ("⚠ Missing SSCC"), so
+        // repeating the same warning on every single item row would just be
+        // noise on a large pallet. A plain dash still makes clear there's
+        // nothing to compare, without shouting it hundreds of times.
+        mappingPill='<span class="dim" title="This pallet has no SSCC — see the pallet-level status above.">—</span>';
       }else{
-        mappingPill='<span class="pill warn" title="This SSCC wasn\'t found on the other side, so there is nothing to compare it to.">No match on other side</span>';
+        mappingPill='<span class="dim" title="This SSCC wasn\'t found on the other side — see the pallet-level status above.">—</span>';
       }
       // Item-level notes describe THIS specific item, not the pallet as a whole
       const rowNotes=[];
       if(it.gtin&&p.palletGtin&&it.gtin===p.palletGtin){rowNotes.push('Repeated pallet EAN');itemLevelNotesSeen.add('Repeated pallet EAN');}
-      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:'<span class="pill ok">OK</span>';
+      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:pillOkSingle();
       const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
     });
     const allNotes=[...palletLevelNotes,...itemLevelNotesSeen];
     const ssccTxt=p.sscc?`<span class="clickable-val" onclick="${jumpCall(p.sscc)}">${esc(p.sscc)}</span>`:'<span style="color:var(--warn)">— missing</span>';
-    let summaryBadge;
-    if(!singleMode&&anyDiff)summaryBadge='<span class="pill err">Difference</span>';
-    else if(allNotes.length)summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;
-    else summaryBadge=singleMode?'<span class="pill ok">OK</span>':'<span class="pill ok">Match</span>';
-    blocks+=`<details class="pallet-det"><summary>
+    let summaryBadge,status;
+    if(!singleMode&&anyDiff){summaryBadge=pillDiff();status='diff';}
+    else if(allNotes.length){summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;status='warn';}
+    else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
+    blocks+=`<details class="pallet-det" data-status="${status}"><summary>
         <span class="mono">CPS ${esc(p.cps||'?')}</span>
         <span class="dim">Pallet EAN ${esc(p.palletGtin||'—')}</span>
         <span class="mono">SSCC ${ssccTxt}</span>
@@ -1067,6 +1434,133 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
     </details>`;
   });
   return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${relevant.length})</div><div class="pallet-list">${blocks}</div>`;
+}
+
+/* =====================================================================
+   "Worth checking" (👁) — unusual-but-not-necessarily-wrong observations.
+   Purely statistical: it looks at one message's own lines and notices when
+   a small minority breaks the pattern the rest of the lines follow (a price
+   missing on a few lines while present everywhere else, one action code
+   among many of another, an EAN repeated a different number of times than
+   the rest, etc). Every threshold is derived from the message's own data —
+   nothing about any specific EAN/qualifier/value is ever hardcoded, so this
+   works unchanged for any supplier or article.
+   ECHO never claims these are errors — only that they deviate from the
+   message's own dominant pattern. One pattern produces one observation
+   (with every affected line listed inside it), never one finding per line. */
+function wcMostCommon(arr){
+  const counts=new Map();
+  arr.forEach(v=>counts.set(v,(counts.get(v)||0)+1));
+  let best=null,bestN=0;
+  counts.forEach((n,v)=>{if(n>bestN){best=v;bestN=n;}});
+  return {value:best,count:bestN};
+}
+function detectWorthChecking(lines,cfg){
+  const notices=[];
+  const total=lines.length;
+  if(total<4)return notices; // too few lines for "most lines do X" to mean anything
+
+  (cfg.presence||[]).forEach(f=>{
+    const present=[],missing=[];
+    lines.forEach(l=>{
+      const v=f.get(l);
+      const has=v!==undefined&&v!==null&&v!==''&&!(typeof v==='number'&&isNaN(v));
+      (has?present:missing).push(l);
+    });
+    // only flag "mostly present, missing on a minority" — the opposite (a
+    // rarely-used optional field) is normal and would just be noise
+    if(missing.length>0&&present.length>missing.length){
+      notices.push({
+        title:`${f.label} missing on ${missing.length} of ${total} line${total===1?'':'s'}`,
+        detail:`${f.label} is present on ${present.length} of ${total} lines.`,
+        affected:missing.map(l=>({label:f.rowLabel(l),jump:f.rowJump(l)}))
+      });
+    }
+  });
+
+  (cfg.categorical||[]).forEach(f=>{
+    const withVal=lines.map(l=>({l,v:f.get(l)})).filter(x=>x.v!==undefined&&x.v!==null&&x.v!=='');
+    if(withVal.length<4)return;
+    const {value:majorVal,count:majorCount}=wcMostCommon(withVal.map(x=>x.v));
+    const minority=withVal.filter(x=>x.v!==majorVal);
+    if(!minority.length)return;
+    const share=majorCount/withVal.length;
+    if(share>=0.7&&minority.length<=Math.max(3,Math.ceil(withVal.length*0.25))){
+      notices.push({
+        title:`${f.label}: ${minority.length} of ${withVal.length} line${withVal.length===1?'':'s'} ${minority.length===1?'differs':'differ'} from the rest`,
+        detail:`${majorCount} of ${withVal.length} lines have ${f.label.toLowerCase()} ${f.fmt?f.fmt(majorVal):esc(majorVal)}; ${minority.length} ${minority.length===1?'has':'have'} a different value.`,
+        affected:minority.map(x=>({label:f.rowLabel(x.l),jump:f.rowJump(x.l)}))
+      });
+    }
+  });
+
+  if(cfg.repeatKey){
+    const f=cfg.repeatKey;
+    const groups=new Map();
+    lines.forEach(l=>{const k=f.get(l);if(k===undefined||k===null||k==='')return;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
+    if(groups.size>=4){
+      const freqs=[...groups.values()].map(g=>g.length);
+      const {value:modeFreq,count:modeShare}=wcMostCommon(freqs);
+      const outliers=[...groups.entries()].filter(([,g])=>g.length!==modeFreq);
+      if(outliers.length&&modeShare/groups.size>=0.7&&outliers.length<=Math.max(3,Math.ceil(groups.size*0.25))){
+        notices.push({
+          title:`${outliers.length} ${f.label}${outliers.length===1?'':'s'} appear${outliers.length===1?'s':''} a different number of times than the rest`,
+          detail:`Most ${f.label}s in this message appear ${modeFreq} time${modeFreq===1?'':'s'}; ${outliers.length} ${outliers.length===1?'appears':'appear'} a different number of times.`,
+          affected:outliers.map(([,g])=>({label:f.rowLabel(g[0])+` (${g.length}×)`,jump:f.rowJump(g[0])}))
+        });
+      }
+    }
+  }
+  return notices;
+}
+/* field configs — one per business-line model. rowLabel/rowJump reuse the
+   line's own item/EAN so affected lines can jump straight to the source,
+   exactly like every other clickable value in ECHO. */
+function wcConfigOrdrspDesadv(type){
+  const rowLabel=l=>l.art||l.gtin||l.lineNo||'?';
+  const rowJump=l=>l.gtin||l.art||l.lineNo||'';
+  const cfg={
+    presence:[
+      {label:'Quantity',get:l=>{const v=l.qty&&l.qty['12'];return (v===undefined||v==='')?undefined:v;},rowLabel,rowJump},
+      {label:'Order reference',get:l=>(l.orders&&l.orders.size)?'x':undefined,rowLabel,rowJump}
+    ],
+    categorical:[],
+    repeatKey:{label:'EAN',get:l=>l.gtin,rowLabel,rowJump}
+  };
+  if(type==='DESADV'){
+    cfg.presence.push({label:'Date',get:l=>(l.dtm&&Object.keys(l.dtm).length)?Object.values(l.dtm)[0]:undefined,rowLabel,rowJump});
+  }
+  if(type==='ORDRSP'){
+    cfg.categorical.push({label:'Action',get:l=>l.action,fmt:v=>`<code>${esc(v)}</code> (${esc(ACTION_NAME[v]||'?')})`,rowLabel,rowJump});
+  }
+  return cfg;
+}
+function wcConfigInvoic(){
+  const rowLabel=l=>l.art||l.gtin||l.lineNo||'?';
+  const rowJump=l=>l.gtin||l.art||l.lineNo||'';
+  return {
+    presence:[
+      {label:'Net price',get:l=>l.netPrice,rowLabel,rowJump},
+      {label:'Gross price',get:l=>l.grossPrice,rowLabel,rowJump},
+      {label:'Line amount',get:l=>l.lineAmount,rowLabel,rowJump},
+      {label:'Quantity',get:l=>l.qty,rowLabel,rowJump}
+    ],
+    categorical:[
+      {label:'VAT %',get:l=>l.vatPct,fmt:v=>`<code>${esc(v)}%</code>`,rowLabel,rowJump}
+    ],
+    repeatKey:{label:'EAN',get:l=>l.gtin,rowLabel,rowJump}
+  };
+}
+/* renders one side's notices as a list of expandable <details> items —
+   shared by Quick Check (single side) and Compare (called once per side). */
+function worthCheckingHtml(sideLabel,notices,jumpCall){
+  if(!notices.length)return '';
+  return notices.map(n=>{
+    const affected=n.affected.map(a=>`<li><span class="clickable-val" onclick="${jumpCall(a.jump)}">${esc(a.label)}</span></li>`).join('');
+    return `<details class="wc-item"><summary><span class="wc-ic">👁</span><span class="wc-title">${sideLabel?esc(sideLabel)+' — ':''}${n.title}</span></summary>
+      <div class="wc-body"><div class="wc-detail">${n.detail}</div><ul class="wc-affected">${affected}</ul></div>
+    </details>`;
+  }).join('');
 }
 
 function compare(bol,sup){
@@ -1091,7 +1585,14 @@ function compare(bol,sup){
     }).filter(x=>!(effVal(x.bol)===0&&effVal(x.sup)===0)); // hide rows where both sides are effectively "none"
     row.qtyDiff=row.qtys.some(x=>x.diff);
     row.bolActions=b?[...b.actions]:[];row.supActions=s?[...s.actions]:[];
-    row.actionDiff=(row.bolActions.slice().sort().join(',')!==row.supActions.slice().sort().join(','));
+    // Compare by meaning (accept/cancel/backorder), not the literal code —
+    // future-proofs against bol/Transus one day mapping more than one raw
+    // code to the same bucket. Anything actionBucket doesn't recognize
+    // (e.g. a supplier sending a plain-EDIFACT code Transus doesn't map,
+    // such as '7') falls back to comparing the raw value, so it still shows
+    // up as a difference rather than being silently ignored.
+    const bucketOrRaw=arr=>[...new Set(arr.map(a=>actionBucket(a)||('raw:'+a)))].sort().join(',');
+    row.actionDiff=(bucketOrRaw(row.bolActions)!==bucketOrRaw(row.supActions));
     row.bolOrders=b?[...b.orders]:[];row.supOrders=s?[...s.orders]:[];
     row.orderDiff=(row.bolOrders.slice().sort().join(',')!==row.supOrders.slice().sort().join(','));
     row.missing=!b||!s;
@@ -1102,13 +1603,40 @@ function compare(bol,sup){
     rows.push(row);
   });
 
+  // Per-item findings are capped the same way the pallet-mismatch findings
+  // already were: a handful shown in full, the rest summarized in one line.
+  // Without this, a message where e.g. every line lacks an order ref would
+  // print one "order numbers differ" finding per line — exactly the kind of
+  // wall-of-near-identical-text this project has learned to avoid.
+  const FINDING_CAP=5;
+  const addCapped=(level,items,formatOne,summaryText)=>{
+    if(!items.length)return;
+    items.slice(0,FINDING_CAP).forEach(it=>add(level,formatOne(it),'diff'));
+    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff');
+  };
+
+  const missingItems=[];
   keys.forEach(k=>{const b=ba.get(k),s=sa.get(k);const ref=b||s;const label=(ref&&(ref.art||ref.gtin))||k.replace(/^K:/,'');
-    if(!b)add('err',`Item <code>${label}</code> is present in the supplier message but <strong>missing</strong> from the bol output.`,'diff');
-    else if(!s)add('err',`Item <code>${label}</code> is present in the bol output but <strong>missing</strong> from the supplier message.`,'diff');});
+    if(!b)missingItems.push({label,onlyIn:'supplier message but <strong>missing</strong> from the bol output'});
+    else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
+  addCapped('err',missingItems,
+    m=>`Item <code>${m.label}</code> is present in the ${m.onlyIn}.`,
+    rest=>`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
+
+  const qtyDiffs=[],actionDiffs=[],orderDiffs=[];
   rows.forEach(r=>{if(r.missing)return;const label=r.art||r.gtin;
-    r.qtys.forEach(x=>{if(x.diff)add('err',`Item <code>${label}</code>: quantity (qual ${x.q}) differs — supplier <span class="val-sup">${x.sup??'—'}</span> vs bol <span class="val-bol">${x.bol??'—'}</span>.`,'diff');});
-    if(type==='ORDRSP'&&r.actionDiff)add('err',`Item <code>${label}</code>: action codes differ — supplier [${r.supActions.join(', ')||'—'}] vs bol [${r.bolActions.join(', ')||'—'}].`,'diff');
-    if(r.orderDiff)add('warn',`Item <code>${label}</code>: order numbers differ — supplier [${r.supOrders.join(', ')||'—'}] vs bol [${r.bolOrders.join(', ')||'—'}].`,'diff');});
+    r.qtys.forEach(x=>{if(x.diff)qtyDiffs.push({label,x});});
+    if(type==='ORDRSP'&&r.actionDiff)actionDiffs.push({label,r});
+    if(r.orderDiff)orderDiffs.push({label,r});});
+  addCapped('err',qtyDiffs,
+    ({label,x})=>`Item <code>${label}</code>: quantity (qual ${x.q}) differs — supplier <span class="val-sup">${x.sup??'—'}</span> vs bol <span class="val-bol">${x.bol??'—'}</span>.`,
+    rest=>`<strong>${rest} more item(s) also show a quantity difference</strong> — see the Line comparison below for the full list.`);
+  addCapped('err',actionDiffs,
+    ({label,r})=>`Item <code>${label}</code>: action codes differ — supplier [${r.supActions.join(', ')||'—'}] vs bol [${r.bolActions.join(', ')||'—'}].`,
+    rest=>`<strong>${rest} more item(s) also show an action code difference</strong> — see the Line comparison below for the full list.`);
+  addCapped('warn',orderDiffs,
+    ({label,r})=>`Item <code>${label}</code>: order numbers differ — supplier [${r.supOrders.join(', ')||'—'}] vs bol [${r.bolOrders.join(', ')||'—'}].`,
+    rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
@@ -1134,7 +1662,7 @@ function compare(bol,sup){
 
   // ORDRSP rule validation (validate supplier + bol lines)
   if(type==='ORDRSP'){
-    const validate=(facts,lab)=>{facts.lines.forEach(l=>{const res=validateOrdrspLine(facts.bgmFunc,l);if(res.level!=='ok')res.msgs.forEach(m=>add(res.level,`${lab} — line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`));});};
+    const validate=(facts,lab)=>{facts.lines.forEach(l=>{const res=validateOrdrspLine(facts.bgmFunc,l);if(res.level!=='ok')res.msgs.forEach(m=>add(res.level,`${lab} — line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`,'message'));});};
     validate(sup,'Supplier');validate(bol,'Bol');
   }
 
@@ -1684,9 +2212,15 @@ function detectMsgType(raw){
   if(!raw||!raw.trim())return null;
   if(isXmlText(raw)){
     const head=raw.slice(0,6000);
+    // Check the most specific, unambiguous fields first. Some suppliers'
+    // ORDRSP-flavoured Transus XML uses <Article> as its line element — the
+    // same tag DESADV uses for despatch lines — and even includes a
+    // <DespatchedQuantity> field, which a loose "Despatch" substring match
+    // used to misread as a DESADV signal. Checking ORDRSP's own header field
+    // first, and requiring a real tag boundary after "Despatch", fixes both.
+    if(/OrderResponseNumber|OrderLine|<Orders?[\s>]/i.test(head))return 'ORDRSP';
     if(/<(\w+:)?Invoice[\s>]|<(\w+:)?CreditNote[\s>]|LegalMonetaryTotal|InvoiceLine/.test(head))return 'INVOIC';
-    if(/DespatchLine|DespatchAdvice|<Despatch/i.test(head))return 'DESADV';
-    if(/OrderLine|<Orders?[\s>]/i.test(head))return 'ORDRSP';
+    if(/DespatchAdviceNumber|<Despatch(Line|Advice|Unit)?[\s>]/i.test(head))return 'DESADV';
     return null;
   }
   try{
@@ -2080,6 +2614,14 @@ function invoiceOverviewHtml(inv,opts={}){
       return `<tr>${t}</tr>`;
     }).join('');
     h+=`<div class="sec-h">Invoice lines (${inv.lines.length})</div><div class="inv-scroll"><table class="inv">${th}${body}</table></div>`;
+    const wcNotices=detectWorthChecking(inv.lines,wcConfigInvoic());
+    if(wcNotices.length)h+=`<div class="sec-h" title="ECHO noticed something unusual here — not necessarily wrong.">Worth checking</div><div class="wc-list">${worthCheckingHtml('',wcNotices,jumpCall)}</div>`;
+    // opts.side is only set when this function is reused inside Compare's
+    // "show invoice overview" detail — the signal already reacted once for
+    // the comparison result there, so it shouldn't react again here.
+    if(!opts.side)pendingEyeReaction=echoReactionFor('ok',wcNotices.length>0);
+  }else if(!opts.side){
+    pendingEyeReaction=null;
   }
 
   const allCharges=[...inv.charges];
@@ -2110,6 +2652,7 @@ function invoiceOverviewHtml(inv,opts={}){
   tpush('Incl. VAT',t.taxInclusive);
   tpush('Payable',t.payable,'pay');
   if(tot.length)h+=`<div class="sec-h">Totals</div><div class="totbox">${tot.join('')}</div>`;
+  if(!opts.side&&inv.lines.length)h+=eanBlockHtml(buildEanListText(inv.lines.map(l=>l.gtin)));
   return h;
 }
 
@@ -2140,6 +2683,15 @@ function factsOverviewHtml(facts){
     const order={err:0,warn:1,info:2,ok:3};const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
     const sorted=[...qcFindings].sort((a,b)=>order[a.level]-order[b.level]);
     h+=`<div class="sec-h">Findings</div><ul class="findings">${sorted.map(f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('')}</ul>`;
+  }
+
+  if(type==='ORDRSP'||type==='DESADV'){
+    const wcNotices=detectWorthChecking(facts.lines,wcConfigOrdrspDesadv(type));
+    if(wcNotices.length)h+=`<div class="sec-h" title="ECHO noticed something unusual here — not necessarily wrong.">Worth checking</div><div class="wc-list">${worthCheckingHtml('',wcNotices,jumpCall)}</div>`;
+    const qcLevel=qcFindings.some(f=>f.level==='err')?'err':(qcFindings.some(f=>f.level==='warn')?'warn':'ok');
+    pendingEyeReaction=echoReactionFor(qcLevel,wcNotices.length>0);
+  }else{
+    pendingEyeReaction=null;
   }
 
   const isD=type==='DESADV';
@@ -2174,14 +2726,14 @@ function factsOverviewHtml(facts){
     const buckets={accept:0,cancel:0,backorder:0};
     facts.lines.forEach(l=>{const b=actionBucket(l.action);if(b)buckets[b]++;});
     h+=`<div class="sec-h">Actions</div><div class="amx-grid">`;
-    h+=[['accept','Accept (5)'],['cancel','Cancel (2)'],['backorder','Backorder (6)']].map(([bk,label])=>
+    h+=[['accept','Accept (5)'],['cancel','Cancel (2)'],['backorder','Amendment (6)']].map(([bk,label])=>
       `<div class="amx-card"><div class="h"><span class="amx-dot ${bk}"></span>${label}</div>
        <div class="amx-counts"><span class="big">${buckets[bk]}</span><span class="vs">lines</span></div></div>`).join('');
     h+=`</div>`;
     const boLines=facts.lines.filter(l=>actionBucket(l.action)==='backorder'||(l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''&&Number(l.qty['83'])!==0))
       .map(l=>({label:l.art||l.gtin||'?',qty:l.qty?l.qty['83']:undefined}));
     lastActionSummaryText=buildActionSummaryText('ORDRSP'+(facts.docNumber?' '+facts.docNumber:''),buckets,boLines);
-    h+=`<div class="actions"><button class="btn" onclick="copyTextToClipboard(lastActionSummaryText,this)" title="A short, high-level summary of accept/cancel/backorder">Copy summary</button></div>`;
+    h+=`<div class="actions"><button class="btn" onclick="copyTextToClipboard(lastActionSummaryText,this)" title="A short, high-level summary of accept/cancel/amendment">Copy summary</button></div>`;
   }
 
   // Backorder detail: which lines specifically, not just a count. Checks both
@@ -2190,7 +2742,7 @@ function factsOverviewHtml(facts){
   const showArtGlobal=facts.lines.some(l=>l.art);
   const backorderLines=facts.lines.filter(l=>actionBucket(l.action)==='backorder'||(l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''&&Number(l.qty['83'])!==0));
   if(backorderLines.length){
-    h+=`<div class="sec-h">Backorder details (${backorderLines.length})</div><div class="inv-scroll"><table class="inv">
+    h+=`<div class="sec-h">Amendment details (${backorderLines.length})</div><div class="inv-scroll"><table class="inv">
       <tr><th>#</th><th>EAN</th>${showArtGlobal?'<th>Item</th>':''}<th>Confirmed</th><th>Backorder qty</th>${type==='ORDRSP'?'<th>Action</th>':''}</tr>`;
     h+=backorderLines.map(l=>{
       const eanCell=l.gtin?`<span class="clickable-val" onclick="${jumpCall(l.gtin)}">${esc(l.gtin)}</span>${summaLink(l.gtin)}`:'—';
@@ -2225,7 +2777,7 @@ function factsOverviewHtml(facts){
       quals.forEach(q=>{const v=(l.qty||{})[q];t+=`<td class="num">${v===undefined||v===''?'—':esc(v)}</td>`;});
       if(type==='ORDRSP'){
         const a=l.action;
-        t+=`<td>${a?`<span class="pill a${esc(a)}">${esc(a)} ${esc(ACTION_NAME[a]||'')}</span>`:'—'}</td>`;
+        t+=`<td>${actionPillHtml(a)}</td>`;
       }
       if(showLineDate){
         const d=l.dtm?Object.values(l.dtm)[0]:null;
@@ -2246,6 +2798,7 @@ function factsOverviewHtml(facts){
     h+=facts.ssccs.map((s,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span></td></tr>`).join('');
     h+=`</table></div>`;
   }
+  if(facts.lines.length)h+=eanBlockHtml(buildEanListText(facts.lines.map(l=>l.gtin)));
   return h;
 }
 
@@ -2291,10 +2844,10 @@ function renderLineTable(){
       }
     }
     tds+=`<td class="mono">${orderCell}</td>`;
-    if(isO){const af=arr=>arr.map(a=>`<span class="pill a${a}">${a} ${ACTION_NAME[a]||''}</span>`).join(' ')||'—';tds+=`<td>${af(r.supActions)}</td><td>${af(r.bolActions)}</td>`;}
+    if(isO){const af=arr=>arr.map(a=>actionPillHtml(a)).join(' ')||'—';tds+=`<td>${af(r.supActions)}</td><td>${af(r.bolActions)}</td>`;}
     const qtxt=r.qtys.map(x=>{const cl=x.diff?'diff-val':'';const qn={'12':'Confirmed','83':'Backorder','182':'Cancelled'}[x.q]||x.q;return `<span class="${cl}">${qn}: <span class="val-sup">${x.sup??'—'}</span> → <span class="val-bol">${x.bol??'—'}</span></span>`;}).join('<br>')||'—';
     tds+=`<td class="mono">${qtxt}</td>`;
-    const sp=r.status==='ok'?'<span class="pill ok">Match</span>':(r.status==='warn'?'<span class="pill warn">Check</span>':'<span class="pill err">Difference</span>');
+    const sp=r.status==='ok'?pillMatch():(r.status==='warn'?pillCheck():pillDiff());
     tds+=`<td>${sp}</td>`;
     return `<tr class="${cls}">${tds}</tr>`;
   }).join('');
@@ -2317,7 +2870,7 @@ function renderActionMatrix(){
   const cards=[
     {bk:'accept',label:'Accept (5)'},
     {bk:'cancel',label:'Cancel (2)'},
-    {bk:'backorder',label:'Backorder (6)'}
+    {bk:'backorder',label:'Amendment (6)'}
   ].map(c=>{
     const b=m[c.bk].bol,s=m[c.bk].sup;
     const present=b>0||s>0;
@@ -2334,7 +2887,7 @@ function renderActionMatrix(){
   const parts=[];
   parts.push(m.accept.sup>0?'accept':'');
   parts.push(anyCancel?'cancel':'');
-  parts.push(anyBack?'backorder':'');
+  parts.push(anyBack?'amendment':'');
   const present=parts.filter(Boolean);
   const note=`Supplier sends in this message: <strong>${present.length?present.join(' + '):'no recognized actions'}</strong>. `+
     (m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup
@@ -2359,14 +2912,25 @@ function render(result,bol,sup,notes){
   }
   const v=vmap[result.verdict];
   document.getElementById('verdict').className='verdict '+result.verdict;
-  document.getElementById('verdict').innerHTML=`<div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div></div>`;
+  // Worth-checking is computed once here (moved up from further below) so both
+  // the signal reaction/quip and the "Worth checking" panel can reuse it.
+  let wcSup=[],wcBol=[];
+  if(result.type==='ORDRSP'||result.type==='DESADV'){
+    const wcCfg=wcConfigOrdrspDesadv(result.type);
+    wcSup=detectWorthChecking(sup.lines,wcCfg);
+    wcBol=detectWorthChecking(bol.lines,wcCfg);
+  }
+  const hasWC=wcSup.length>0||wcBol.length>0;
+  echoSignalReact(echoReactionFor(result.verdict,hasWC));
+  document.getElementById('verdict').innerHTML=`<div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(result.verdict,hasWC)}</div>`;
 
   const st=result.stats;const strip=[];
   strip.push(`<div class="stat"><div class="l">Type</div><div class="v">${result.type||'?'}</div></div>`);
   const allOrders=[...new Set([...(sup.orderRefsHeader||[]),...sup.lines.flatMap(l=>[...(l.orders||[])]),...(bol.orderRefsHeader||[]),...bol.lines.flatMap(l=>[...(l.orders||[])])])];
   if(allOrders.length){
     const orderVal=allOrders.map(o=>`<div class="order-row"><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(o)})">${esc(o)}</span>${purpleLink(o)}</div>`).join('');
-    strip.push(`<div class="stat"><div class="l">Order${allOrders.length>1?'(s)':''}</div><div class="v" style="font-size:13px">${orderVal}</div></div>`);
+    const orderCopyText=allOrders.join('\n');
+    strip.push(`<div class="stat"><div class="l"><span>Order${allOrders.length>1?'(s)':''}</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(orderCopyText)},this)">📋</button></div><div class="v" style="font-size:13px">${orderVal}</div></div>`);
   }
   if(result.type==='DESADV'){
     const supPack=sup.docNumber||(sup.deliveryNoteRefs&&sup.deliveryNoteRefs[0])||null;
@@ -2380,7 +2944,7 @@ function render(result,bol,sup,notes){
         const bolSpan=bolPack?`<span class="val-bol clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(bolPack)})">${esc(bolPack)}</span>`:'<span class="val-bol">—</span>';
         packVal=`${supSpan} → ${bolSpan}`;
       }
-      strip.push(`<div class="stat"><div class="l">Packing reference</div><div class="v" style="font-size:13px" title="BGM document number, or the RFF-based despatch note reference when present">${packVal}</div></div>`);
+      strip.push(`<div class="stat"><div class="l"><span>Packing reference</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supPack||bolPack||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="BGM document number, or the RFF-based despatch note reference when present">${packVal}</div></div>`);
     }
   }
   strip.push(`<div class="stat"><div class="l">Supplier / bol format</div><div class="v" style="font-size:13px">${result.fmtSup}<br>${result.fmtBol}</div></div>`);
@@ -2398,7 +2962,7 @@ function render(result,bol,sup,notes){
   if(result.type==='ORDRSP'){
     togglePanel.classList.remove('hidden');
     const m=result.actionMatrix;
-    const seen=[];if(m.accept.sup>0)seen.push('accept');if(m.cancel.sup>0)seen.push('cancel');if(m.backorder.sup>0)seen.push('backorder');
+    const seen=[];if(m.accept.sup>0)seen.push('accept');if(m.cancel.sup>0)seen.push('cancel');if(m.backorder.sup>0)seen.push('amendment');
     const allMatch=m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup;
     sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(allMatch?' · match':' · DIFFERENCE');
     sumBadge.style.color=allMatch?'var(--ok)':'var(--err)';
@@ -2430,7 +2994,7 @@ function render(result,bol,sup,notes){
       let row=`<td class="mono">${esc(r.art||'—')}</td><td class="mono">${eanCell}</td>`;
       row+=`<td class="num val-sup">${q83?esc(q83.sup??'—'):'—'}</td><td class="num val-bol">${q83?esc(q83.bol??'—'):'—'}</td>`;
       if(result.type==='ORDRSP'){
-        const af=arr=>arr.map(a=>`<span class="pill a${a}">${a} ${ACTION_NAME[a]||''}</span>`).join(' ')||'—';
+        const af=arr=>arr.map(a=>actionPillHtml(a)).join(' ')||'—';
         row+=`<td>${af(r.supActions)}</td><td>${af(r.bolActions)}</td>`;
       }
       return `<tr>${row}</tr>`;
@@ -2444,7 +3008,7 @@ function render(result,bol,sup,notes){
   // findings
   const order={err:0,warn:1,info:2,ok:3};
   const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
-  if(result.type==='DESADV'){
+  if(result.type==='DESADV'||result.type==='ORDRSP'){
     // Split findings into three plain-language buckets so a preserved
     // transformation and a supplier-message observation never blur together.
     const cats=[
@@ -2465,6 +3029,27 @@ function render(result,bol,sup,notes){
     document.getElementById('findings').innerHTML=fs.map(f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
   }
 
+  // "Worth checking" — run once per side, since these are single-message
+  // pattern observations, not a supplier-vs-bol comparison
+  const wcPanel=document.getElementById('wcPanel');
+  if(result.type==='ORDRSP'||result.type==='DESADV'){
+    const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToFactsSource('sup',${jsQuote(v)})`)
+      +worthCheckingHtml('Bol',wcBol,v=>`jumpToFactsSource('bol',${jsQuote(v)})`);
+    if(wcHtml){wcPanel.classList.remove('hidden');document.getElementById('wcBody').innerHTML=wcHtml;}
+    else wcPanel.classList.add('hidden');
+  }else wcPanel.classList.add('hidden');
+
+  // "Copy for Transus" — a plain, non-technical report limited to findings
+  // that reflect the supplier → bol mapping itself (cat 'diff'), since those
+  // are the only ones worth asking Transus to look into. Built in both
+  // languages up front so switching the toggle afterwards is instant.
+  const transusCtx=`${result.type||'EDI'} ${bol.docNumber||sup.docNumber||''}`.trim();
+  lastTransusTextEn=buildTransusText(result.findings,transusCtx,'en');
+  lastTransusTextNl=buildTransusText(result.findings,transusCtx,'nl');
+  const eanText=buildEanListText(result.rows.map(r=>r.gtin));
+  document.getElementById('eanBlockArea').innerHTML=eanBlockHtml(eanText);
+  syncLangSwitchUI();
+
   // line table
   const isO=result.type==='ORDRSP';
   lastLineRows={isO,rows:result.rows};
@@ -2478,7 +3063,11 @@ function render(result,bol,sup,notes){
       h+=palletOverviewHtml('Supplier',sup,palletsBySSCC(bol),'sup');
       h+=palletOverviewHtml('bol',bol,palletsBySSCC(sup),'bol');
     }
-    document.getElementById('ssccBody').innerHTML=h;}
+    document.getElementById('ssccBody').innerHTML=h;
+    const totalPallets=(sup.pallets?sup.pallets.length:0)+(bol.pallets?bol.pallets.length:0);
+    document.getElementById('palletFilterToggle').checked=totalPallets>20;
+    renderPalletFilter();
+  }
   else document.getElementById('ssccPanel').classList.add('hidden');
 
   renderRawEdifact(sup,'rawSup');renderRawEdifact(bol,'rawBol');
@@ -2495,6 +3084,50 @@ document.getElementById('actionToggle').addEventListener('change',e=>{
 });
 
 document.getElementById('lineFilterToggle').addEventListener('change',renderLineTable);
+
+/* Mirrors the line-comparison "Only show differences" toggle: when a pallet
+   overview has many entries (checked by default above 20, same threshold as
+   the line table), hide the ones that already match so a systemic mismatch
+   doesn't bury itself under dozens of "Match" pallets nobody needs to open. */
+function renderPalletFilter(){
+  const onlyDiff=document.getElementById('palletFilterToggle').checked;
+  const lists=[...document.querySelectorAll('#ssccBody .pallet-list')];
+  let totalDets=0,totalHidden=0;
+  lists.forEach(list=>{
+    const dets=[...list.querySelectorAll('.pallet-det')];
+    let hiddenHere=0;
+    dets.forEach(d=>{
+      const show=!onlyDiff||d.dataset.status!=='ok';
+      d.classList.toggle('hidden',!show);
+      if(!show)hiddenHere++;
+    });
+    totalDets+=dets.length;totalHidden+=hiddenHere;
+    // Without this, a side where every pallet matches would show its
+    // "Supplier/bol — pallet overview (N)" heading followed by nothing at
+    // all once filtered — reads as broken rather than "nothing to review".
+    let placeholder=list.querySelector('.pallet-list-empty');
+    if(onlyDiff&&dets.length&&hiddenHere===dets.length){
+      if(!placeholder){
+        placeholder=document.createElement('div');
+        placeholder.className='pallet-list-empty empty-state';
+        list.appendChild(placeholder);
+      }
+      placeholder.textContent=`All ${dets.length} pallets here match — nothing to review.`;
+    }else if(placeholder){
+      placeholder.remove();
+    }
+  });
+  const note=document.getElementById('palletFilterNote');
+  if(!totalDets){note.innerHTML='';return;}
+  if(onlyDiff&&totalHidden===totalDets){
+    note.innerHTML=`All ${totalDets} pallets match — nothing to review here. Toggle off to see them all.`;
+  }else if(totalHidden>0){
+    note.innerHTML=`Showing ${totalDets-totalHidden} of ${totalDets} pallets (${totalHidden} matching pallet${totalHidden===1?'':'s'} hidden).`;
+  }else{
+    note.innerHTML='';
+  }
+}
+document.getElementById('palletFilterToggle').addEventListener('change',renderPalletFilter);
 
 /* =====================================================================
    INVOIC — rendering of the comparison
@@ -2515,6 +3148,142 @@ function buildReportText(title,findings,extra){
   });
   return lines.join('\n');
 }
+/* "Copy for Transus" — a short, plain-language report limited to findings
+   that reflect the supplier → bol mapping itself (cat 'diff', excluding
+   'ok'). Message-structure observations (cat 'message') and "Worth checking"
+   notices are deliberately left out: those aren't necessarily a Transus
+   mapping question. ECHO never states this IS a Transus error — only that
+   a difference was noticed and asks for a check, since it can't know for
+   certain whose issue it is. Returns '' when there's nothing to report.
+
+   Kept deliberately short: this is meant to be pasted into a support portal,
+   not read as a technical log. Long, itemized findings (e.g. every missing
+   EAN on a pallet, one per line) get reduced to their headline claim, and
+   the whole list is capped — a handful of concrete pointers plus a nudge to
+   the full report reads far less like a robot than every finding verbatim.
+
+   lang picks the wrapper language (greeting/explanation/closing) only — the
+   individual finding lines themselves stay in English regardless, since
+   they're generated once and shared with the Findings panel and "Copy
+   report" everywhere else in the tool; maintaining a fully separate Dutch
+   version of every possible finding sentence (qty diffs, pallet-collapse
+   summaries, action-code notes, …) would mean two parallel copies of that
+   entire text-generation layer for comparatively little benefit, since the
+   EANs/SSCCs/numbers in each line don't need translating anyway. */
+function transusShorten(text){
+  const MAX=200;
+  if(text.length<=MAX)return text;
+  // most itemized findings put the headline claim before an em dash and the
+  // EAN-by-EAN enumeration after it ("SSCC X: Pallet mapping differs — item
+  // EAN ... missing; item EAN ... missing; and 9 more.") — Transus doesn't
+  // need that list to start looking, so keep just the claim.
+  const dashIdx=text.indexOf(' — ');
+  let short=dashIdx>10?text.slice(0,dashIdx)+'.':text;
+  if(short.length>MAX)short=short.slice(0,MAX-1).trim()+'…';
+  return short;
+}
+const TRANSUS_WRAP={
+  en:{greet:'Hi Transus,',
+    intro:ctx=>`We noticed the following possible mapping difference(s) between the supplier message and the bol output${ctx?' ('+ctx+')':''}. Could you please take a look?`,
+    more:n=>`- …and ${n} more difference(s) — see ECHO's full report ("Copy report") for the complete list.`,
+    close:'Thanks!'},
+  nl:{greet:'Hoi Transus,',
+    intro:ctx=>`We zien de volgende mogelijke mapping-verschillen tussen het leveranciersbericht en de bol-output${ctx?' ('+ctx+')':''}. Zou je dit kunnen checken? (De onderstaande details staan in het Engels.)`,
+    more:n=>`- …en nog ${n} verschil(len) — zie ECHO's volledige rapport ("Copy report") voor de complete lijst.`,
+    close:'Alvast bedankt!'}
+};
+function buildTransusText(findings,context,lang){
+  const wrap=TRANSUS_WRAP[lang]||TRANSUS_WRAP.en;
+  const relevant=findings.filter(f=>(f.cat||'diff')==='diff'&&(f.level==='err'||f.level==='warn'));
+  if(!relevant.length)return '';
+  const order={err:0,warn:1};
+  const CAP=6;
+  const sorted=[...relevant].sort((a,b)=>order[a.level]-order[b.level]);
+  const shown=sorted.slice(0,CAP),rest=sorted.length-shown.length;
+  const lines=[];
+  lines.push(wrap.greet);
+  lines.push('');
+  lines.push(wrap.intro(context));
+  lines.push('');
+  shown.forEach(f=>lines.push('- '+transusShorten(stripHtml(f.text))));
+  if(rest>0)lines.push(wrap.more(rest));
+  lines.push('');
+  lines.push(wrap.close);
+  return lines.join('\n');
+}
+
+/* ---- Copy for Transus: a plain button (matching "Copy report") plus a
+   small, persisted EN/NL switch — deliberately NOT a separate preview panel,
+   that felt like overkill for what's meant to be a quick clipboard action. */
+let transusLang=(function(){try{return localStorage.getItem('echo_transus_lang')||'en';}catch(e){return 'en';}})();
+let lastTransusTextEn='',lastTransusTextNl='';
+function currentTransusText(){return transusLang==='nl'?lastTransusTextNl:lastTransusTextEn;}
+function setTransusLang(lang){
+  transusLang=lang;
+  try{localStorage.setItem('echo_transus_lang',lang);}catch(e){}
+  syncLangSwitchUI();
+}
+function syncLangSwitchUI(){
+  document.querySelectorAll('.lang-switch .lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===transusLang));
+  document.querySelectorAll('.transus-copy-btn').forEach(b=>b.disabled=!currentTransusText());
+}
+function copyTransusClick(btn){
+  const text=currentTransusText();
+  if(!text){cSetStatus('Nothing to report to Transus — no mapping differences were found.');return;}
+  copyTextToClipboard(text,btn);
+}
+async function copyIconClick(text,btn){
+  if(!text)return;
+  try{await navigator.clipboard.writeText(text);}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e2){}document.body.removeChild(ta);
+  }
+  if(btn){
+    // Capture the true original label exactly once, in a data attribute —
+    // reading btn.innerHTML fresh on every click meant a second click while
+    // still showing "✓" (i.e. within the 1.4s window) would capture "✓" as
+    // the "original" and the button would get stuck showing it forever.
+    if(btn.dataset.origLabel===undefined)btn.dataset.origLabel=btn.innerHTML;
+    btn.textContent='✓';btn.classList.add('copied');
+    clearTimeout(btn.__resetTimer);
+    btn.__resetTimer=setTimeout(()=>{btn.innerHTML=btn.dataset.origLabel;btn.classList.remove('copied');},1400);
+  }
+}
+/* quick, copy-pasteable list of every distinct EAN in view — handy for a
+   bulk lookup elsewhere. Numbers only, one per line: nothing here needs
+   translating, so no language switch. Shared by Quick Check (one message)
+   and Compare (both sides) alike — same small block either way. */
+function buildEanListText(gtins){
+  const uniq=[...new Set(gtins.filter(Boolean))].sort();
+  return uniq.join('\n');
+}
+function eanBlockHtml(eanText){
+  return `<div class="code-preview-panel">
+    <div class="toggle-bar">
+      <h2>EAN overview (${eanText?eanText.split('\n').length:0})</h2>
+    </div>
+    <details class="code-details">
+      <summary>Show preview</summary>
+      <div class="code-box">
+        <div class="code-box-bar"><button type="button" class="icon-copy-btn" title="Copy" ${eanText?'':'disabled'} onclick="copyIconClick(${jsQuote(eanText)},this)">📋 Copy</button></div>
+        <pre>${esc(eanText||'No EANs found in this message.')}</pre>
+      </div>
+    </details>
+  </div>`;
+}
+
+/* ---- "enlarge" toggle for the Show original messages raw-message pair.
+   Both blocks are already shown side by side (the existing grid), this just
+   gives the (usually cramped, 340px-tall) code panes much more room to read
+   without leaving the page — a plain max-height transition on the existing
+   container, not a separate modal/overlay, so it stays simple. */
+function toggleRawEnlarge(colsId,btn){
+  const cols=document.getElementById(colsId);
+  if(!cols)return;
+  const on=cols.classList.toggle('enlarged');
+  if(btn)btn.textContent=on?'⤡ Shrink':'⤢ Enlarge';
+}
 /* short, high-level accept/cancel/backorder summary — separate from the full
    findings report, meant to be pasted straight into a chat message */
 function buildActionSummaryText(title,matrix,backorderLines){
@@ -2522,10 +3291,10 @@ function buildActionSummaryText(title,matrix,backorderLines){
   lines.push('ECHO summary — '+title);
   lines.push(`Accept: ${matrix.accept} lines`);
   lines.push(`Cancel: ${matrix.cancel} lines`);
-  lines.push(`Backorder: ${matrix.backorder} lines`);
+  lines.push(`Amendment: ${matrix.backorder} lines`);
   if(backorderLines&&backorderLines.length){
     lines.push('');
-    lines.push('Backorder detail:');
+    lines.push('Amendment detail:');
     backorderLines.forEach(l=>lines.push(`- ${l.label}${l.qty!==undefined&&l.qty!==null&&l.qty!==''?': qty '+l.qty:''}`));
   }
   return lines.join('\n');
@@ -2537,7 +3306,15 @@ async function copyTextToClipboard(text,btn){
     const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
     document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e2){}document.body.removeChild(ta);
   }
-  if(btn){const t=btn.textContent;btn.textContent='Copied. Ready to share. ✓';setTimeout(()=>{btn.textContent=t;},1600);}
+  if(btn){
+    // Same fix as copyIconClick: cache the true original label once, don't
+    // re-read it live (a quick second click would otherwise capture "Copied.
+    // Ready to share. ✓" as the "original" and get stuck showing it forever).
+    if(btn.dataset.origLabel===undefined)btn.dataset.origLabel=btn.textContent;
+    btn.textContent='Copied. Ready to share. ✓';
+    clearTimeout(btn.__resetTimer);
+    btn.__resetTimer=setTimeout(()=>{btn.textContent=btn.dataset.origLabel;},1600);
+  }
 }
 async function copyReport(btn){return copyTextToClipboard(lastReportText,btn);}
 
@@ -2594,7 +3371,11 @@ function renderInvoiceRawSide(inv,elId){
 /* veilige js-stringliteral binnen een dubbel-aangehaald HTML-attribuut */
 function jsQuote(v){
   const raw=String(v===null||v===undefined?'':v);
-  const jsEsc=raw.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  // Escape backslashes/quotes first, then actual newlines/carriage returns —
+  // a real line break inside a single-quoted JS string literal is a syntax
+  // error, which silently broke any onclick built from multi-line text (e.g.
+  // the EAN overview's copy button) until this was caught in testing.
+  const jsEsc=raw.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r\n|\r|\n/g,'\\n');
   const htmlSafe=jsEsc.replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   return "'"+htmlSafe+"'";
 }
@@ -2633,22 +3414,52 @@ function invRawSetHint(msg){
   const el=document.getElementById('invRawHint');
   if(el)el.textContent=msg||'';
 }
+/* Repeated-value navigation: when a clicked value (EAN, SSCC, order ref, …)
+   occurs more than once in the raw source, keep the list of matching rows so
+   the small "‹ 1 / 4 ›" badge next to each raw-message header can step through
+   every occurrence instead of only ever jumping to the first one. Keyed per
+   container, since supplier and bol are scrolled independently. */
+const matchNavState={};
+function hideMatchNav(containerId){
+  matchNavState[containerId]=null;
+  const badge=document.getElementById('nav-'+containerId);
+  if(badge)badge.classList.add('hidden');
+}
+function showMatch(containerId){
+  const st=matchNavState[containerId];
+  const badge=document.getElementById('nav-'+containerId);
+  if(!st||!st.rows.length){if(badge)badge.classList.add('hidden');return;}
+  const row=st.rows[st.idx];
+  row.scrollIntoView({behavior:'smooth',block:'center'});
+  row.classList.add('src-hl');
+  setTimeout(()=>row.classList.remove('src-hl'),2200);
+  if(badge){
+    const cnt=badge.querySelector('.nav-count');
+    if(cnt)cnt.textContent=(st.idx+1)+' / '+st.rows.length;
+    badge.classList.toggle('hidden',st.rows.length<=1);
+    badge.title=`This value appears ${st.rows.length} times in the raw message — use ‹ › to step through each one.`;
+  }
+}
+function stepMatch(containerId,dir){
+  const st=matchNavState[containerId];
+  if(!st||!st.rows.length)return;
+  st.idx=(st.idx+dir+st.rows.length)%st.rows.length;
+  showMatch(containerId);
+}
 /* generic "find a line containing this text inside a rendered raw-message
    container, scroll to it, and flash it" — shared by INVOIC, DESADV/ORDRSP
    compare, and Quick Check jump-to-source links. Returns the match count. */
 function genericFindAndFlash(containerId,text){
   const container=document.getElementById(containerId);
-  if(!container||!container.children.length)return 0;
+  if(!container||!container.children.length){hideMatchNav(containerId);return 0;}
   const cands=invSearchCandidates(text);
-  if(!cands.length)return 0;
+  if(!cands.length){hideMatchNav(containerId);return 0;}
   const rows=[...container.children];
   let matches=[];
   for(const c of cands){matches=rows.filter(r=>r.textContent.includes(c));if(matches.length)break;}
-  if(!matches.length)return 0;
-  const target=matches[0];
-  target.scrollIntoView({behavior:'smooth',block:'center'});
-  target.classList.add('src-hl');
-  setTimeout(()=>target.classList.remove('src-hl'),2200);
+  if(!matches.length){hideMatchNav(containerId);return 0;}
+  matchNavState[containerId]={rows:matches,idx:0};
+  showMatch(containerId);
   return matches.length;
 }
 function invRawFindAndFlash(side,text){
@@ -2656,7 +3467,6 @@ function invRawFindAndFlash(side,text){
   if(!pair||!pair[side])return false;
   const elId=side==='sup'?'invRawSup':'invRawBol';
   const n=genericFindAndFlash(elId,text);
-  if(n>1)invRawSetHint(`${n} possible matches found for "${text}" — showing the first.`);
   return n>0;
 }
 function jumpToInvSource(side,text){
@@ -2699,8 +3509,22 @@ function renderInvoiceCompare(res,notes){
     err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences in invoice details, lines, charges or totals. See findings.'}};
   const v=vmap[res.verdict];
 
+  /* "Worth checking" — computed here (rather than further below) so both the
+     signal reaction/quip and the panel further down can reuse it. */
+  const wcSup=detectWorthChecking(res.sup.lines,wcConfigInvoic());
+  const wcBol=detectWorthChecking(res.bol.lines,wcConfigInvoic());
+  const hasWC=wcSup.length>0||wcBol.length>0;
+  echoSignalReact(echoReactionFor(res.verdict,hasWC));
+
+  // Copy for Transus (both languages) + quick EAN overview — computed up
+  // front so the HTML string below can just call copyBlocksHtml().
+  const transusCtx=`INVOIC ${res.sup.number||''}`.trim();
+  lastTransusTextEn=buildTransusText(res.findings,transusCtx,'en');
+  lastTransusTextNl=buildTransusText(res.findings,transusCtx,'nl');
+  const eanText=buildEanListText(res.rows.map(r=>r.gtin));
+
   let h='';
-  h+=`<div class="verdict ${res.verdict}"><div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div></div></div>`;
+  h+=`<div class="verdict ${res.verdict}"><div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(res.verdict,hasWC)}</div></div>`;
 
   /* statistics */
   const st=res.stats;
@@ -2723,20 +3547,27 @@ function renderInvoiceCompare(res,notes){
   h+=`<div class="panel"><h2>Findings</h2><ul class="findings">`;
   const clsOf={err:'f-err',warn:'f-warn',ok:'f-ok',info:'f-info'};
   h+=fs.map(f=>`<li class="${clsOf[f.level]||''}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
-  h+=`</ul><div class="actions"><button class="btn" id="invCopyReport">Copy report</button></div></div>`;
+  h+=`</ul><div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
+
+  /* "Worth checking" panel — sup/bol observations were already computed above */
+  const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
+    +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
+  if(wcHtml)h+=`<div class="panel"><h2 title="ECHO noticed something unusual — not necessarily wrong.">Worth checking 👁</h2><div class="wc-list">${wcHtml}</div></div>`;
 
   /* header */
   h+=`<div class="panel"><h2>Invoice details</h2><div class="inv-scroll"><table class="inv">
     <tr><th>Field</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
   h+=res.hdr.map(r=>{
-    const pill=r.status==='ok'?'<span class="pill ok">Match</span>':(r.status==='diff'?'<span class="pill err">Difference</span>':'<span class="pill warn">Info</span>');
+    const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillInfo());
     const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)'));
     const isOrderRow=r.label==='Order(s)';
     const supTxt=r.sup??'—',bolTxt=r.bol??'—';
     const supFirst=String(r.sup??'').split(',')[0].trim(),bolFirst=String(r.bol??'').split(',')[0].trim();
     const supSpan=(clickable&&r.sup)?`<span class="s clickable-val" onclick="jumpToInvSource('sup',${jsQuote(supFirst)})">${esc(supTxt)}</span>${isOrderRow?purpleLink(supFirst):''}`:`<span class="s">${esc(supTxt)}</span>`;
     const bolSpan=(clickable&&r.bol)?`<span class="b clickable-val" onclick="jumpToInvSource('bol',${jsQuote(bolFirst)})">${esc(bolTxt)}</span>${isOrderRow?purpleLink(bolFirst):''}`:`<span class="b">${esc(bolTxt)}</span>`;
-    return `<tr><td>${esc(r.label)}</td><td class="mono">${supSpan}</td><td class="mono">${bolSpan}</td><td>${pill}</td></tr>`;
+    const isPackRow=r.label==='Packing reference(s)';
+    const copyBtn=(isOrderRow||isPackRow)?`<button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(r.sup||r.bol||'')},this)">📋</button>`:'';
+    return `<tr><td>${esc(r.label)}${copyBtn}</td><td class="mono">${supSpan}</td><td class="mono">${bolSpan}</td><td>${pill}</td></tr>`;
   }).join('');
   h+=`</table></div></div>`;
 
@@ -2760,7 +3591,7 @@ function renderInvoiceCompare(res,notes){
       const bolSpan=(c.bol!==null&&c.bol!==undefined)?`<span class="b clickable-val" onclick="jumpToInvSource('bol',${jsQuote(c.bol)})">${esc(c.bol)}</span>`:`<span class="b">—</span>`;
       return `<span class="${cl}">${esc(c.label)}: ${supSpan}${supScopeTxt} → ${bolSpan}${bolScopeTxt}</span>`;
     }).join('<br>');
-    const pill=r.status==='ok'?'<span class="pill ok">Match</span>':'<span class="pill err">Difference</span>';
+    const pill=r.status==='ok'?pillMatch():pillDiff();
     const gtinTd=r.gtin?`<td class="mono"><span class="clickable-val" onclick="jumpToInvSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}</td>`:`<td class="mono">—</td>`;
     return `<tr class="${cls}">${gtinTd}<td class="mono">${esc(r.art||'—')}</td><td class="desc">${esc(r.desc||'')}</td><td class="cmp-cell">${cellTxt}</td><td>${pill}</td></tr>`;
   }).join('');
@@ -2771,7 +3602,7 @@ function renderInvoiceCompare(res,notes){
     h+=`<div class="panel"><h2>Charges &amp; allowances</h2><div class="inv-scroll"><table class="inv">
       <tr><th>Type</th><th>Code</th><th>Description</th><th>Level</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.chargeRows.map(c=>{
-      const pill=c.status==='ok'?'<span class="pill ok">Match</span>':'<span class="pill err">Difference</span>';
+      const pill=c.status==='ok'?pillMatch():pillDiff();
       return `<tr><td>${c.kind==='charge'?'Charge':'Allowance'}</td><td class="mono">${esc(c.code||'—')}</td><td class="desc">${esc(c.desc||'')}</td><td>${c.level==='line'?'line level':'message level'}</td>
         <td class="num"><span class="s">${esc(fmtAmt(c.sup,cur)??'—')}</span></td><td class="num"><span class="b">${esc(fmtAmt(c.bol,cur)??'—')}</span></td><td>${pill}</td></tr>`;
     }).join('');
@@ -2783,7 +3614,7 @@ function renderInvoiceCompare(res,notes){
     h+=`<div class="panel"><h2>Totals</h2><div class="inv-scroll"><table class="inv">
       <tr><th>Total</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.totRows.map(r=>{
-      const pill=r.status==='ok'?'<span class="pill ok">Match</span>':(r.status==='diff'?'<span class="pill err">Difference</span>':'<span class="pill warn" title="This total isn\'t sent on one side, so it can\'t be compared.">Not applicable</span>');
+      const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillNA("This total isn't sent on either side at all, so there's nothing to compare."));
       const supTxt=fmtAmt(r.sup,cur),bolTxt=fmtAmt(r.bol,cur);
       const supSpan=supTxt?`<span class="s clickable-val" onclick="jumpToInvSource('sup',${jsQuote(supTxt)})">${esc(supTxt)}</span>`:`<span class="s">—</span>`;
       const bolSpan=bolTxt?`<span class="b clickable-val" onclick="jumpToInvSource('bol',${jsQuote(bolTxt)})">${esc(bolTxt)}</span>`:`<span class="b">—</span>`;
@@ -2802,9 +3633,10 @@ function renderInvoiceCompare(res,notes){
   /* original source messages (EDIFACT segment-per-line / neatly indented XML) */
   h+=`<details class="inv-det" id="invRawDetails"><summary>Show original messages</summary>
     <div class="note-inline" id="invRawHint"></div>
-    <div class="raw-cols">
-      <div class="raw-box sup"><div class="rh">SUPPLIER</div><div class="raw-lines" id="invRawSup"></div></div>
-      <div class="raw-box bol"><div class="rh">BOL</div><div class="raw-lines" id="invRawBol"></div></div>
+    <div class="raw-toolbar"><button type="button" class="enlarge-btn" onclick="toggleRawEnlarge('invRawCols',this)">⤢ Enlarge</button></div>
+    <div class="raw-cols" id="invRawCols">
+      <div class="raw-box sup"><div class="rh"><span>SUPPLIER</span><span class="match-nav hidden" id="nav-invRawSup"><button type="button" onclick="event.stopPropagation();stepMatch('invRawSup',-1)">‹</button><span class="nav-count"></span><button type="button" onclick="event.stopPropagation();stepMatch('invRawSup',1)">›</button></span></div><div class="raw-lines" id="invRawSup"></div></div>
+      <div class="raw-box bol"><div class="rh"><span>BOL</span><span class="match-nav hidden" id="nav-invRawBol"><button type="button" onclick="event.stopPropagation();stepMatch('invRawBol',-1)">‹</button><span class="nav-count"></span><button type="button" onclick="event.stopPropagation();stepMatch('invRawBol',1)">›</button></span></div><div class="raw-lines" id="invRawBol"></div></div>
     </div></details>`;
 
   box.innerHTML=h;
@@ -2815,6 +3647,9 @@ function renderInvoiceCompare(res,notes){
     `Invoice ${res.sup.number||'?'} — supplier: ${res.stats.srcSup}, bol: ${res.stats.srcBol}`);
   const cb=document.getElementById('invCopyReport');
   if(cb)cb.addEventListener('click',()=>copyReport(cb));
+  const ctb=document.getElementById('invCopyTransus');
+  if(ctb)ctb.addEventListener('click',()=>copyTransusClick(ctb));
+  syncLangSwitchUI();
   if(typeof box.scrollIntoView==='function')box.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
@@ -2828,7 +3663,26 @@ function cRefresh(){document.getElementById('compareBtn').disabled=!(cstate.bol&
     if(t){badge.textContent='Type: '+t;badge.classList.remove('hidden');}else badge.classList.add('hidden');
   }
   else badge.classList.add('hidden');}
-function cSetSide(side,name,text){cstate[side]={name,text};const drop=document.getElementById(side==='bol'?'dropBol':'dropSup');document.getElementById(side==='bol'?'fnameBol':'fnameSup').textContent=name;document.getElementById(side==='bol'?'fnameBol':'fnameSup').classList.remove('hidden');document.getElementById(side==='bol'?'clearBol':'clearSup').classList.remove('hidden');drop.classList.add('loaded');cRefresh();}
+function cSetSide(side,name,text){
+  // A genuinely new/different file landing on either side makes whatever
+  // comparison is currently shown stale — hide it immediately rather than
+  // leaving old findings on screen looking like they still apply. The ZIP
+  // flow re-runs the comparison right after both sides are set anyway; the
+  // manual two-file flow still waits for Compare, but at least never shows
+  // a stale result in the meantime.
+  const changed=!cstate[side]||cstate[side].text!==text||cstate[side].name!==name;
+  cstate[side]={name,text};
+  if(changed){
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('invoiceResults').classList.add('hidden');
+  }
+  const drop=document.getElementById(side==='bol'?'dropBol':'dropSup');
+  document.getElementById(side==='bol'?'fnameBol':'fnameSup').textContent=name;
+  document.getElementById(side==='bol'?'fnameBol':'fnameSup').classList.remove('hidden');
+  document.getElementById(side==='bol'?'clearBol':'clearSup').classList.remove('hidden');
+  drop.classList.add('loaded');drop.classList.remove('pulse');void drop.offsetWidth;drop.classList.add('pulse');setTimeout(()=>drop.classList.remove('pulse'),600);
+  cRefresh();
+}
 function cClearSide(side){cstate[side]=null;const drop=document.getElementById(side==='bol'?'dropBol':'dropSup');document.getElementById(side==='bol'?'fnameBol':'fnameSup').classList.add('hidden');document.getElementById(side==='bol'?'clearBol':'clearSup').classList.add('hidden');drop.classList.remove('loaded');cRefresh();}
 
 ['bol','sup'].forEach(side=>{
@@ -2843,12 +3697,13 @@ function cClearSide(side){cstate[side]=null;const drop=document.getElementById(s
 document.getElementById('clearBol').addEventListener('click',()=>cClearSide('bol'));
 document.getElementById('clearSup').addEventListener('click',()=>cClearSide('sup'));
 
+const ZIP_LOADING_LINES=['Unpacking ZIP…','Untangling EDI spaghetti…','Reading the messages…','Looking for the important bits…','Making sense of the alphabet soup…'];
 async function handleZip(file){
   if(typeof JSZip==='undefined'){
     cSetStatus('ZIP import isn\u2019t available right now (the ZIP library couldn\u2019t be loaded). Drop the two files separately below instead — that works fully offline.',true);
     return;
   }
-  cSetStatus('Unpacking ZIP…');
+  cSetStatus(ZIP_LOADING_LINES[Math.floor(Math.random()*ZIP_LOADING_LINES.length)]);
   try{
     const zip=await JSZip.loadAsync(file);const entries=[];
     zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))entries.push({path,entry});});
@@ -2860,6 +3715,7 @@ async function handleZip(file){
     const bolText=await bolE.entry.async('string');const supText=await supE.entry.async('string');
     cSetSide('bol',bolE.path.split('/').pop(),bolText);cSetSide('sup',supE.path.split('/').pop(),supText);
     cSetStatus('ZIP loaded. Bol ↔ supplier assigned automatically.');
+    runCompare();
   }catch(err){cSetStatus('Couldn\u2019t read the ZIP: '+err.message,true);}
 }
 const zipDrop=document.getElementById('zipDrop'),zipInput=document.getElementById('zipInput');
@@ -2869,9 +3725,13 @@ zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
 zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');const f=e.dataTransfer.files[0];if(f)handleZip(f);});
 zipInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)handleZip(f);e.target.value='';});
 
-document.getElementById('compareBtn').addEventListener('click',()=>{
+function runCompare(){
   if(!cstate.bol||!cstate.sup){cSetStatus('Load both messages first.',true);return;}
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
+  if(tSup==='ORDERS'||tBol==='ORDERS'){
+    cSetStatus("Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.",true);
+    return;
+  }
   const isInvoice=(tSup==='INVOIC'||tBol==='INVOIC');
 
   if(isInvoice){
@@ -2924,8 +3784,9 @@ document.getElementById('compareBtn').addEventListener('click',()=>{
   }catch(err){
     cSetStatus('Error comparing the messages: '+err.message,true);
   }
-});
-document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';cSetStatus('Ready when you are. Add both messages and let ECHO compare the available business data.');});
+}
+document.getElementById('compareBtn').addEventListener('click',runCompare);
+document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus('Two messages. One question: did the important stuff make it through? Add both below to find out.');});
 
 </script>
 </body>
