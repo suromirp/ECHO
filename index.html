@@ -48,8 +48,9 @@
      short, non-looping animation, fully disabled under
      prefers-reduced-motion (see override further down). */
   .echo-signal-wrap{position:relative;display:inline-flex;align-items:center;flex:none;}
-  .echo-signal{width:30px;height:19px;color:var(--true-blue-reg);cursor:pointer;overflow:visible;flex:none;transition:color .15s;}
+  .echo-signal{width:30px;height:19px;color:var(--true-blue-reg);cursor:pointer;overflow:visible;flex:none;transition:color .15s;-webkit-tap-highlight-color:transparent;}
   .echo-signal:hover{color:var(--true-blue-bold);}
+  .echo-signal:focus{outline:none;}
   .echo-signal:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px;}
   .echo-signal .arc{transform-origin:32px 20px;transform-box:fill-box;}
   .echo-signal .node{transform-origin:32px 20px;transform-box:fill-box;}
@@ -311,6 +312,7 @@
   .field{background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:9px 12px;}
   .field .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);margin-bottom:3px;}
   .field .v{font-family:var(--mono);font-size:13.5px;color:var(--text);word-break:break-word;}
+  .dim{color:var(--text-dim);}
   .field .v .dim{color:var(--text-dim);font-size:11.5px;}
   .party-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
   .party{background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;}
@@ -339,6 +341,7 @@
   .cmp-yes{color:var(--ok);}.cmp-no{color:var(--err);font-weight:700;}.cmp-info{color:var(--text-dim);}
   td.cmp-cell .s{color:var(--elem);}td.cmp-cell .b{color:var(--tag);}
   .note-inline{font-size:12px;color:var(--text-dim);line-height:1.5;margin:2px 0 10px;}
+  .panel-intro{font-size:12px;color:var(--text-dim);line-height:1.5;margin:2px 0 12px;}
 </style>
 </head>
 <body>
@@ -631,10 +634,11 @@ let pendingEyeReaction=null;
 function echoSignalReact(kind){
   const el=document.getElementById('echoSignal');
   if(!el||!kind)return;
+  clearTimeout(el.__animResetTimer);
   el.classList.remove('anim-blink','anim-widen','anim-squint','anim-look');
   void el.offsetWidth; // restart the animation even if the same kind fires twice in a row
   el.classList.add('anim-'+kind);
-  setTimeout(()=>el.classList.remove('anim-'+kind),900);
+  el.__animResetTimer=setTimeout(()=>el.classList.remove('anim-'+kind),900);
 }
 /* Turns a result into a reaction. err beats everything (something clearly
    differs); a "Worth checking" observation beats a plain warn; anything
@@ -673,6 +677,41 @@ function quipHtml(level,hasWorthChecking){
   return q?`<div class="verdict-quip">${esc(q)}</div>`:'';
 }
 
+/* Generic "pick one, never the same one twice in a row" rotator — used for
+   every small alternating bit of copy below (copy confirmations, empty-state
+   prompts, the ORDERS block message) so they stay a nice surprise instead of
+   always showing the exact same line. */
+function makeRotator(pool){
+  let last=null;
+  return function(){
+    if(pool.length<=1)return pool[0]||'';
+    let choice=pool[Math.floor(Math.random()*pool.length)];
+    if(choice===last){const alt=pool.filter(q=>q!==last);choice=alt[Math.floor(Math.random()*alt.length)];}
+    last=choice;
+    return choice;
+  };
+}
+const pickCopyConfirmation=makeRotator([
+  'Copied. Ready to share. ✓','Copied. Go forth. ✓','On the clipboard now. ✓',
+  'Copied — paste away. ✓',"Done. It's yours now. ✓"
+]);
+const pickCompareIntro=makeRotator([
+  'Two messages. One question: did the important stuff make it through? Add both below to find out.',
+  'Supplier said one thing. Bol said... let\'s find out.',
+  'Drop both sides in below — ECHO will do the comparing.',
+  'One supplier message, one bol output. Let\'s see how well they agree.'
+]);
+const pickQuickIntro=makeRotator([
+  '<strong>ECHO is listening.</strong><br>Drop a message here to start inspecting.',
+  '<strong>One message, no drama yet.</strong><br>Drop it here to start inspecting.',
+  '<strong>Paste or drop a message below.</strong><br>ECHO will take a look.'
+]);
+const pickOrdersBlockMsg=makeRotator([
+  "Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as it does going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.",
+  "ECHO could learn ORDERS, sure. But nothing gets transformed on the way in — so there's nothing to catch. Filed under: not worth it.",
+  "An ORDERS message in, an ORDERS message... still there. No transformation, no mismatch, no job for ECHO here."
+]);
+
 /* Easter egg: the signal mark reacts to every click (small immediate
    reward), but only shows a message after a short burst of clicks — so
    casual clicks never accidentally reveal it, and it resets after a pause
@@ -686,7 +725,11 @@ const ECHO_EASTER_EGGS=[
   "Somewhere, a qualifier is being misunderstood.","The SSCCs know what they did.",
   "I saw that duplicate EAN too.","CPS is watching.","This segment has been inspected enough.",
   "Please stop poking the signal.","Still no new EDIFACTs?",
-  "Deepest Dive unlocked. Unfortunately, it's still EDIFACT."
+  "Deepest Dive unlocked. Unfortunately, it's still EDIFACT.",
+  "Every SSCC dreams of being scanned just once.","GIN+BJ. Say it out loud. It still doesn't help.",
+  "Somewhere, a QTY+83 is lying about being zero.","The delimiters are fine. You're the variable here.",
+  "This tool has seen things. Mostly UNH segments.","Your patience qualifier: exceeded.",
+  "Next Transus outage — place your bets."
 ];
 let eggLastIdx=-1;
 function pickEasterEgg(){
@@ -768,7 +811,7 @@ function quickFormat(){
       const facts=parseFacts(raw);
       ovHtml=`<div class="panel"><h2>Overview</h2>${factsOverviewHtml(facts)}</div>`;
     }else if(msgType==='ORDERS'){
-      ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as it does going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.</div></div>`;
+      ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">${esc(pickOrdersBlockMsg())}</div></div>`;
     }else if(msgType){
       ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Message type <strong>${esc(msgType)}</strong> isn't supported as a business overview yet. The original message is shown below.</div></div>`;
     }else{
@@ -840,7 +883,7 @@ document.getElementById('quickFileInput').addEventListener('change',e=>{
 document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickInput').value='';
   document.getElementById('quickOverview').innerHTML='';
-  document.getElementById('quickOutput').innerHTML='<div class="empty-state"><strong>ECHO is listening.</strong><br>Drop a message here to start inspecting.</div>';
+  document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
 });
 document.getElementById('quickCopyBtn').addEventListener('click',async()=>{
@@ -860,6 +903,10 @@ function showTab(which){
 document.getElementById('tabQuickBtn').addEventListener('click',()=>showTab('quick'));
 document.getElementById('tabCompareBtn').addEventListener('click',()=>showTab('compare'));
 showTab('compare');
+// Give the two starting empty states the same chance at variety a reset/clear
+// gets, instead of always showing the first pool entry until first interaction.
+document.getElementById('compareStatus').textContent=pickCompareIntro();
+document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
 
 /* ================= COMPARE: fact extraction ================= */
 const ACTION_NAME={'2':'Cancelled','5':'Accepted','6':'Accepted w/ amendment'};
@@ -868,12 +915,22 @@ const ACTION_NAME={'2':'Cancelled','5':'Accepted','6':'Accepted w/ amendment'};
    professional can look it up further if needed. */
 const ACTION_TOOLTIP={
   '5':'Line fully confirmed as ordered, no changes. (EDIFACT LIN action code 5.)',
-  '6':'Line accepted with a change — e.g. a partial/backorder quantity or a new delivery date. (EDIFACT LIN action code 6.)',
+  '6':'Line accepted with a change: either part of it is backordered, or the full quantity is confirmed but the delivery date changed. (EDIFACT LIN action code 6.)',
   '2':'Line rejected/cancelled — nothing will be delivered for it. (EDIFACT LIN action code 2.)'
 };
-function actionPillHtml(a){
+function actionPillHtml(a,ctx){
   if(!a)return '—';
-  const tip=ACTION_TOOLTIP[a]||`EDIFACT LIN action code ${a} — not one of the codes bol/Transus maps (2, 5 or 6).`;
+  let tip=ACTION_TOOLTIP[a]||`EDIFACT LIN action code ${a} — not one of the codes bol/Transus maps (2, 5 or 6).`;
+  if(a==='6'&&ctx){
+    // Action 6 covers two quite different situations — a genuine backorder,
+    // or a full accept with only the delivery date changed. Which one this
+    // specific line is showing is worth spelling out rather than repeating
+    // the same generic blurb for both.
+    const back=Number(ctx.backorder)||0;
+    const conf=(ctx.confirmed!==undefined&&ctx.confirmed!==null&&ctx.confirmed!=='')?Number(ctx.confirmed):null;
+    if(back>0)tip=`Accepted with amendment: ${back} unit(s) backordered${conf!==null&&conf>0?`, ${conf} confirmed now`:''}. (EDIFACT LIN action code 6.)`;
+    else if(conf!==null&&conf>0)tip=`Accepted with amendment: fully confirmed (${conf}), no backorder — likely just a changed delivery date, not a quantity change. (EDIFACT LIN action code 6.)`;
+  }
   return `<span class="pill a${esc(a)}" title="${esc(tip)}">${esc(a)} ${esc(ACTION_NAME[a]||'')}</span>`;
 }
 // Transus XML status -> EDIFACT action
@@ -1153,15 +1210,22 @@ function buildKeyResolver(bol,sup){
 
 function aggregate(facts,keyFn){
   const map=new Map();
+  const usesPallets=!!(facts.pallets&&facts.pallets.length);
   facts.lines.forEach(l=>{
     const key=keyFn(l);
-    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),count:0});
+    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),count:0,noSscc:false});
     const a=map.get(key);a.count++;
     for(const q in l.qty){const n=parseInt(l.qty[q],10);if(!isNaN(n))a.qty[q]=(a.qty[q]||0)+n;}
     if(l.action)a.actions.add(l.action);
     l.orders.forEach(o=>a.orders.add(o));
     if(!a.gtin&&l.gtin)a.gtin=l.gtin;
     if(!a.art&&l.art)a.art=l.art;
+    // Track whether this item's own pallet (in a message that uses pallet
+    // structure at all) actually had an SSCC. If it never had one, the other
+    // side couldn't have received it regardless of how the transformation
+    // works — that's a gap in what the supplier sent, not something Transus
+    // can fix, so it needs to be told apart from a genuine mapping miss.
+    if(usesPallets&&(!l.__cpsRef||!l.__cpsRef.sscc))a.noSscc=true;
   });
   return map;
 }
@@ -1179,7 +1243,13 @@ function validateOrdrspLine(bgmFunc,line){
     if(has('182')){msgs.push("Action 5 (fully accepted) shouldn't have a cancelled quantity (QTY+182), but this line does.");bump('err');}
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date. Transus XML may express as delivered 0 + backorder.
-    if(!has('83')&&!(line.qty['12']==='0')){msgs.push("Action 6 (accepted with amendment) normally needs a backorder quantity greater than zero (QTY+83) — here it's missing or zero, which doesn't match what action 6 usually means.");bump('warn');}
+    if(!has('83')&&!(line.qty['12']==='0')){
+      const conf=line.qty['12'];
+      msgs.push(conf
+        ?`Action 6 (accepted with amendment) with no backorder — confirmed qty is already ${conf}. Likely just a delivery-date change; worth confirming this wasn't meant to be action 5.`
+        :`Action 6 (accepted with amendment) has no backorder and no confirmed quantity either — worth checking what this line is reporting.`);
+      bump('warn');
+    }
   }else if(a==='2'){
     if(!has('182')){msgs.push("Action 2 (cancelled) should have a cancelled quantity (QTY+182) — none was found.");bump('err');}
     if(has('12')){msgs.push("Action 2 (cancelled) shouldn't have a confirmed quantity (QTY+12), but this line does.");bump('err');}
@@ -1617,7 +1687,15 @@ function compare(bol,sup){
 
   const missingItems=[];
   keys.forEach(k=>{const b=ba.get(k),s=sa.get(k);const ref=b||s;const label=(ref&&(ref.art||ref.gtin))||k.replace(/^K:/,'');
-    if(!b)missingItems.push({label,onlyIn:'supplier message but <strong>missing</strong> from the bol output'});
+    if(!b){
+      // If the supplier's own pallet for this item never had an SSCC, bol
+      // couldn't have received it either way — that's already flagged
+      // separately (see "No SSCC found" / "Item not linked to a pallet"
+      // under Message checks). Reporting it again here as a mapping miss
+      // would wrongly point Transus at something outside their control.
+      if(s&&s.noSscc)return;
+      missingItems.push({label,onlyIn:'supplier message but <strong>missing</strong> from the bol output'});
+    }
     else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
   addCapped('err',missingItems,
     m=>`Item <code>${m.label}</code> is present in the ${m.onlyIn}.`,
@@ -2777,7 +2855,7 @@ function factsOverviewHtml(facts){
       quals.forEach(q=>{const v=(l.qty||{})[q];t+=`<td class="num">${v===undefined||v===''?'—':esc(v)}</td>`;});
       if(type==='ORDRSP'){
         const a=l.action;
-        t+=`<td>${actionPillHtml(a)}</td>`;
+        t+=`<td>${actionPillHtml(a,{confirmed:(l.qty||{})['12'],backorder:(l.qty||{})['83']})}</td>`;
       }
       if(showLineDate){
         const d=l.dtm?Object.values(l.dtm)[0]:null;
@@ -2844,7 +2922,13 @@ function renderLineTable(){
       }
     }
     tds+=`<td class="mono">${orderCell}</td>`;
-    if(isO){const af=arr=>arr.map(a=>actionPillHtml(a)).join(' ')||'—';tds+=`<td>${af(r.supActions)}</td><td>${af(r.bolActions)}</td>`;}
+    if(isO){
+      const qtyByQ={};r.qtys.forEach(x=>{qtyByQ[x.q]=x;});
+      const supCtx={confirmed:qtyByQ['12']?qtyByQ['12'].sup:undefined,backorder:qtyByQ['83']?qtyByQ['83'].sup:undefined};
+      const bolCtx={confirmed:qtyByQ['12']?qtyByQ['12'].bol:undefined,backorder:qtyByQ['83']?qtyByQ['83'].bol:undefined};
+      const af=(arr,ctx)=>arr.map(a=>actionPillHtml(a,ctx)).join(' ')||'—';
+      tds+=`<td>${af(r.supActions,supCtx)}</td><td>${af(r.bolActions,bolCtx)}</td>`;
+    }
     const qtxt=r.qtys.map(x=>{const cl=x.diff?'diff-val':'';const qn={'12':'Confirmed','83':'Backorder','182':'Cancelled'}[x.q]||x.q;return `<span class="${cl}">${qn}: <span class="val-sup">${x.sup??'—'}</span> → <span class="val-bol">${x.bol??'—'}</span></span>`;}).join('<br>')||'—';
     tds+=`<td class="mono">${qtxt}</td>`;
     const sp=r.status==='ok'?pillMatch():(r.status==='warn'?pillCheck():pillDiff());
@@ -2976,7 +3060,10 @@ function render(result,bol,sup,notes){
   }else{togglePanel.classList.add('hidden');lastActionSummaryText='';}
 
   // backorder details: which specific lines, on both sides — counts alone
-  // don't show whether the action code and the QTY+83 backorder value agree
+  // don't show whether the action code and the QTY+83 backorder value agree.
+  // Shown regardless of match status: a backorder/amendment is a business
+  // event worth knowing about even when everything transformed correctly,
+  // and Line comparison below hides matching lines by default.
   const backorderRows=result.rows.filter(r=>{
     const has83=r.qtys.some(x=>x.q==='83'&&((Number(x.bol)||0)!==0||(Number(x.sup)||0)!==0));
     const hasAction6=(r.bolActions&&r.bolActions.includes('6'))||(r.supActions&&r.supActions.includes('6'));
@@ -2985,18 +3072,33 @@ function render(result,bol,sup,notes){
   const backorderPanel=document.getElementById('backorderPanel');
   if(backorderRows.length){
     backorderPanel.classList.remove('hidden');
-    let bh='<div style="overflow-x:auto;"><table class="inv"><tr><th>Item</th><th>EAN</th><th>Supplier backorder qty</th><th>bol backorder qty</th>';
+    const n=backorderRows.length;
+    let bh=`<p class="panel-intro">${n} line${n===1?'':'s'} involve${n===1?'s':''} a backorder or delivery-date change (action 6) — listed here on their own because they're worth a glance even when, as below, everything otherwise matched.</p>`;
+    bh+='<div style="overflow-x:auto;"><table class="inv"><tr><th>Item</th><th>EAN</th><th>Quantities (supplier → bol)</th>';
     if(result.type==='ORDRSP')bh+='<th>Supplier action</th><th>bol action</th>';
-    bh+='</tr>';
+    bh+='<th>Status</th></tr>';
     bh+=backorderRows.map(r=>{
       const q83=r.qtys.find(x=>x.q==='83');
+      const q12=r.qtys.find(x=>x.q==='12');
       const eanCell=r.gtin?`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}`:'—';
       let row=`<td class="mono">${esc(r.art||'—')}</td><td class="mono">${eanCell}</td>`;
-      row+=`<td class="num val-sup">${q83?esc(q83.sup??'—'):'—'}</td><td class="num val-bol">${q83?esc(q83.bol??'—'):'—'}</td>`;
+      // Show whichever quantity actually applies to this line — a genuine
+      // backorder, or (when there is none) the confirmed quantity — the same
+      // representation Line comparison uses below, so the two panels never
+      // look like they're describing something different for the same row.
+      const hasBack=q83&&((Number(q83.sup)||0)!==0||(Number(q83.bol)||0)!==0);
+      const qSrc=hasBack?{label:'Backorder',x:q83}:(q12?{label:'Confirmed',x:q12}:null);
+      row+=`<td class="mono">${qSrc?`${qSrc.label}: <span class="val-sup">${esc(qSrc.x.sup??'—')}</span> → <span class="val-bol">${esc(qSrc.x.bol??'—')}</span>`:'<span class="dim" title="Neither a backorder nor a confirmed quantity was found for this line.">No quantity found</span>'}</td>`;
       if(result.type==='ORDRSP'){
-        const af=arr=>arr.map(a=>actionPillHtml(a)).join(' ')||'—';
-        row+=`<td>${af(r.supActions)}</td><td>${af(r.bolActions)}</td>`;
+        const supCtx={confirmed:q12?q12.sup:undefined,backorder:q83?q83.sup:undefined};
+        const bolCtx={confirmed:q12?q12.bol:undefined,backorder:q83?q83.bol:undefined};
+        const af=(arr,ctx)=>arr.map(a=>actionPillHtml(a,ctx)).join(' ')||'—';
+        row+=`<td>${af(r.supActions,supCtx)}</td><td>${af(r.bolActions,bolCtx)}</td>`;
       }
+      // A Status column of its own — so this table answers "is this line
+      // fine?" without needing to cross-check it against Line comparison,
+      // which by default hides exactly the matching rows shown here.
+      row+=`<td>${r.status==='ok'?pillMatch():(r.status==='warn'?pillCheck():pillDiff())}</td>`;
       return `<tr>${row}</tr>`;
     }).join('');
     bh+='</table></div>';
@@ -3311,7 +3413,7 @@ async function copyTextToClipboard(text,btn){
     // re-read it live (a quick second click would otherwise capture "Copied.
     // Ready to share. ✓" as the "original" and get stuck showing it forever).
     if(btn.dataset.origLabel===undefined)btn.dataset.origLabel=btn.textContent;
-    btn.textContent='Copied. Ready to share. ✓';
+    btn.textContent=pickCopyConfirmation();
     clearTimeout(btn.__resetTimer);
     btn.__resetTimer=setTimeout(()=>{btn.textContent=btn.dataset.origLabel;},1600);
   }
@@ -3729,7 +3831,7 @@ function runCompare(){
   if(!cstate.bol||!cstate.sup){cSetStatus('Load both messages first.',true);return;}
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
   if(tSup==='ORDERS'||tBol==='ORDERS'){
-    cSetStatus("Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.",true);
+    cSetStatus(pickOrdersBlockMsg(),true);
     return;
   }
   const isInvoice=(tSup==='INVOIC'||tBol==='INVOIC');
@@ -3786,7 +3888,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
-document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus('Two messages. One question: did the important stuff make it through? Add both below to find out.');});
+document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>
 </body>
