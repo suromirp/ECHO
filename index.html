@@ -1739,9 +1739,31 @@ function compare(bol,sup){
     if(bol.lines.length&&!(bol.deliveryNoteRefs&&bol.deliveryNoteRefs.length)&&!bol.docNumber)add('info','Bol — no packing reference (despatch note) found in this message.','message');
   }
 
-  // ORDRSP rule validation (validate supplier + bol lines)
+  // ORDRSP rule validation (validate supplier + bol lines). Capped the same
+  // way every other repeated-finding list here is: a handful shown in full,
+  // the rest summarized — a supplier that sends action 6 on every line would
+  // otherwise print one near-identical warning per line, on both sides.
+  // Also tracks which items got a specific finding here, so the generic
+  // "Worth checking" pattern detector further down doesn't repeat the same
+  // items again with a vaguer, statistics-only description.
+  const flaggedActionItems=new Set();
   if(type==='ORDRSP'){
-    const validate=(facts,lab)=>{facts.lines.forEach(l=>{const res=validateOrdrspLine(facts.bgmFunc,l);if(res.level!=='ok')res.msgs.forEach(m=>add(res.level,`${lab} — line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`,'message'));});};
+    const VALIDATE_CAP=5;
+    const validate=(facts,lab)=>{
+      const msgs=[];
+      facts.lines.forEach(l=>{
+        const res=validateOrdrspLine(facts.bgmFunc,l);
+        if(res.level!=='ok'){
+          flaggedActionItems.add(l.art||l.gtin||l.lineNo);
+          res.msgs.forEach(m=>msgs.push({level:res.level,text:`${lab} — line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`}));
+        }
+      });
+      msgs.slice(0,VALIDATE_CAP).forEach(m=>add(m.level,m.text,'message'));
+      if(msgs.length>VALIDATE_CAP){
+        const rest=msgs.length-VALIDATE_CAP;
+        add('warn',`<strong>${lab} — ${rest} more line(s) show a similar action-code observation</strong> — see Line comparison below for the full list.`,'message');
+      }
+    };
     validate(sup,'Supplier');validate(bol,'Bol');
   }
 
@@ -1757,7 +1779,7 @@ function compare(bol,sup){
   else if(findings.some(f=>f.level==='warn'))verdict='warn';
   if(!findings.some(f=>f.level==='err'||f.level==='warn'))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
 
-  return {type,findings,rows,ssccResult,verdict,actionMatrix,
+  return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:bol.ssccs.length,ssccSup:sup.ssccs.length,
       qtyMatch:!anyQtyDiff&&!anyMissing,actionMatch:type==='ORDRSP'?(!anyActionDiff&&!anyMissing):null},
     fmtBol:bol.format,fmtSup:sup.format};
@@ -2744,13 +2766,28 @@ function factsOverviewHtml(facts){
   // check should skip them.
   const qcFindings=[];
   const qcAdd=(level,text)=>qcFindings.push({level,text});
+  const flaggedActionItems=new Set();
   if(type==='DESADV'){
     checkPalletStructure(facts,'This message',qcAdd);
   }else if(type==='ORDRSP'){
+    // Capped the same way every other repeated-finding list in ECHO is: a
+    // handful shown in full, the rest summarized — a supplier that sends
+    // action 6 on every line would otherwise print one near-identical
+    // warning per line.
+    const actionMsgs=[];
     facts.lines.forEach(l=>{
       const res=validateOrdrspLine(facts.bgmFunc,l);
-      if(res.level!=='ok')res.msgs.forEach(m=>qcAdd(res.level,`Line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`));
+      if(res.level!=='ok'){
+        flaggedActionItems.add(l.art||l.gtin||l.lineNo);
+        res.msgs.forEach(m=>actionMsgs.push({level:res.level,text:`Line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`}));
+      }
     });
+    const ACTION_MSG_CAP=5;
+    actionMsgs.slice(0,ACTION_MSG_CAP).forEach(m=>qcAdd(m.level,m.text));
+    if(actionMsgs.length>ACTION_MSG_CAP){
+      const rest=actionMsgs.length-ACTION_MSG_CAP;
+      qcAdd('warn',`<strong>${rest} more line(s) show a similar action-code observation</strong> — see Lines below for the full list.`);
+    }
   }
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
@@ -2765,7 +2802,20 @@ function factsOverviewHtml(facts){
   }
 
   if(type==='ORDRSP'||type==='DESADV'){
-    const wcNotices=detectWorthChecking(facts.lines,wcConfigOrdrspDesadv(type));
+    let wcNotices=detectWorthChecking(facts.lines,wcConfigOrdrspDesadv(type));
+    // Don't repeat lines already called out by name above with a more
+    // specific explanation — a generic "N of M lines differ" restates the
+    // same fact with less information.
+    wcNotices=wcNotices.map(n=>{
+      if(!n.title.startsWith('Action:'))return n;
+      const before=n.affected.length;
+      const affected=n.affected.filter(a=>!flaggedActionItems.has(a.label.replace(/ \(\d+×\)$/,'')));
+      if(!affected.length)return null;
+      if(affected.length===before)return n;
+      return {...n,affected,
+        title:`Action: ${affected.length} more line${affected.length===1?'':'s'} also differ from the rest`,
+        detail:`Not already covered above — ${affected.length} more line${affected.length===1?'':'s'} use a different action value than the majority.`};
+    }).filter(Boolean);
     if(wcNotices.length)h+=`<div class="sec-h" title="ECHO noticed something unusual here — not necessarily wrong.">Worth checking</div><div class="wc-list">${worthCheckingHtml('',wcNotices,jumpCall)}</div>`;
     const qcLevel=qcFindings.some(f=>f.level==='err')?'err':(qcFindings.some(f=>f.level==='warn')?'warn':'ok');
     pendingEyeReaction=echoReactionFor(qcLevel,wcNotices.length>0);
@@ -2817,10 +2867,11 @@ function factsOverviewHtml(facts){
 
   // Backorder detail: which lines specifically, not just a count. Checks both
   // the action code and the QTY+83 backorder quantity, since these don't
-  // always agree — seeing both side by side helps spot that.
+  // always agree — seeing both side by side helps spot that. Skipped when it
+  // would be every single line: that's just the Lines table below, repeated.
   const showArtGlobal=facts.lines.some(l=>l.art);
   const backorderLines=facts.lines.filter(l=>actionBucket(l.action)==='backorder'||(l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''&&Number(l.qty['83'])!==0));
-  if(backorderLines.length){
+  if(backorderLines.length&&backorderLines.length<facts.lines.length){
     h+=`<div class="sec-h">Amendment details (${backorderLines.length})</div><div class="inv-scroll"><table class="inv">
       <tr><th>#</th><th>EAN</th>${showArtGlobal?'<th>Item</th>':''}<th>Confirmed</th><th>Backorder qty</th>${type==='ORDRSP'?'<th>Action</th>':''}</tr>`;
     h+=backorderLines.map(l=>{
@@ -2829,10 +2880,12 @@ function factsOverviewHtml(facts){
       if(showArtGlobal)row+=`<td class="mono">${esc(l.art||'—')}</td>`;
       row+=`<td class="num">${l.qty&&l.qty['12']!==undefined&&l.qty['12']!==''?esc(l.qty['12']):'—'}</td>`;
       row+=`<td class="num">${l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''?esc(l.qty['83']):'—'}</td>`;
-      if(type==='ORDRSP')row+=`<td>${l.action?`<span class="pill a${esc(l.action)}">${esc(l.action)} ${esc(ACTION_NAME[l.action]||'')}</span>`:'—'}</td>`;
+      if(type==='ORDRSP')row+=`<td>${actionPillHtml(l.action,{confirmed:l.qty?l.qty['12']:undefined,backorder:l.qty?l.qty['83']:undefined})}</td>`;
       return `<tr>${row}</tr>`;
     }).join('');
     h+=`</table></div>`;
+  }else if(backorderLines.length&&backorderLines.length===facts.lines.length){
+    h+=`<p class="panel-intro">Every line here involves a backorder or delivery-date change (action 6) — see the Lines table below for the full detail per line.</p>`;
   }
 
   if(facts.lines.length){
@@ -2986,14 +3039,22 @@ function render(result,bol,sup,notes){
   const notesPanel=document.getElementById('factsNotesPanel');
   if(notes&&notes.length){notesPanel.classList.remove('hidden');document.getElementById('factsNotes').innerHTML=notes.map(esc).join('<br>');}
   else{notesPanel.classList.add('hidden');document.getElementById('factsNotes').innerHTML='';}
+  // Whether the "worth a closer look" verdict is driven by an actual
+  // supplier ↔ bol mapping difference, or purely by a structural/data-quality
+  // note about the message itself (cat 'message') — these need very
+  // different follow-up from whoever's reading this, so the subtitle should
+  // say which one it is rather than a single generic "something to check".
+  const hasDiffIssue=result.findings.some(f=>(f.cat||'diff')==='diff'&&(f.level==='err'||f.level==='warn'));
   const vmap={ok:{i:'✓',t:'Loud and clear',s:'All compared values match between the supplier message and bol output.'},
-    warn:{i:'!',t:'Almost in sync',s:'The compared values mostly match, but ECHO found something worth a closer look.'},
+    warn:{i:'!',t:'Almost in sync',s:hasDiffIssue
+      ?'The compared values mostly match, but ECHO found something worth a closer look.'
+      :'The mapping itself is correct — nothing to fix there. ECHO just noticed something worth checking in the message data itself — see Message checks below.'},
     err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output. See findings.'}};
   if(result.type==='DESADV'){
     // same headline, clearer supporting copy: makes explicit that a supplier-side
     // check and a preserved transformation are two different things
     vmap.ok=Object.assign({},vmap.ok,{s:'All compared values and pallet mappings match.'});
-    vmap.warn=Object.assign({},vmap.warn,{s:'The transformation matches, but ECHO found something to check in the supplier message.'});
+    if(hasDiffIssue)vmap.warn=Object.assign({},vmap.warn,{s:'The transformation matches, but ECHO found something to check in the supplier message.'});
   }
   const v=vmap[result.verdict];
   document.getElementById('verdict').className='verdict '+result.verdict;
@@ -3002,8 +3063,24 @@ function render(result,bol,sup,notes){
   let wcSup=[],wcBol=[];
   if(result.type==='ORDRSP'||result.type==='DESADV'){
     const wcCfg=wcConfigOrdrspDesadv(result.type);
-    wcSup=detectWorthChecking(sup.lines,wcCfg);
-    wcBol=detectWorthChecking(bol.lines,wcCfg);
+    // Don't repeat the same lines the Action-code validation above already
+    // called out by name with a more specific explanation — a generic
+    // "N of M lines differ" restates the same fact with less information.
+    const dropAlreadyFlagged=notices=>notices.map(n=>{
+      if(!n.title.startsWith('Action:'))return n;
+      const before=n.affected.length;
+      const affected=n.affected.filter(a=>!result.flaggedActionItems.has(a.label.replace(/ \(\d+×\)$/,'')));
+      if(!affected.length)return null;
+      if(affected.length===before)return n; // nothing filtered — original phrasing still accurate
+      // Some, but not all, were already covered above — the "N of M" phrasing
+      // no longer matches the trimmed list, so state just what's left plainly
+      // rather than showing a stale count next to a shorter list.
+      return {...n,affected,
+        title:`Action: ${affected.length} more line${affected.length===1?'':'s'} also differ from the rest`,
+        detail:`Not already covered above — ${affected.length} more line${affected.length===1?'':'s'} use a different action value than the majority.`};
+    }).filter(Boolean);
+    wcSup=dropAlreadyFlagged(detectWorthChecking(sup.lines,wcCfg));
+    wcBol=dropAlreadyFlagged(detectWorthChecking(bol.lines,wcCfg));
   }
   const hasWC=wcSup.length>0||wcBol.length>0;
   echoSignalReact(echoReactionFor(result.verdict,hasWC));
@@ -3328,7 +3405,15 @@ function setTransusLang(lang){
 }
 function syncLangSwitchUI(){
   document.querySelectorAll('.lang-switch .lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===transusLang));
-  document.querySelectorAll('.transus-copy-btn').forEach(b=>b.disabled=!currentTransusText());
+  const hasText=!!currentTransusText();
+  ['copyTransusBtn','invCopyTransus'].forEach(id=>{
+    const b=document.getElementById(id);
+    if(!b)return;
+    b.disabled=!hasText;
+    b.title=hasText
+      ?'A short, non-technical summary of the mapping differences — ready to paste into the Transus portal'
+      :'Nothing to report — no mapping differences were found, so there\'s nothing to send Transus.';
+  });
 }
 function copyTransusClick(btn){
   const text=currentTransusText();
