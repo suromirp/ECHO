@@ -605,6 +605,20 @@ function splitEsc(str,delim,rel){
 }
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+/* GS1 GTINs come in several lengths (GTIN-8/12/13/14) that describe the same
+   underlying product — e.g. a 12-digit UPC and its 13-digit GTIN form (a
+   leading zero prepended) are the identical item, not two different ones.
+   Matching on the raw string would treat them as unrelated and wrongly
+   report the item as missing on both sides — a structural/technical
+   difference, not a business one, so it's normalized away before matching
+   rather than reported as a mismatch. Only touches purely numeric codes;
+   alphanumeric article codes are left exactly as-is. */
+function normalizeGtin(g){
+  const s=String(g==null?'':g).trim();
+  if(!s)return s;
+  return /^\d+$/.test(s)?s.replace(/^0+(?=\d)/,''):s;
+}
+
 /* Shared status-pill markup — every "Match"/"Difference"/"Not applicable"/"OK"
    pill in the whole tool (Compare, Quick check, pallet overview, invoice
    tables) goes through these, so the wording and the tooltip text always
@@ -1186,19 +1200,19 @@ function buildKeyResolver(bol,sup){
   const artToGtin=new Map(), gtinToArt=new Map();
   [...bol.lines,...sup.lines].forEach(l=>{
     const art=(l.art&&l.art.trim())?l.art:null;
-    const gtin=(l.gtin&&l.gtin.trim())?l.gtin:null;
+    const gtin=(l.gtin&&l.gtin.trim())?normalizeGtin(l.gtin):null;
     if(art&&gtin){artToGtin.set(art,gtin);gtinToArt.set(gtin,art);}
   });
   // decide, per identifier type, which is usable on BOTH sides
   const bolArts=new Set(bol.lines.filter(l=>l.art).map(l=>l.art));
   const supArts=new Set(sup.lines.filter(l=>l.art).map(l=>l.art));
-  const bolGtins=new Set(bol.lines.filter(l=>l.gtin).map(l=>l.gtin));
-  const supGtins=new Set(sup.lines.filter(l=>l.gtin).map(l=>l.gtin));
+  const bolGtins=new Set(bol.lines.filter(l=>l.gtin).map(l=>normalizeGtin(l.gtin)));
+  const supGtins=new Set(sup.lines.filter(l=>l.gtin).map(l=>normalizeGtin(l.gtin)));
   const artOnBoth=[...bolArts].some(a=>supArts.has(a));
   const gtinOnBoth=[...bolGtins].some(g=>supGtins.has(g));
   return function key(l){
     const art=(l.art&&l.art.trim())?l.art:null;
-    const gtin=(l.gtin&&l.gtin.trim())?l.gtin:null;
+    const gtin=(l.gtin&&l.gtin.trim())?normalizeGtin(l.gtin):null;
     // Prefer the identifier that actually appears on both sides.
     if(artOnBoth&&art)return 'K:'+art;
     if(gtinOnBoth&&gtin)return 'K:'+(gtinToArt.get(gtin)||gtin); // normalise gtin->art if known
@@ -1232,30 +1246,68 @@ function aggregate(facts,keyFn){
 }
 
 /* ORDRSP rule validation */
+/* Each rule below is identified by a stable key with a generic (line-
+   independent) explanation — the specific item/qty is supplied separately
+   by the caller, so many lines sharing the same key can be shown as ONE
+   grouped observation (explanation + a tag per affected item) instead of
+   one near-identical paragraph per line. */
+const ACTION_RULE_EXPLAIN={
+  'action5-missing-confirmed':"Action 5 (fully accepted), but no confirmed quantity (QTY+12) is present — a full accept should state how much was confirmed.",
+  'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
+  'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
+  'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
+  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), but nothing is backordered — the confirmed quantity already covers the full amount. Action 6 normally means either a backorder or just a changed delivery date; with no backorder, this looks like the date-only kind. Worth confirming these weren't meant to be action 5 instead.",
+  'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
+  'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
+  'action2-has-confirmed':"Action 2 (cancelled), but a confirmed quantity is present too — a cancelled line shouldn't have anything confirmed."
+};
+function actionRuleExplain(key){
+  if(key.startsWith('action-unknown:')){
+    const code=key.slice('action-unknown:'.length);
+    return `Action code ${esc(code)} isn't one of the codes bol/Transus maps (2, 5 or 6) — worth confirming this was handled correctly downstream.`;
+  }
+  return ACTION_RULE_EXPLAIN[key]||key;
+}
 function validateOrdrspLine(bgmFunc,line){
-  const msgs=[];let level='ok';const a=line.action;
+  const keys=[];let level='ok';const a=line.action;
   const has=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]!==''&&line.qty[q]!=='0';
   const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
   const bump=l=>{if(l==='err')level='err';else if(l==='warn'&&level!=='err')level='warn';};
   if(a==='5'){
-    if(!has('12')){msgs.push("Action 5 (fully accepted) should have a confirmed quantity (QTY+12) — none was found.");bump('err');}
-    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){msgs.push('Action 5 (fully accepted) is missing a delivery date (DTM+67).');bump('warn');}
-    if(has('83')){msgs.push("Action 5 (fully accepted) shouldn't have a backorder quantity (QTY+83), but this line does.");bump('err');}
-    if(has('182')){msgs.push("Action 5 (fully accepted) shouldn't have a cancelled quantity (QTY+182), but this line does.");bump('err');}
+    if(!has('12')){keys.push('action5-missing-confirmed');bump('err');}
+    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){keys.push('action5-missing-date');bump('warn');}
+    if(has('83')){keys.push('action5-has-backorder');bump('err');}
+    if(has('182')){keys.push('action5-has-cancelled');bump('err');}
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date. Transus XML may express as delivered 0 + backorder.
     if(!has('83')&&!(line.qty['12']==='0')){
-      const conf=line.qty['12'];
-      msgs.push(conf
-        ?`Action 6 (accepted with amendment) with no backorder — confirmed qty is already ${conf}. Likely just a delivery-date change; worth confirming this wasn't meant to be action 5.`
-        :`Action 6 (accepted with amendment) has no backorder and no confirmed quantity either — worth checking what this line is reporting.`);
+      keys.push(line.qty['12']?'action6-no-backorder-has-confirmed':'action6-no-backorder-no-data');
       bump('warn');
     }
   }else if(a==='2'){
-    if(!has('182')){msgs.push("Action 2 (cancelled) should have a cancelled quantity (QTY+182) — none was found.");bump('err');}
-    if(has('12')){msgs.push("Action 2 (cancelled) shouldn't have a confirmed quantity (QTY+12), but this line does.");bump('err');}
-  }else{msgs.push(`Action code ${a??'(none)'} isn't one of the codes bol/Transus maps (2, 5 or 6) — worth confirming this was handled correctly downstream.`);bump('warn');}
-  return {level,msgs};
+    if(!has('182')){keys.push('action2-missing-cancelled');bump('err');}
+    if(has('12')){keys.push('action2-has-confirmed');bump('err');}
+  }else{keys.push(`action-unknown:${a??'(none)'}`);bump('warn');}
+  return {level,keys};
+}
+/* Turns a flat list of {key,level,item,jump} entries (one per rule-violation
+   per line) into one rendered block per distinct key — the shared
+   explanation, plus every affected item as its own small clickable tag.
+   This is the same "one explanation + a tag per item" shape "Worth
+   checking" already uses, reused here so a supplier that trips the same
+   rule on every line doesn't produce a wall of near-identical paragraphs. */
+function groupActionFindings(entries){
+  const order=[];const groups=new Map();
+  entries.forEach(e=>{
+    if(!groups.has(e.key)){groups.set(e.key,{level:e.level,items:[]});order.push(e.key);}
+    groups.get(e.key).items.push(e);
+  });
+  return order.map(key=>{
+    const g=groups.get(key);
+    const n=g.items.length;
+    const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.item)}</span></li>`).join('');
+    return {level:g.level,text:`${actionRuleExplain(key)} <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`};
+  });
 }
 
 /* classify action into accept/cancel/backorder buckets — limited to the
@@ -1300,7 +1352,7 @@ function checkPalletStructure(facts,label,add){
       add('warn',`${label} — pallet CPS ${esc(p.cps||'?')}: <strong>No SSCC found</strong>. This pallet group contains item lines, but no GIN+BJ SSCC was found.`,'message');
     if(p.palletGtin){
       p.items.forEach(it=>{
-        if(it.gtin&&it.gtin===p.palletGtin){
+        if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){
           const qv=palletQtyVal(it.qty);
           add('warn',`${label} — pallet CPS ${esc(p.cps||'?')}: <strong>Pallet EAN repeated as item</strong>. Pallet EAN <code>${esc(p.palletGtin)}</code> also appears as a LIN item EAN${qv!==undefined?` with quantity ${esc(qv)}`:''}.`,'message');
         }
@@ -1325,8 +1377,9 @@ function palletItemTotals(items){
   const m=new Map();
   (items||[]).forEach(it=>{
     if(!it.gtin)return;
+    const key=normalizeGtin(it.gtin);
     const q=palletQtyEff(palletQtyVal(it.qty));
-    m.set(it.gtin,(m.get(it.gtin)||0)+(typeof q==='number'?q:0));
+    m.set(key,(m.get(key)||0)+(typeof q==='number'?q:0));
   });
   return m;
 }
@@ -1450,11 +1503,12 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
     items.forEach(it=>{
       const qv=palletQtyVal(it.qty);
+      const itKey=normalizeGtin(it.gtin);
       let mappingPill;
       if(!it.gtin){
         mappingPill='<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
       }else if(gtinMatch){
-        const ok=gtinMatch.get(it.gtin);
+        const ok=gtinMatch.get(itKey);
         if(!ok)anyDiff=true;
         if(allItemsDiffer){
           // Every item on this pallet differs — that's a pallet-wide mapping
@@ -1467,7 +1521,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
           // Show the actual compared quantities alongside the pill, the same
           // way the Line comparison table does — a bare "Difference" pill on
           // its own doesn't say what differs.
-          const otherQ=otherTotals&&otherTotals.has(it.gtin)?otherTotals.get(it.gtin):undefined;
+          const otherQ=otherTotals&&otherTotals.has(itKey)?otherTotals.get(itKey):undefined;
           const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;">(${esc(qv??'—')} → ${esc(otherQ??'—')})</span>`;
           mappingPill=(ok?pillMatch():pillDiff())+qtyTxt;
         }
@@ -1483,7 +1537,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
       }
       // Item-level notes describe THIS specific item, not the pallet as a whole
       const rowNotes=[];
-      if(it.gtin&&p.palletGtin&&it.gtin===p.palletGtin){rowNotes.push('Repeated pallet EAN');itemLevelNotesSeen.add('Repeated pallet EAN');}
+      if(it.gtin&&p.palletGtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){rowNotes.push('Repeated pallet EAN');itemLevelNotesSeen.add('Repeated pallet EAN');}
       const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:pillOkSingle();
       const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
@@ -1739,30 +1793,27 @@ function compare(bol,sup){
     if(bol.lines.length&&!(bol.deliveryNoteRefs&&bol.deliveryNoteRefs.length)&&!bol.docNumber)add('info','Bol — no packing reference (despatch note) found in this message.','message');
   }
 
-  // ORDRSP rule validation (validate supplier + bol lines). Capped the same
-  // way every other repeated-finding list here is: a handful shown in full,
-  // the rest summarized — a supplier that sends action 6 on every line would
-  // otherwise print one near-identical warning per line, on both sides.
-  // Also tracks which items got a specific finding here, so the generic
-  // "Worth checking" pattern detector further down doesn't repeat the same
-  // items again with a vaguer, statistics-only description.
+  // ORDRSP rule validation (validate supplier + bol lines). Grouped by which
+  // rule fired: a supplier that sends action 6 on every line gets ONE block
+  // explaining that pattern with every affected item listed as a tag, not
+  // one near-identical paragraph per line. Also tracks which items got a
+  // finding here, so the generic "Worth checking" pattern detector further
+  // down doesn't repeat the same items again with a vaguer description.
   const flaggedActionItems=new Set();
   if(type==='ORDRSP'){
-    const VALIDATE_CAP=5;
     const validate=(facts,lab)=>{
-      const msgs=[];
+      const entries=[];
+      const side=lab==='Supplier'?'sup':'bol';
       facts.lines.forEach(l=>{
         const res=validateOrdrspLine(facts.bgmFunc,l);
         if(res.level!=='ok'){
-          flaggedActionItems.add(l.art||l.gtin||l.lineNo);
-          res.msgs.forEach(m=>msgs.push({level:res.level,text:`${lab} — line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`}));
+          const itemKey=l.art||l.gtin||l.lineNo;
+          flaggedActionItems.add(itemKey);
+          const jumpVal=l.gtin||l.art||l.lineNo||'';
+          res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
         }
       });
-      msgs.slice(0,VALIDATE_CAP).forEach(m=>add(m.level,m.text,'message'));
-      if(msgs.length>VALIDATE_CAP){
-        const rest=msgs.length-VALIDATE_CAP;
-        add('warn',`<strong>${lab} — ${rest} more line(s) show a similar action-code observation</strong> — see Line comparison below for the full list.`,'message');
-      }
+      groupActionFindings(entries).forEach(g=>add(g.level,`${lab} — ${g.text}`,'message'));
     };
     validate(sup,'Supplier');validate(bol,'Bol');
   }
@@ -2018,7 +2069,13 @@ function parseInvoicEdifact(raw){
       case 'MOA':{
         const c=comp(1);
         const q=c[0],v=num(c[1]);
-        if(curAlc&&curAlc.amount===null&&(q==='8'||q==='204'||q==='23'||q==='131'||q==='52')){curAlc.amount=v;break;}
+        // 25 = "Charge/allowance basis" per the official EDIFACT 5025 code
+        // list — not the more common "8 = Allowance or charge amount", but
+        // in practice this is the value some suppliers send directly after
+        // an ALC segment as that allowance's amount, and without this it
+        // silently fell through into the generic line-MOA bucket below,
+        // leaving the allowance's own amount blank.
+        if(curAlc&&curAlc.amount===null&&(q==='8'||q==='204'||q==='23'||q==='131'||q==='52'||q==='25')){curAlc.amount=v;break;}
         if(curLine&&!inSummary){
           if(q==='203')curLine.lineAmount=v;
           else{curLine.moa=curLine.moa||{};curLine.moa[q]=v;}
@@ -2444,7 +2501,7 @@ function compareInvoice(sup,bol){
 
   /* ---- lines: match on GTIN, never guess a match ---- */
   const keyOf=l=>{
-    if(l.gtin&&String(l.gtin).trim())return 'G:'+String(l.gtin).trim();
+    if(l.gtin&&String(l.gtin).trim())return 'G:'+normalizeGtin(l.gtin);
     if(l.art&&String(l.art).trim())return 'A:'+String(l.art).trim();
     return null;
   };
@@ -2484,6 +2541,16 @@ function compareInvoice(sup,bol){
       missingSup:!S,missingBol:!B,cells:[],status:'ok',
       supCount:S?S.length:0,bolCount:B?B.length:0};
     if(!S||!B){row.status='diff';rows.push(row);return;}
+    // Bol's description sometimes falls back to just repeating the item
+    // code instead of a real product name — a sign the actual description
+    // didn't carry over in the transformation. Flagged as a soft note (not
+    // a hard diff, since description text itself isn't compared field-by-
+    // field — too much legitimate wording variation for that to be useful).
+    const bolDesc=firstOf(B,'desc'),supDesc=firstOf(S,'desc');
+    const looksLikeCode=v=>v&&(v===row.gtin||v===row.art||(row.gtin&&normalizeGtin(v)===normalizeGtin(row.gtin)));
+    if(looksLikeCode(bolDesc)&&supDesc&&supDesc!==bolDesc){
+      add('info',`Item <code>${esc(row.gtin||row.art||k.replace(/^[GA]:/,''))}</code>: bol's description is just the item code (<span class="val-bol">${esc(bolDesc)}</span>) — the supplier's own description (<span class="val-sup">${esc(supDesc)}</span>) doesn't seem to have carried over.`);
+    }
     const cmpField=(label,f,fmt,absCompare)=>{
       if(!fieldState[f].bol||!fieldState[f].sup){
         const val=fieldState[f].sup?sumBy(S,f):sumBy(B,f);
@@ -2580,21 +2647,36 @@ function compareInvoice(sup,bol){
   };
   const sc=chargeList(sup),bc=chargeList(bol);
   const chargeRows=[];
-  const chKey=c=>`${c.kind}|${(c.code||'').trim()}|${c.level}`;
-  const chMap=arr=>{const m=new Map();arr.forEach(c=>{const k=chKey(c);if(!m.has(k))m.set(k,{kind:c.kind,code:c.code,desc:c.desc,level:c.level,amount:0,n:0});const e=m.get(k);if(c.amount!==null&&c.amount!==undefined){e.amount+=c.amount;}e.n++;});return m;};
+  // Line-level charges are matched per line (not summed across every line
+  // with the same code) — otherwise three unrelated per-line allowances
+  // would silently blend into one number that doesn't reconcile with
+  // anything (not the sum a reader would expect, not the message's own
+  // stated total), which is worse than three separate, correct ones.
+  const chKey=c=>`${c.kind}|${(c.code||'').trim()}|${c.level}${c.level==='line'?'|'+(c.lineRef??''):''}`;
+  const chMap=arr=>{const m=new Map();arr.forEach(c=>{const k=chKey(c);if(!m.has(k))m.set(k,{kind:c.kind,code:c.code,desc:c.desc,level:c.level,lineRef:c.lineRef,amount:0,n:0});const e=m.get(k);if(c.amount!==null&&c.amount!==undefined){e.amount+=c.amount;}e.n++;});return m;};
   const scm=chMap(sc),bcm=chMap(bc);
+  const chargeFindings=[];
   [...new Set([...scm.keys(),...bcm.keys()])].forEach(k=>{
     const s=scm.get(k),b=bcm.get(k);
     const ref=s||b;
     const ok=s&&b?amtEq(isCredit?Math.abs(Math.round(s.amount*100)/100):Math.round(s.amount*100)/100,isCredit?Math.abs(Math.round(b.amount*100)/100):Math.round(b.amount*100)/100):false;
-    chargeRows.push({kind:ref.kind,code:ref.code,desc:ref.desc,level:ref.level,
+    chargeRows.push({kind:ref.kind,code:ref.code,desc:ref.desc,level:ref.level,lineRef:ref.lineRef,
       sup:s?Math.round(s.amount*100)/100:null,bol:b?Math.round(b.amount*100)/100:null,
       status:(s&&b)?(ok?'ok':'diff'):'diff'});
-    const nm=`${ref.kind==='charge'?'Charge':'Allowance'}${ref.code?' '+ref.code:''} (${ref.level==='line'?'line level':'message level'})`;
-    if(s&&!b)add('err',`${nm} of <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> is only present in the supplier message.`);
-    else if(b&&!s)add('err',`${nm} of <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span> is only present in the bol output.`);
-    else if(!ok)add('err',`${nm}: amount differs — supplier <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> vs bol <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span>.`);
+    const nm=`${ref.kind==='charge'?'Charge':'Allowance'}${ref.code?' '+ref.code:''} (${ref.level==='line'?'line level'+(ref.lineRef?', line '+ref.lineRef:''):'message level'})`;
+    if(s&&!b)chargeFindings.push(`${nm} of <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> is only present in the supplier message.`);
+    else if(b&&!s)chargeFindings.push(`${nm} of <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span> is only present in the bol output.`);
+    else if(!ok)chargeFindings.push(`${nm}: amount differs — supplier <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> vs bol <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span>.`);
   });
+  // Capped the same way every other repeated-finding list in ECHO is: a
+  // handful shown in full, the rest summarized — an invoice with the same
+  // charge on every line would otherwise print one near-identical line here.
+  const CHARGE_FINDING_CAP=5;
+  chargeFindings.slice(0,CHARGE_FINDING_CAP).forEach(t=>add('err',t));
+  if(chargeFindings.length>CHARGE_FINDING_CAP){
+    const rest=chargeFindings.length-CHARGE_FINDING_CAP;
+    add('err',`<strong>${rest} more charge/allowance difference(s)</strong> — see Charges & allowances below for the full list.`);
+  }
 
   /* ---- totals ---- */
   const totRows=[];
@@ -2606,7 +2688,7 @@ function compareInvoice(sup,bol){
     else status=(isCredit?amtEq(Math.abs(s),Math.abs(b)):amtEq(s,b))?'ok':'diff';
     totRows.push({label,sup:s,bol:b,status});
     if(status==='diff')add('err',`<strong>${label}</strong> differs — supplier <span class="val-sup">${fmtAmt(s,cur)}</span> vs bol <span class="val-bol">${fmtAmt(b,cur)}</span>.`);
-    else if(status==='na')add('info',`<strong>${label}</strong>: supplier <span class="val-sup">${s===null?'—':fmtAmt(s,cur)}</span>, bol <span class="val-bol">${b===null?'—':fmtAmt(b,cur)}</span>.`);
+    else if(status==='na')add('info',`<strong>${label}</strong> isn't sent on one side, so it can't be compared — supplier <span class="val-sup">${s===null?'—':fmtAmt(s,cur)}</span>, bol <span class="val-bol">${b===null?'—':fmtAmt(b,cur)}</span>.`);
   };
   tcmp('Total line amounts','lineTotal');
   tcmp('Taxable amount','taxable');
@@ -2770,24 +2852,20 @@ function factsOverviewHtml(facts){
   if(type==='DESADV'){
     checkPalletStructure(facts,'This message',qcAdd);
   }else if(type==='ORDRSP'){
-    // Capped the same way every other repeated-finding list in ECHO is: a
-    // handful shown in full, the rest summarized — a supplier that sends
-    // action 6 on every line would otherwise print one near-identical
-    // warning per line.
-    const actionMsgs=[];
+    // Grouped by which rule fired: a supplier that sends action 6 on every
+    // line gets ONE block explaining that pattern with every affected item
+    // listed as a tag, not one near-identical paragraph per line.
+    const entries=[];
     facts.lines.forEach(l=>{
       const res=validateOrdrspLine(facts.bgmFunc,l);
       if(res.level!=='ok'){
-        flaggedActionItems.add(l.art||l.gtin||l.lineNo);
-        res.msgs.forEach(m=>actionMsgs.push({level:res.level,text:`Line ${l.lineNo} (item ${l.art||l.gtin||'?'}, action ${l.action||'?'}): ${m}`}));
+        const itemKey=l.art||l.gtin||l.lineNo;
+        flaggedActionItems.add(itemKey);
+        const jumpVal=l.gtin||l.art||l.lineNo||'';
+        res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:jumpCall(jumpVal)}));
       }
     });
-    const ACTION_MSG_CAP=5;
-    actionMsgs.slice(0,ACTION_MSG_CAP).forEach(m=>qcAdd(m.level,m.text));
-    if(actionMsgs.length>ACTION_MSG_CAP){
-      const rest=actionMsgs.length-ACTION_MSG_CAP;
-      qcAdd('warn',`<strong>${rest} more line(s) show a similar action-code observation</strong> — see Lines below for the full list.`);
-    }
+    groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
   }
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
@@ -3791,7 +3869,7 @@ function renderInvoiceCompare(res,notes){
       <tr><th>Type</th><th>Code</th><th>Description</th><th>Level</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.chargeRows.map(c=>{
       const pill=c.status==='ok'?pillMatch():pillDiff();
-      return `<tr><td>${c.kind==='charge'?'Charge':'Allowance'}</td><td class="mono">${esc(c.code||'—')}</td><td class="desc">${esc(c.desc||'')}</td><td>${c.level==='line'?'line level':'message level'}</td>
+      return `<tr><td>${c.kind==='charge'?'Charge':'Allowance'}</td><td class="mono">${esc(c.code||'—')}</td><td class="desc">${esc(c.desc||'')}</td><td>${c.level==='line'?'line level'+(c.lineRef?' <span class="dim">('+esc(c.lineRef)+')</span>':''):'message level'}</td>
         <td class="num"><span class="s">${esc(fmtAmt(c.sup,cur)??'—')}</span></td><td class="num"><span class="b">${esc(fmtAmt(c.bol,cur)??'—')}</span></td><td>${pill}</td></tr>`;
     }).join('');
     h+=`</table></div></div>`;
