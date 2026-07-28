@@ -2541,16 +2541,6 @@ function compareInvoice(sup,bol){
       missingSup:!S,missingBol:!B,cells:[],status:'ok',
       supCount:S?S.length:0,bolCount:B?B.length:0};
     if(!S||!B){row.status='diff';rows.push(row);return;}
-    // Bol's description sometimes falls back to just repeating the item
-    // code instead of a real product name — a sign the actual description
-    // didn't carry over in the transformation. Flagged as a soft note (not
-    // a hard diff, since description text itself isn't compared field-by-
-    // field — too much legitimate wording variation for that to be useful).
-    const bolDesc=firstOf(B,'desc'),supDesc=firstOf(S,'desc');
-    const looksLikeCode=v=>v&&(v===row.gtin||v===row.art||(row.gtin&&normalizeGtin(v)===normalizeGtin(row.gtin)));
-    if(looksLikeCode(bolDesc)&&supDesc&&supDesc!==bolDesc){
-      add('info',`Item <code>${esc(row.gtin||row.art||k.replace(/^[GA]:/,''))}</code>: bol's description is just the item code (<span class="val-bol">${esc(bolDesc)}</span>) — the supplier's own description (<span class="val-sup">${esc(supDesc)}</span>) doesn't seem to have carried over.`);
-    }
     const cmpField=(label,f,fmt,absCompare)=>{
       if(!fieldState[f].bol||!fieldState[f].sup){
         const val=fieldState[f].sup?sumBy(S,f):sumBy(B,f);
