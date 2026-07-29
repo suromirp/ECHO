@@ -1538,7 +1538,10 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
       // Item-level notes describe THIS specific item, not the pallet as a whole
       const rowNotes=[];
       if(it.gtin&&p.palletGtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){rowNotes.push('Repeated pallet EAN');itemLevelNotesSeen.add('Repeated pallet EAN');}
-      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:pillOkSingle();
+      // Only speak up when there's something to flag — repeating "OK" on
+      // every single row (this check almost never fires) says as little as
+      // showing nothing, just with more noise.
+      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
       const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
     });
@@ -1555,7 +1558,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
         <span class="dim">${items.length} item${items.length===1?'':'s'}</span>
         ${summaryBadge}
       </summary>
-      <table class="inv"><tr><th>Item EAN</th><th>Quantity</th>${mappingTh}<th>Check</th></tr>${rows}</table>
+      <table class="inv"><tr><th>Item EAN</th><th>Quantity</th>${mappingTh}<th title="Flags only one specific thing: whether this item's own EAN accidentally repeats the pallet's own EAN (GIN+SRV) — a sign of a possible mix-up.">Check</th></tr>${rows}</table>
     </details>`;
   });
   return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${relevant.length})</div><div class="pallet-list">${blocks}</div>`;
