@@ -1373,13 +1373,22 @@ function checkPalletStructure(facts,label,add){
    counts as a business mapping difference. Quantities are summed per GTIN
    within the pallet, since the same item can legitimately appear as more than
    one LIN on one pallet (e.g. split across batches/best-before dates). */
-function palletItemTotals(items){
-  const m=new Map();
+function palletItemTotals(items,keyFn){
+  const m=new Map(); // key -> {qty, label}
   (items||[]).forEach(it=>{
-    if(!it.gtin)return;
-    const key=normalizeGtin(it.gtin);
+    // Prefer the same identifier the main line comparison would use (it
+    // already knows whether GTIN or the supplier's own article code is
+    // actually usable across both sides) — falling back to GTIN alone here
+    // meant a message where bol's GTIN field was blanked/zeroed out could
+    // never match ANY item to its pallet, reporting every single one as
+    // "missing" even though they were all correctly there under their
+    // article code.
+    const key=keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null);
+    if(!key)return;
     const q=palletQtyEff(palletQtyVal(it.qty));
-    m.set(key,(m.get(key)||0)+(typeof q==='number'?q:0));
+    const label=it.gtin||it.art||key;
+    if(!m.has(key))m.set(key,{qty:0,label});
+    m.get(key).qty+=(typeof q==='number'?q:0);
   });
   return m;
 }
@@ -1411,7 +1420,7 @@ function detectPalletCollapse(mismatches,bMap,sMap){
   if(!totalItemsOnSide||biggest.items.length<totalItemsOnSide*0.5)return null; // not actually "one pallet holds nearly everything"
   return {side,collapsedSscc:biggest.sscc,collapsedCount:biggest.items.length,affectedCount:mismatches.length};
 }
-function comparePalletMapping(bol,sup,add){
+function comparePalletMapping(bol,sup,add,keyFn){
   const bMap=palletsBySSCC(bol),sMap=palletsBySSCC(sup);
   if(!bMap.size&&!sMap.size)return;
   const common=[...bMap.keys()].filter(s=>sMap.has(s));
@@ -1421,13 +1430,14 @@ function comparePalletMapping(bol,sup,add){
     const bp=bMap.get(sscc),sp=sMap.get(sscc);
     if(sp.palletGtin&&!bp.palletGtin)palletGtinUnmapped=true;
     const diffs=[];
-    const bTot=palletItemTotals(bp.items),sTot=palletItemTotals(sp.items);
+    const bTot=palletItemTotals(bp.items,keyFn),sTot=palletItemTotals(sp.items,keyFn);
     const allGtins=[...new Set([...bTot.keys(),...sTot.keys()])];
     allGtins.forEach(g=>{
       const hasB=bTot.has(g),hasS=sTot.has(g);
-      if(!hasB)diffs.push(`item EAN <code>${esc(g)}</code> missing on the bol side of this pallet`);
-      else if(!hasS)diffs.push(`item EAN <code>${esc(g)}</code> missing on the supplier side of this pallet`);
-      else if(bTot.get(g)!==sTot.get(g))diffs.push(`quantity for item EAN <code>${esc(g)}</code> (supplier <span class="val-sup">${esc(sTot.get(g))}</span> vs bol <span class="val-bol">${esc(bTot.get(g))}</span>)`);
+      const label=(hasS&&sTot.get(g).label)||(hasB&&bTot.get(g).label)||g;
+      if(!hasB)diffs.push(`item <code>${esc(label)}</code> missing on the bol side of this pallet`);
+      else if(!hasS)diffs.push(`item <code>${esc(label)}</code> missing on the supplier side of this pallet`);
+      else if(bTot.get(g).qty!==sTot.get(g).qty)diffs.push(`quantity for item <code>${esc(label)}</code> (supplier <span class="val-sup">${esc(sTot.get(g).qty)}</span> vs bol <span class="val-bol">${esc(bTot.get(g).qty)}</span>)`);
     });
     if(diffs.length)mismatches.push({sscc,diffs});
   });
@@ -1460,7 +1470,7 @@ function comparePalletMapping(bol,sup,add){
    - Check: structural observations about this side's own message
    These are deliberately kept apart so a preserved transformation (Match) doesn't
    visually hide a supplier-message issue (e.g. a repeated pallet EAN), or vice versa. */
-function palletOverviewHtml(label,facts,otherMap,sideKey){
+function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   if(!facts.pallets||!facts.pallets.length)return '';
   const relevant=facts.pallets.filter(p=>(p.items&&p.items.length)||p.sscc||p.palletGtin);
   if(!relevant.length)return '';
@@ -1482,17 +1492,17 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
     // anyDiff/allNotes and would default to "Match", even though every item
     // row inside is really "nothing to compare against".
     if(!singleMode&&hasItems&&p.sscc&&otherMap&&!otherMap.has(p.sscc))palletLevelNotes.push('No match on other side');
-    // Mapping status per GTIN, computed once per pallet (not per row): a GTIN can
-    // legitimately appear as more than one line on the same pallet (e.g. split
-    // across batches/best-before dates), so this compares the GTIN's total
-    // quantity rather than pairing individual lines by position.
+    // Mapping status per item, computed once per pallet (not per row): an
+    // item can legitimately appear as more than one line on the same pallet
+    // (e.g. split across batches/best-before dates), so this compares the
+    // item's total quantity rather than pairing individual lines by position.
     let gtinMatch=null,allItemsDiffer=false,otherTotals=null;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
-      const thisTot=palletItemTotals(p.items),otherTot=palletItemTotals(other.items);
+      const thisTot=palletItemTotals(p.items,keyFn),otherTot=palletItemTotals(other.items,keyFn);
       otherTotals=otherTot;
       gtinMatch=new Map();
-      thisTot.forEach((qty,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g)===qty));
+      thisTot.forEach((entry,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g).qty===entry.qty));
       // Only meaningful once there's more than one item to compare — with a
       // single item "all differ" and "this one differs" say the same thing,
       // so there's no redundancy to collapse.
@@ -1503,9 +1513,9 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
     items.forEach(it=>{
       const qv=palletQtyVal(it.qty);
-      const itKey=normalizeGtin(it.gtin);
+      const itKey=keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null);
       let mappingPill;
-      if(!it.gtin){
+      if(!it.gtin&&!it.art){
         mappingPill='<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
       }else if(gtinMatch){
         const ok=gtinMatch.get(itKey);
@@ -1521,7 +1531,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey){
           // Show the actual compared quantities alongside the pill, the same
           // way the Line comparison table does — a bare "Difference" pill on
           // its own doesn't say what differs.
-          const otherQ=otherTotals&&otherTotals.has(itKey)?otherTotals.get(itKey):undefined;
+          const otherQ=otherTotals&&otherTotals.has(itKey)?otherTotals.get(itKey).qty:undefined;
           const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;">(${esc(qv??'—')} → ${esc(otherQ??'—')})</span>`;
           mappingPill=(ok?pillMatch():pillDiff())+qtyTxt;
         }
@@ -1795,7 +1805,7 @@ function compare(bol,sup){
   if(type==='DESADV'){
     checkPalletStructure(sup,'Supplier',add);
     checkPalletStructure(bol,'Bol',add);
-    comparePalletMapping(bol,sup,add);
+    comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
     // document number often already serves as the packing reference for
@@ -3319,8 +3329,9 @@ function render(result,bol,sup,notes){
   const hasPallets=(sup.pallets&&sup.pallets.length)||(bol.pallets&&bol.pallets.length);
   if(st.ssccBol||st.ssccSup||hasPallets){document.getElementById('ssccPanel').classList.remove('hidden');const sr=result.ssccResult;let h='<div style="font-size:13px;line-height:1.7;">';h+=`<div><span class="pill ok">${sr.common.length}</span> in both</div>`;if(sr.onlySup.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlySup.length}</span> supplier only: <span class="mono val-sup">${esc(sr.onlySup.join(', '))}</span></div>`;if(sr.onlyBol.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlyBol.length}</span> bol only: <span class="mono val-bol">${esc(sr.onlyBol.join(', '))}</span></div>`;h+='</div>';
     if(hasPallets){
-      h+=palletOverviewHtml('Supplier',sup,palletsBySSCC(bol),'sup');
-      h+=palletOverviewHtml('bol',bol,palletsBySSCC(sup),'bol');
+      const palletKeyFn=buildKeyResolver(bol,sup);
+      h+=palletOverviewHtml('Supplier',sup,palletsBySSCC(bol),'sup',palletKeyFn);
+      h+=palletOverviewHtml('bol',bol,palletsBySSCC(sup),'bol',palletKeyFn);
     }
     document.getElementById('ssccBody').innerHTML=h;
     const totalPallets=(sup.pallets?sup.pallets.length:0)+(bol.pallets?bol.pallets.length:0);
