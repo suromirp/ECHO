@@ -1778,6 +1778,14 @@ function compare(bol,sup){
     if(ssccResult.onlyBol.length)add('err',`${ssccResult.onlyBol.length} SSCC(s) only in the bol output: <code>${ssccResult.onlyBol.join(', ')}</code>.`,'diff');
     if(ssccResult.onlySup.length)add('err',`${ssccResult.onlySup.length} SSCC(s) only in the supplier message: <code>${ssccResult.onlySup.join(', ')}</code>.`,'diff');
     if(!ssccResult.onlyBol.length&&!ssccResult.onlySup.length)add('ok',`All ${ssccResult.common.length} SSCCs are present in both messages.`,'diff');
+  }else if(type==='DESADV'&&(sup.lines.length||bol.lines.length)){
+    // Neither side has any SSCC at all — "Quantities: Match" only means the
+    // totals per EAN add up; it says nothing about whether items ended up
+    // in the right pallet, since there's no SSCC to check that against on
+    // either side. Worth stating plainly rather than leaving this silently
+    // absent — a supplier-side gap ("No SSCC found" above), not something
+    // Transus can fix, so kept at message level rather than sent to them.
+    add('warn',"Neither message contains an SSCC (GIN+BJ), so pallet-level mapping couldn't be checked between the two — only the item quantities were compared.",'message');
   }
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
