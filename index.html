@@ -2143,6 +2143,11 @@ function parseInvoicEdifact(raw){
         else if(q==='176')cur.totals.tax=v;
         else if(q==='124'){if(cur.totals.tax===null)cur.totals.tax=v;cur.extras.taxMoa=v;}
         else if(q==='9')cur.totals.payable=v;
+        // 77 = "Invoice amount" per the official EDIFACT 5025 code list — a
+        // less common but equally valid qualifier for the same concept as
+        // 9 ("Amount due/payable"). Only used as a fallback so 9 always
+        // wins when a message happens to carry both.
+        else if(q==='77'&&cur.totals.payable===null)cur.totals.payable=v;
         else if(q==='128')cur.totals.lineTotal=v;
         else if(q==='79')cur.totals.lineTotal=v;
         else if(q==='129')cur.totals.discountBase=v;
@@ -2718,20 +2723,33 @@ function compareInvoice(sup,bol){
   // anything (not the sum a reader would expect, not the message's own
   // stated total), which is worse than three separate, correct ones.
   const chKey=c=>`${c.kind}|${(c.code||'').trim()}|${c.level}${c.level==='line'?'|'+(c.lineRef??''):''}`;
-  const chMap=arr=>{const m=new Map();arr.forEach(c=>{const k=chKey(c);if(!m.has(k))m.set(k,{kind:c.kind,code:c.code,desc:c.desc,level:c.level,lineRef:c.lineRef,amount:0,n:0});const e=m.get(k);if(c.amount!==null&&c.amount!==undefined){e.amount+=c.amount;}e.n++;});return m;};
+  const chMap=arr=>{const m=new Map();arr.forEach(c=>{const k=chKey(c);if(!m.has(k))m.set(k,{kind:c.kind,code:c.code,desc:c.desc,level:c.level,lineRef:c.lineRef,amount:0,hasAmount:false,n:0});const e=m.get(k);if(c.amount!==null&&c.amount!==undefined){e.amount+=c.amount;e.hasAmount=true;}e.n++;});return m;};
   const scm=chMap(sc),bcm=chMap(bc);
   const chargeFindings=[];
   [...new Set([...scm.keys(),...bcm.keys()])].forEach(k=>{
     const s=scm.get(k),b=bcm.get(k);
     const ref=s||b;
     const ok=s&&b?amtEq(isCredit?Math.abs(Math.round(s.amount*100)/100):Math.round(s.amount*100)/100,isCredit?Math.abs(Math.round(b.amount*100)/100):Math.round(b.amount*100)/100):false;
+    // bol's invoice process deliberately never forwards line-level
+    // allowances (article discounts) — only line-level charges (surcharges)
+    // are processed and carried through. Confirmed with Transus (support
+    // ticket, Aug 2026): an ALC+A discount segment — even an empty one with
+    // no amount at all, as some suppliers send — is expected to have no
+    // bol-side counterpart. That's documented, structural behaviour, not a
+    // mapping gap, so it's shown in the table (for transparency) but not
+    // raised as a "Difference" finding the way any other missing
+    // charge/allowance would be.
+    const expectedDrop=ref.kind==='allowance'&&ref.level==='line'&&s&&!b;
+    const sAmt=s&&s.hasAmount?Math.round(s.amount*100)/100:null;
+    const bAmt=b&&b.hasAmount?Math.round(b.amount*100)/100:null;
     chargeRows.push({kind:ref.kind,code:ref.code,desc:ref.desc,level:ref.level,lineRef:ref.lineRef,
-      sup:s?Math.round(s.amount*100)/100:null,bol:b?Math.round(b.amount*100)/100:null,
-      status:(s&&b)?(ok?'ok':'diff'):'diff'});
+      sup:sAmt,bol:bAmt,
+      status:expectedDrop?'expected':((s&&b)?(ok?'ok':'diff'):'diff')});
+    if(expectedDrop)return;
     const nm=`${ref.kind==='charge'?'Charge':'Allowance'}${ref.code?' '+ref.code:''} (${ref.level==='line'?'line level'+(ref.lineRef?', line '+ref.lineRef:''):'message level'})`;
-    if(s&&!b)chargeFindings.push(`${nm} of <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> is only present in the supplier message.`);
-    else if(b&&!s)chargeFindings.push(`${nm} of <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span> is only present in the bol output.`);
-    else if(!ok)chargeFindings.push(`${nm}: amount differs — supplier <span class="val-sup">${fmtAmt(Math.round(s.amount*100)/100,cur)}</span> vs bol <span class="val-bol">${fmtAmt(Math.round(b.amount*100)/100,cur)}</span>.`);
+    if(s&&!b)chargeFindings.push(`${nm} of <span class="val-sup">${sAmt===null?'—':fmtAmt(sAmt,cur)}</span> is only present in the supplier message.`);
+    else if(b&&!s)chargeFindings.push(`${nm} of <span class="val-bol">${bAmt===null?'—':fmtAmt(bAmt,cur)}</span> is only present in the bol output.`);
+    else if(!ok)chargeFindings.push(`${nm}: amount differs — supplier <span class="val-sup">${sAmt===null?'—':fmtAmt(sAmt,cur)}</span> vs bol <span class="val-bol">${bAmt===null?'—':fmtAmt(bAmt,cur)}</span>.`);
   });
   // Capped the same way every other repeated-finding list in ECHO is: a
   // handful shown in full, the rest summarized — an invoice with the same
@@ -3949,7 +3967,7 @@ function renderInvoiceCompare(res,notes){
     h+=`<div class="panel"><h2>Charges &amp; allowances</h2><div class="inv-scroll"><table class="inv">
       <tr><th>Type</th><th>Code</th><th>Description</th><th>Level</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.chargeRows.map(c=>{
-      const pill=c.status==='ok'?pillMatch():pillDiff();
+      const pill=c.status==='ok'?pillMatch():c.status==='expected'?'<span class="pill" title="bol\'s invoice process deliberately doesn\'t forward line-level allowances (discounts) — only line-level charges are carried through. Confirmed with Transus: expected, not a mapping gap.">Not forwarded (expected)</span>':pillDiff();
       return `<tr><td>${c.kind==='charge'?'Charge':'Allowance'}</td><td class="mono">${esc(c.code||'—')}</td><td class="desc">${esc(c.desc||'')}</td><td>${c.level==='line'?'line level'+(c.lineRef?' <span class="dim">('+esc(c.lineRef)+')</span>':''):'message level'}</td>
         <td class="num"><span class="s">${esc(fmtAmt(c.sup,cur)??'—')}</span></td><td class="num"><span class="b">${esc(fmtAmt(c.bol,cur)??'—')}</span></td><td>${pill}</td></tr>`;
     }).join('');
