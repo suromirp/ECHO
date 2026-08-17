@@ -1253,12 +1253,14 @@ function aggregate(facts,keyFn){
    one near-identical paragraph per line. */
 const ACTION_RULE_EXPLAIN={
   'action5-missing-confirmed':"Action 5 (fully accepted), but no confirmed quantity (QTY+12) is present — a full accept should state how much was confirmed.",
+  'action5-confirmed-zero':"Action 5 (fully accepted), but the confirmed quantity (QTY+12) is explicitly 0 — that reads more like a cancellation than a full accept. Worth being aware of, though this alone doesn't affect the mapping.",
   'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
   'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
   'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
   'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), but nothing is backordered — the confirmed quantity already covers the full amount. Action 6 normally means either a backorder or just a changed delivery date; with no backorder, this looks like the date-only kind. Worth confirming these weren't meant to be action 5 instead.",
   'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
   'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
+  'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
   'action2-has-confirmed':"Action 2 (cancelled), but a confirmed quantity is present too — a cancelled line shouldn't have anything confirmed."
 };
 function actionRuleExplain(key){
@@ -1271,10 +1273,20 @@ function actionRuleExplain(key){
 function validateOrdrspLine(bgmFunc,line){
   const keys=[];let level='ok';const a=line.action;
   const has=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]!==''&&line.qty[q]!=='0';
+  // Distinguishes "the field isn't in the message at all" from "the field is
+  // there, and explicitly says 0" — very different situations that the
+  // same has()===false result used to blur together into one alarming
+  // "no quantity is present" message, even when a quantity clearly was
+  // present, just zero.
+  const isZero=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]==='0';
   const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
   const bump=l=>{if(l==='err')level='err';else if(l==='warn'&&level!=='err')level='warn';};
   if(a==='5'){
-    if(!has('12')){keys.push('action5-missing-confirmed');bump('err');}
+    if(!has('12')){
+      const zero=isZero('12');
+      keys.push(zero?'action5-confirmed-zero':'action5-missing-confirmed');
+      bump(zero?'warn':'err');
+    }
     if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){keys.push('action5-missing-date');bump('warn');}
     if(has('83')){keys.push('action5-has-backorder');bump('err');}
     if(has('182')){keys.push('action5-has-cancelled');bump('err');}
@@ -1285,7 +1297,11 @@ function validateOrdrspLine(bgmFunc,line){
       bump('warn');
     }
   }else if(a==='2'){
-    if(!has('182')){keys.push('action2-missing-cancelled');bump('err');}
+    if(!has('182')){
+      const zero=isZero('182');
+      keys.push(zero?'action2-cancelled-zero':'action2-missing-cancelled');
+      bump(zero?'warn':'err');
+    }
     if(has('12')){keys.push('action2-has-confirmed');bump('err');}
   }else{keys.push(`action-unknown:${a??'(none)'}`);bump('warn');}
   return {level,keys};
@@ -1307,6 +1323,26 @@ function groupActionFindings(entries){
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.item)}</span></li>`).join('');
     return {level:g.level,text:`${actionRuleExplain(key)} <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`};
+  });
+}
+/* Groups {ref,taxType,category} entries from the TAX-segment "category
+   present but no rate" check into one block per distinct (type, category)
+   combination — the same one-explanation-many-refs shape as action findings
+   above, so an invoice where this happens on every line (as it typically
+   does — one summary TAX pair per line, repeated) gets ONE note, not one
+   per line. */
+function taxIssueFindings(taxIssues){
+  if(!taxIssues||!taxIssues.length)return [];
+  const order=[];const groups=new Map();
+  taxIssues.forEach(t=>{
+    const key=t.taxType+'|'+t.category;
+    if(!groups.has(key)){groups.set(key,{taxType:t.taxType,category:t.category,refs:[]});order.push(key);}
+    groups.get(key).refs.push(t.ref);
+  });
+  return order.map(key=>{
+    const g=groups.get(key);
+    const n=g.refs.length;
+    return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong> — EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one. Affected: ${g.refs.map(esc).join(', ')}.`;
   });
 }
 
@@ -1909,7 +1945,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],extras:{},raw:null};
+    taxRates:[],taxIssues:[],extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 
@@ -2127,6 +2163,18 @@ function parseInvoicEdifact(raw){
         });
         if(curLine){if(pct!==null)curLine.vatPct=pct;}
         else if(pct!==null)uniqPush(cur.taxRates,pct);
+        // A duty/tax/fee segment that names a category (e.g. "S"/"E") but
+        // has no rate at all is a common, silent cause of validation
+        // failures downstream — Transus rejects it even though it doesn't
+        // affect ECHO's own reading here (an earlier, well-formed segment
+        // for the same line already supplied the rate). Worth surfacing
+        // even though it changes nothing about the comparison itself.
+        const taxType=(el[2]||'').trim();
+        const category=(comp(6)[0]||'').trim();
+        if(pct===null&&taxType&&category){
+          const ref=curLine?`line ${curLine.lineNo||'?'}`:'the invoice summary';
+          cur.taxIssues.push({ref,taxType,category});
+        }
         break;}
       case 'UNS':{
         if(curLine){cur.lines.push(curLine);curLine=null;}
@@ -2469,7 +2517,7 @@ function matchInvoicePair(supList,bolList){
 
 function compareInvoice(sup,bol){
   const findings=[];
-  const add=(level,text)=>findings.push({level,text});
+  const add=(level,text,cat)=>findings.push({level,text,cat:cat||'diff'});
   const cur=bol.currency||sup.currency||'';
   /* Credit notes are a separate process: suppliers commonly send them with
      positive quantities/amounts (EDIFACT's BGM function code — 381/384 — is
@@ -2484,6 +2532,12 @@ function compareInvoice(sup,bol){
   const bolEffectiveDocType=(sup.docType==='credit'&&bol.docType!=='credit'&&bolLooksNegative)?'credit':bol.docType;
   const isCredit=sup.docType==='credit'&&bolEffectiveDocType==='credit';
   if(isCredit)add('info','This is a <strong>credit note</strong>. Quantities and monetary totals are compared by magnitude, since the supplier and bol may express the credit using different sign conventions.');
+  // TAX segments with a category but no rate: a data-quality issue with that
+  // side's own message, not a supplier↔bol mapping difference — so it's
+  // kept out of the Transus report (cat 'message') the same way a missing
+  // SSCC is: it's whichever side sent it that needs to fix it, not Transus.
+  taxIssueFindings(sup.taxIssues).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
+  taxIssueFindings(bol.taxIssues).forEach(t=>add('warn',`Bol — ${t}`,'message'));
 
   /* ---- header ---- */
   const hdr=[];
@@ -2778,6 +2832,9 @@ function invoiceOverviewHtml(inv,opts={}){
     if(ambigDespatch)bits.push('packing reference');
     h+=`<div class="note-inline" style="color:var(--warn)">Note: some lines have an ambiguous ${bits.join(' and ')} (multiple message-level references in the message that can't be unambiguously linked to a line). No automatic match was made.</div>`;
   }
+  taxIssueFindings(inv.taxIssues).forEach(t=>{
+    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
+  });
 
   const parties=Object.keys(inv.parties).map(r=>partyHtml(r,inv.parties[r],jumpCall)).filter(Boolean).join('');
   if(parties)h+=`<div class="sec-h">Parties</div><div class="party-grid">${parties}</div>`;
@@ -3818,14 +3875,26 @@ function renderInvoiceCompare(res,notes){
 
   if(notes&&notes.length)h+=`<div class="panel"><div class="note-inline">${notes.map(esc).join('<br>')}</div></div>`;
 
-  /* findings */
+  /* findings — split into the same three plain-language buckets ORDRSP/
+     DESADV already use, so a preserved transformation and a message-quality
+     observation (e.g. a malformed TAX segment) never blur together here either. */
   const order={err:0,warn:1,info:2,ok:3};
   const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
-  const fs=[...res.findings].sort((a,b)=>order[a.level]-order[b.level]);
-  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">`;
   const clsOf={err:'f-err',warn:'f-warn',ok:'f-ok',info:'f-info'};
-  h+=fs.map(f=>`<li class="${clsOf[f.level]||''}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
-  h+=`</ul><div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
+  const cats=[
+    {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
+    {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
+    {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
+  ];
+  let fs='';
+  cats.forEach(c=>{
+    const items=res.findings.filter(f=>(f.cat||'diff')===c.key).sort((a,b)=>order[a.level]-order[b.level]);
+    if(!items.length)return;
+    fs+=`<li class="findings-cat" title="${esc(c.hint)}">${esc(c.title)}</li>`;
+    fs+=items.map(f=>`<li class="${clsOf[f.level]||''}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
+  });
+  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${fs}</ul>`;
+  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
 
   /* "Worth checking" panel — sup/bol observations were already computed above */
   const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
