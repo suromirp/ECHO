@@ -1820,6 +1820,20 @@ function compare(bol,sup){
     ({label,r})=>`Item <code>${label}</code>: order numbers differ — supplier [${r.supOrders.join(', ')||'—'}] vs bol [${r.bolOrders.join(', ')||'—'}].`,
     rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
+  // Neither side references an order number (RFF+ON) at all — the per-item
+  // check above only flags a DIFFERENCE, so two sides that are equally
+  // empty silently pass as "matching" even though the order reference
+  // itself was never actually present to compare. Worth stating plainly,
+  // the same way a completely-missing SSCC is, rather than leaving a
+  // reader to notice the "—" in every Order column themselves.
+  if(!orderDiffs.length&&(sup.lines.length||bol.lines.length)){
+    const supHasAnyOrder=sup.lines.some(l=>l.orders&&l.orders.size)||(sup.orderRefsHeader&&sup.orderRefsHeader.size);
+    const bolHasAnyOrder=bol.lines.some(l=>l.orders&&l.orders.size)||(bol.orderRefsHeader&&bol.orderRefsHeader.size);
+    if(!supHasAnyOrder&&!bolHasAnyOrder){
+      add('warn',"Neither message references an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.",'message');
+    }
+  }
+
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
   const ssccResult={onlyBol:[...bSscc].filter(x=>!sSscc.has(x)),onlySup:[...sSscc].filter(x=>!bSscc.has(x)),common:[...bSscc].filter(x=>sSscc.has(x))};
