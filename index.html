@@ -822,11 +822,9 @@ function quickFormat(){
         }).join('');
         if(invs.length>1)ovNote=`${invs.length} invoices found in this file.`;
       }else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
-    }else if(msgType==='ORDRSP'||msgType==='DESADV'){
+    }else if(msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS'){
       const facts=parseFacts(raw);
       ovHtml=`<div class="panel"><h2>Overview</h2>${factsOverviewHtml(facts)}</div>`;
-    }else if(msgType==='ORDERS'){
-      ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">${esc(pickOrdersBlockMsg())}</div></div>`;
     }else if(msgType){
       ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Message type <strong>${esc(msgType)}</strong> isn't supported as a business overview yet. The original message is shown below.</div></div>`;
     }else{
@@ -954,11 +952,20 @@ const STATUS_TO_ACTION={'5':'5','6':'6','3':'6','2':'2','7':'2'};
 function parseFactsEdifact(raw){
   const {segs,delims}=splitSegments(raw);
   const f={format:'EDIFACT',msgType:null,bgmFunc:null,orderRefsHeader:new Set(),lines:[],ssccs:[],segs,delims,
-    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[]};
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0};
   let cur=null;
   let currentCps=null; // active CPS (pallet/package) group, DESADV only
   const push=()=>{
     if(cur){
+      // A LIN segment with nothing after the tag at all (no EAN, no action,
+      // no line number) carries no data to report — seen for real from
+      // Transus-generated test orders, where an empty "LIN'" appears right
+      // before every genuine LIN, and gets read by the receiving system as
+      // a blank item line (a real supplier complaint). Counted rather than
+      // stored as a phantom line, so it can be flagged as its own finding
+      // instead of silently becoming an empty row in the Lines table.
+      const isBlank=!cur.gtin&&!cur.action&&!cur.lineNo&&Object.keys(cur.qty).length===0;
+      if(isBlank){f.blankLinCount++;return;}
       f.lines.push(cur);
       if(cur.__cpsRef)cur.__cpsRef.items.push({lineNo:cur.lineNo,gtin:cur.gtin,art:cur.art,qty:cur.qty,action:cur.action});
     }
@@ -1042,7 +1049,7 @@ function parseFactsEdifact(raw){
 
 function parseFactsTransusXml(raw){
   const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
-    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set()};
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0};
   let doc;
   try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return f;}
   if(doc.querySelector('parsererror'))return f;
@@ -1218,9 +1225,33 @@ function buildKeyResolver(bol,sup){
   const supGtins=new Set(sup.lines.filter(l=>l.gtin).map(l=>normalizeGtin(l.gtin)));
   const artOnBoth=[...bolArts].some(a=>supArts.has(a));
   const gtinOnBoth=[...bolGtins].some(g=>supGtins.has(g));
+  // Last-resort fallback for DESADV: a line with NO usable identifier at
+  // all (no GTIN, no article code — seen for real when bol's GTIN field is
+  // blanked for an entire message and the supplier never sends an article
+  // code either) can sometimes still be identified via its pallet's SSCC —
+  // if that pallet holds exactly one item on BOTH sides, the SSCC itself
+  // already unambiguously says which item is which, with nothing else in
+  // common needed. Kept as the very last option: a pallet with more than
+  // one item still needs a real identifier to say which is which.
+  const ssccSingleItemMatch=new Set();
+  if(bol.pallets&&sup.pallets){
+    const bolBySscc=new Map(bol.pallets.filter(p=>p.sscc).map(p=>[p.sscc,p]));
+    const supBySscc=new Map(sup.pallets.filter(p=>p.sscc).map(p=>[p.sscc,p]));
+    bolBySscc.forEach((bp,sscc)=>{
+      const sp=supBySscc.get(sscc);
+      if(sp&&bp.items&&sp.items&&bp.items.length===1&&sp.items.length===1)ssccSingleItemMatch.add(sscc);
+    });
+  }
   return function key(l){
     const art=(l.art&&l.art.trim())?l.art:null;
     const gtin=(l.gtin&&l.gtin.trim())?normalizeGtin(l.gtin):null;
+    // When NEITHER identifier is reliable across the whole message, the
+    // pallet fallback takes priority over even a real GTIN/article code on
+    // THIS one line — otherwise the supplier's line (which may still carry
+    // a real GTIN) would key off that GTIN alone, while its actual
+    // counterpart on bol's side (which has none) falls back to the SSCC
+    // key instead, and the two never end up matching each other at all.
+    if(!artOnBoth&&!gtinOnBoth&&l.__cpsRef&&l.__cpsRef.sscc&&ssccSingleItemMatch.has(l.__cpsRef.sscc))return 'K:SSCC:'+l.__cpsRef.sscc;
     // Prefer the identifier that actually appears on both sides.
     if(artOnBoth&&art)return 'K:'+art;
     if(gtinOnBoth&&gtin)return 'K:'+(gtinToArt.get(gtin)||gtin); // normalise gtin->art if known
@@ -1471,6 +1502,32 @@ function palletItemTotals(items,keyFn){
   });
   return m;
 }
+/* Builds the per-item totals for a pallet PAIR (bol + supplier) together,
+   rather than each side independently — needed for one extra fallback:
+   when a pallet holds exactly one item on each side, there's only one
+   possible pairing regardless of whether either item has ANY usable
+   identifier. Seen for real when bol's GTIN field is blanked for an
+   entire message and the supplier never sends an article code either,
+   leaving nothing in common to match on even though the SSCC itself
+   already uniquely identifies which item is which — matching by GTIN/art
+   alone would otherwise report both sides' only item as entirely missing
+   from the other. Only kicks in when the normal keyed match would
+   genuinely fail; a real multi-item mismatch on a 1-item pallet (wrong
+   item entirely) still needs the standard path to catch it, so this is
+   skipped whenever either side actually has more than one item. */
+function resolvePalletItemTotals(bItems,sItems,keyFn){
+  if((bItems||[]).length===1&&(sItems||[]).length===1&&keyFn){
+    const b0=bItems[0],s0=sItems[0];
+    if(keyFn(b0)!==keyFn(s0)){
+      const label=s0.gtin||s0.art||b0.gtin||b0.art||'?';
+      const k='__single-item-pallet__';
+      const bq=palletQtyEff(palletQtyVal(b0.qty)),sq=palletQtyEff(palletQtyVal(s0.qty));
+      return {bTot:new Map([[k,{qty:typeof bq==='number'?bq:0,label}]]),
+        sTot:new Map([[k,{qty:typeof sq==='number'?sq:0,label}]])};
+    }
+  }
+  return {bTot:palletItemTotals(bItems,keyFn),sTot:palletItemTotals(sItems,keyFn)};
+}
 /* A common real-world failure mode: instead of N independent pallet
    mismatches, one side has collapsed nearly all of its item data onto a
    single pallet while leaving almost every other pallet holding just a
@@ -1509,14 +1566,14 @@ function comparePalletMapping(bol,sup,add,keyFn){
     const bp=bMap.get(sscc),sp=sMap.get(sscc);
     if(sp.palletGtin&&!bp.palletGtin)palletGtinUnmapped=true;
     const diffs=[];
-    const bTot=palletItemTotals(bp.items,keyFn),sTot=palletItemTotals(sp.items,keyFn);
-    const allGtins=[...new Set([...bTot.keys(),...sTot.keys()])];
+    const {bTot:bTotal,sTot:sTotal}=resolvePalletItemTotals(bp.items,sp.items,keyFn);
+    const allGtins=[...new Set([...bTotal.keys(),...sTotal.keys()])];
     allGtins.forEach(g=>{
-      const hasB=bTot.has(g),hasS=sTot.has(g);
-      const label=(hasS&&sTot.get(g).label)||(hasB&&bTot.get(g).label)||g;
+      const hasB=bTotal.has(g),hasS=sTotal.has(g);
+      const label=(hasS&&sTotal.get(g).label)||(hasB&&bTotal.get(g).label)||g;
       if(!hasB)diffs.push(`item <code>${esc(label)}</code> missing on the bol side of this pallet`);
       else if(!hasS)diffs.push(`item <code>${esc(label)}</code> missing on the supplier side of this pallet`);
-      else if(bTot.get(g).qty!==sTot.get(g).qty)diffs.push(`quantity for item <code>${esc(label)}</code> (supplier <span class="val-sup">${esc(sTot.get(g).qty)}</span> vs bol <span class="val-bol">${esc(bTot.get(g).qty)}</span>)`);
+      else if(bTotal.get(g).qty!==sTotal.get(g).qty)diffs.push(`quantity for item <code>${esc(label)}</code> (supplier <span class="val-sup">${esc(sTotal.get(g).qty)}</span> vs bol <span class="val-bol">${esc(bTotal.get(g).qty)}</span>)`);
     });
     if(diffs.length)mismatches.push({sscc,diffs});
   });
@@ -1575,10 +1632,13 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     // item can legitimately appear as more than one line on the same pallet
     // (e.g. split across batches/best-before dates), so this compares the
     // item's total quantity rather than pairing individual lines by position.
-    let gtinMatch=null,allItemsDiffer=false,otherTotals=null;
+    let gtinMatch=null,allItemsDiffer=false,otherTotals=null,singlePalletOverrideKey=null;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
-      const thisTot=palletItemTotals(p.items,keyFn),otherTot=palletItemTotals(other.items,keyFn);
+      const bItems=sideKey==='bol'?p.items:other.items;
+      const sItems=sideKey==='bol'?other.items:p.items;
+      const {bTot,sTot}=resolvePalletItemTotals(bItems,sItems,keyFn);
+      const thisTot=sideKey==='bol'?bTot:sTot,otherTot=sideKey==='bol'?sTot:bTot;
       otherTotals=otherTot;
       gtinMatch=new Map();
       thisTot.forEach((entry,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g).qty===entry.qty));
@@ -1587,12 +1647,17 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // so there's no redundancy to collapse.
       const vals=[...gtinMatch.values()];
       allItemsDiffer=vals.length>1&&vals.every(v=>!v);
+      // When the pallet-pair fallback kicked in (exactly one item on each
+      // side, nothing in common to match on), the totals above are keyed by
+      // a synthetic marker rather than this item's own keyFn() result —
+      // reused below so the per-row lookup still finds it.
+      if(thisTot.has('__single-item-pallet__'))singlePalletOverrideKey='__single-item-pallet__';
     }
     let rows='',anyDiff=false;
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
     items.forEach(it=>{
       const qv=palletQtyVal(it.qty);
-      const itKey=keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null);
+      const itKey=singlePalletOverrideKey||(keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null));
       let mappingPill;
       if(!it.gtin&&!it.art){
         mappingPill='<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
@@ -1876,6 +1941,13 @@ function compare(bol,sup){
       add('warn',"Neither message references an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.",'message');
     }
   }
+
+  // Blank LIN segments (no EAN, action or line number at all) carry no
+  // data — a real supplier complaint traced this to a stray empty "LIN'"
+  // Transus inserted right before every genuine LIN in a test order,
+  // which the receiving system then reads as a blank item line.
+  if(sup.blankLinCount)add('warn',`Supplier — ${sup.blankLinCount} blank LIN segment${sup.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines.`,'message');
+  if(bol.blankLinCount)add('warn',`Bol — ${bol.blankLinCount} blank LIN segment${bol.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines.`,'message');
 
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
@@ -3250,7 +3322,11 @@ function factsOverviewHtml(facts){
   // here too. Not the SSCC/packing-reference checks below, though — those
   // are DESADV-specific there (ORDRSP has no pallet/despatch concept), so
   // scoped the same way here for genuine parity rather than just similarity.
-  if(facts.lines.length){
+  if(facts.blankLinCount)qcAdd('warn',`${facts.blankLinCount} blank LIN segment${facts.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`);
+  // ORDERS is the order itself — BGM's own document number already serves
+  // as its reference, so unlike ORDRSP/DESADV (which point back at a
+  // separate bol PO via RFF+ON) there's nothing extra to expect here.
+  if(facts.lines.length&&type!=='ORDERS'){
     const hasAnyOrder=facts.lines.some(l=>l.orders&&l.orders.size)||(facts.orderRefsHeader&&facts.orderRefsHeader.size);
     if(!hasAnyOrder)qcAdd('warn',"This message doesn't reference an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.");
   }
