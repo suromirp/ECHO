@@ -2348,6 +2348,78 @@ function deepFirst(el,path){
 function textOf(el){return el?el.textContent.trim():null;}
 function valOf(el,path){const n=deepFirst(el,path);const t=textOf(n);return t===''?null:t;}
 
+/* A FOURTH XML invoice dialect: a raw Exact Online accounting-package
+   export (root <Invoice type="object">, Exact-specific fields like
+   <SupplierTID>/<StarterSalesInvoiceStatus>, lines under
+   <SalesInvoiceLines><SalesInvoiceLine>). Distinguishing from the generic
+   <Invoice>/<CreditNote>-wrapped Transus XML above matters because that
+   parser's findAll('Invoice') would otherwise match THIS document's own
+   root element too, then silently extract zero lines (its field names
+   don't overlap) — which reads as if every one of bol's lines has no
+   supplier-side counterpart at all, rather than what's actually true: a
+   format ECHO didn't know how to read yet. Confirmed against a real
+   message : NetPrice is already per single unit
+   (Quantity × NetPrice reconciles exactly with AmountDC, no basis-quantity
+   wrinkle like the TRANSUSXML dialect above), and AmountDC/VATAmountDC sum
+   exactly to InvoiceNetLineAmount/InvoiceVATAmountFC. */
+function looksLikeExactOnlineXml(raw){
+  const head=raw.slice(0,3000);
+  return /<Invoice\s+type="object"/i.test(head)&&/<SalesInvoiceLines>|<SupplierTID>|<StarterSalesInvoiceStatus/i.test(head);
+}
+function parseInvoicExactOnlineXml(raw){
+  let doc;
+  try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return [];}
+  if(!doc||doc.querySelector('parsererror'))return [];
+  const root=doc.documentElement;
+  if(!root||localName(root)!=='Invoice')return [];
+  const g=name=>{const c=childByName(root,name);const t=c?textOf(c):null;return t||null;};
+  const gDeep=(parent,name)=>{const p=childByName(root,parent);if(!p)return null;const c=childByName(p,name);const t=c?textOf(c):null;return t||null;};
+  const toIso=v=>{
+    if(!v)return null;
+    const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})/);
+    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
+  };
+  const inv=emptyInvoice('Exact Online export');
+  const invAmt=num(gDeep('InvoiceTotals','InvoiceAmountDC'));
+  // "Factuur"/type 8020 is the only document-type value seen so far — no
+  // confirmed credit-note indicator for this schema yet, so the same
+  // sign-of-total safety net is used as for the other non-EDIFACT dialects.
+  inv.docType=(invAmt!==null&&invAmt<0)?'credit':'invoice';
+  inv.number=g('InvoiceNumber');
+  inv.date=toIso(g('InvoiceDate'));
+  inv.currency=g('Currency');
+  inv.deliveryDate=toIso(g('DeliveryDate'));
+  // YourRef (not OrderNumber) is used here: OrderNumber is this source system's
+  // own internal sales-order ID, but bol's own UBL puts its header
+  // OrderReference under a non-standard <SalesOrderID> element that ECHO's
+  // bol-XML parser doesn't read (every other bol INVOIC example uses the
+  // standard <cbc:ID>) — so bol's own parsed order value actually comes
+  // from its LINE-level OrderLineReference instead, which matches YourRef.
+  const orderNo=g('YourRef');if(orderNo)inv.orders.push(orderNo);
+  const despatchNo=g('DeliveryNumber');if(despatchNo)inv.despatchNotes.push(despatchNo);
+  const pt=g('PaymentCondition');if(pt&&!isNaN(parseInt(pt,10)))inv.paymentTerms.days=parseInt(pt,10);
+  inv.parties.SU={gln:g('SupplierGLN'),name:null,vat:null};
+  inv.parties.BY={gln:gDeep('InvoiceTo','GLN'),name:g('InvoiceToName'),vat:null};
+  const dp=gDeep('DeliverToAddress','GLN');if(dp)inv.parties.DP={gln:dp,name:g('DeliverToName'),vat:null};
+
+  const linesParent=childByName(root,'SalesInvoiceLines');
+  const lineEls=linesParent?[...linesParent.children].filter(c=>localName(c)==='SalesInvoiceLine'):[];
+  lineEls.forEach((ln,i)=>{
+    const lg=name=>{const c=childByName(ln,name);const t=c?textOf(c):null;return t||null;};
+    const lineNo=lg('LineNumber')||String(i+1);
+    inv.lines.push({lineNo,gtin:lg('GTIN'),art:lg('ItemCode'),desc:lg('ItemDescription')||lg('Description'),
+      qty:num(lg('Quantity')),netPrice:num(lg('NetPrice')),grossPrice:null,
+      lineAmount:num(lg('AmountDC'))??num(lg('AmountFC')),
+      vatPct:num(lg('VATPercentage')),orders:[],despatch:[],charges:[]});
+  });
+
+  inv.totals.payable=invAmt;
+  inv.totals.lineTotal=num(gDeep('InvoiceTotals','InvoiceNetLineAmount'));
+  inv.totals.taxable=inv.totals.lineTotal; // no separate taxable-base field in this schema; net line total doubles as it
+  inv.totals.tax=num(gDeep('InvoiceTotals','InvoiceVATAmountFC'));
+  const vatPct=num(g('VATPercentage'));if(vatPct!==null)uniqPush(inv.taxRates,vatPct);
+  return [inv];
+}
 /* A THIRD XML invoice dialect, distinct from both bol's own UBL output and
    the generic <Invoice>/<CreditNote>-wrapped Transus XML handled above: a
    flat <Messages><Message> structure (self-labelled MessageStandard=
@@ -2797,6 +2869,10 @@ function parseInvoices(raw){
   if(isXmlText(raw)){
     if(looksLikeTransusMessageXml(raw)){
       const r=parseInvoicTransusMessageXml(raw);
+      if(r.length)return r;
+    }
+    if(looksLikeExactOnlineXml(raw)){
+      const r=parseInvoicExactOnlineXml(raw);
       if(r.length)return r;
     }
     if(looksLikeBolUbl(raw)){
@@ -4477,6 +4553,19 @@ async function handleZip(file){
     const zip=await JSZip.loadAsync(file);const entries=[];
     zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))entries.push({path,entry});});
     if(!entries.length){cSetStatus('No files found in the ZIP.',true);return;}
+    // A ZIP with only one usable file (no supplier/bol pair) can't be
+    // compared — but the message itself is still real and worth seeing, so
+    // switch to Quick check and load it there instead of just failing.
+    if(entries.length===1){
+      const only=entries[0];
+      const text=await only.entry.async('string');
+      const name=only.path.split('/').pop();
+      showTab('quick');
+      document.getElementById('quickInput').value=text;
+      quickFormat();
+      quickSetStatus(`This ZIP only contained one message ("${name}") — no supplier/bol pair to compare, so it's shown here in Quick check instead.`);
+      return;
+    }
     let bolE=null,supE=null;
     for(const it of entries){const top=it.path.toLowerCase().split('/')[0];if(/bol/.test(top))bolE=it;else supE=it;}
     if(!bolE||!supE){if(entries.length>=2){supE=supE||entries[0];bolE=bolE||entries.find(e=>e!==supE)||entries[1];}}
