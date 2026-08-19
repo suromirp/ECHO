@@ -4554,16 +4554,28 @@ async function handleZip(file){
     zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))entries.push({path,entry});});
     if(!entries.length){cSetStatus('No files found in the ZIP.',true);return;}
     // A ZIP with only one usable file (no supplier/bol pair) can't be
-    // compared — but the message itself is still real and worth seeing, so
-    // switch to Quick check and load it there instead of just failing.
+    // compared — but the message itself is still real and worth seeing.
+    // Switching tabs instantly (with only a small dim status line as
+    // explanation) felt like the view just changed for no visible reason,
+    // so this explains itself here first, pauses long enough to actually
+    // read it, then switches — and repeats the explanation as a
+    // hard-to-miss banner in Quick check itself, not just status text.
     if(entries.length===1){
       const only=entries[0];
       const text=await only.entry.async('string');
       const name=only.path.split('/').pop();
+      cSetStatus(`This ZIP only contains one message ("${name}") — no supplier/bol pair to compare. Opening it in Quick check instead…`);
+      await new Promise(r=>setTimeout(r,1100));
       showTab('quick');
       document.getElementById('quickInput').value=text;
       quickFormat();
-      quickSetStatus(`This ZIP only contained one message ("${name}") — no supplier/bol pair to compare, so it's shown here in Quick check instead.`);
+      const banner=document.createElement('div');
+      banner.className='note-inline';
+      banner.style.cssText='color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;';
+      banner.innerHTML=`⚠ <strong>Switched here automatically.</strong> The ZIP you dropped only contained one message ("${esc(name)}"), not a supplier/bol pair — so there was nothing to compare. Shown here in Quick check instead.`;
+      const ov=document.getElementById('quickOverview');
+      ov.insertBefore(banner,ov.firstChild);
+      quickSetStatus('');
       return;
     }
     let bolE=null,supE=null;
