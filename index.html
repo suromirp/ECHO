@@ -971,7 +971,15 @@ function parseFactsEdifact(raw){
     else if(tag==='CPS'){
       push();cur=null;
       if(currentCps)f.pallets.push(currentCps);
-      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[]};
+      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[],weight:null};
+    }
+    else if(tag==='MEA'&&currentCps&&!cur){
+      // MEA+PD+AAD+KGM:1123.080 — weight measurement for the current CPS
+      // group (pallet or, for a parentless top-level CPS, the whole
+      // shipment). Only the first weight value per CPS is kept.
+      const c=splitEsc(el[3]||'',delims.comp,delims.rel);
+      const val=num(c[1]);
+      if(val!==null&&currentCps.weight===null)currentCps.weight={unit:c[0]||null,value:val};
     }
     else if(tag==='GIN'){
       const qual=el[1];const vals=[];
@@ -1346,6 +1354,23 @@ function taxIssueFindings(taxIssues){
   });
 }
 
+/* Prominent, hard-to-miss banner for the "file was actually multiple
+   concatenated XML documents" case — deliberately NOT folded quietly into
+   the regular findings list, since the underlying delivery to Transus
+   genuinely failed and needs a real upstream fix, not just a smoother
+   inspection experience here. */
+function concatenatedXmlBannerHtml(inv){
+  if(!inv||!inv.concatenatedXml)return '';
+  const c=inv.concatenatedXml;
+  const diffRows=c.diffs.length
+    ?c.diffs.map(d=>`<li><code>${esc(d.path)}</code>: <span class="val-sup">${esc(d.from)}</span> → <span class="val-bol">${esc(d.to)}</span></li>`).join('')
+    :'<li>No field-level differences found between the documents.</li>';
+  return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    <div>⚠ <strong>This file contains ${c.total} concatenated XML documents</strong> — not valid XML as a whole. This is very likely why delivery to Transus failed ("Couldn't parse XML content of the file"); it looks like a send/retry bug upstream, not a data issue on its own. ECHO used the last parseable document (#${c.usedIndex+1} of ${c.total}) for this comparison — the delivery itself still needs fixing.</div>
+    <div style="margin-top:8px;font-weight:600;">What changed between the last two documents:</div>
+    <ul style="margin:4px 0 0 18px;">${diffRows}</ul>
+  </div>`;
+}
 /* classify action into accept/cancel/backorder buckets — limited to the
    codes bol/Transus actually maps (confirmed against bol's own ORDRSP
    mapping table: 2, 5, 6). A supplier using any other code (e.g. the
@@ -1400,6 +1425,24 @@ function checkPalletStructure(facts,label,add){
     if(!l.__cpsRef){
       add('warn',`${label} — item <code>${esc(l.art||l.gtin||l.lineNo||'?')}</code>: <strong>Item not linked to a pallet</strong>. Item EAN ${esc(l.gtin||'?')} could not be associated with a pallet containing an SSCC.`,'message');
     }
+  });
+  // A parent CPS (e.g. the whole shipment) sometimes states its own total
+  // weight (MEA+PD+AAD) alongside the individual weights of its child
+  // pallets. These are the SAME message's own numbers, so they should
+  // roughly reconcile — a modest gap is expected (packaging weight isn't
+  // always included the same way at every level), but a large one is
+  // worth a look, entirely independent of any bol comparison.
+  const byParent=new Map();
+  facts.pallets.forEach(p=>{if(p.parentCps){if(!byParent.has(p.parentCps))byParent.set(p.parentCps,[]);byParent.get(p.parentCps).push(p);}});
+  facts.pallets.forEach(p=>{
+    if(!p.weight||p.parentCps)return; // only a true parent (no parentCps of its own) with a stated weight
+    const children=(byParent.get(p.cps)||[]).filter(c=>c.weight&&c.weight.unit===p.weight.unit);
+    if(children.length<2)return; // a single child alone isn't a meaningful sum to check
+    const childSum=Math.round(children.reduce((s,c)=>s+c.weight.value,0)*1000)/1000;
+    const diff=Math.round((childSum-p.weight.value)*1000)/1000;
+    const relDiff=p.weight.value?Math.abs(diff)/p.weight.value:0;
+    if(Math.abs(diff)<0.5||relDiff<0.15)return; // small/normal packaging-weight gap
+    add('warn',`${label}: the shipment's stated total weight (${esc(p.weight.value)} ${esc(p.weight.unit)}, CPS ${esc(p.cps)}) doesn't match the sum of its ${children.length} pallet weights (${esc(childSum)} ${esc(p.weight.unit)}) — a difference of ${esc(Math.abs(diff).toFixed(3))} ${esc(p.weight.unit)}.`,'message');
   });
 }
 
@@ -2464,7 +2507,7 @@ function detectMsgType(raw){
     // <DespatchedQuantity> field, which a loose "Despatch" substring match
     // used to misread as a DESADV signal. Checking ORDRSP's own header field
     // first, and requiring a real tag boundary after "Despatch", fixes both.
-    if(/OrderResponseNumber|OrderLine|<Orders?[\s>]/i.test(head))return 'ORDRSP';
+    if(/OrderResponseNumber|<OrderLine[\s>]|<Orders?[\s>]/i.test(head))return 'ORDRSP';
     if(/<(\w+:)?Invoice[\s>]|<(\w+:)?CreditNote[\s>]|LegalMonetaryTotal|InvoiceLine/.test(head))return 'INVOIC';
     if(/DespatchAdviceNumber|<Despatch(Line|Advice|Unit)?[\s>]/i.test(head))return 'DESADV';
     return null;
@@ -2482,7 +2525,116 @@ function detectMsgType(raw){
   return null;
 }
 /* geeft altijd een array genormaliseerde facturen terug */
+/* Detects a bol XML file that's actually TWO OR MORE XML documents
+   concatenated into one — e.g. a stray line of text (a Transus response/log
+   line, in one observed real case) glued between a failed and a retried
+   export attempt. Any text can sit between them; the reliable, generic
+   signal is simply more than one "<?xml" declaration in the same file.
+   Splitting on that (rather than on the specific stray text) means this
+   also catches the pattern if the text in between ever differs. */
+function splitConcatenatedXmlDocs(raw){
+  const idxs=[];
+  let i=raw.indexOf('<?xml');
+  while(i!==-1){idxs.push(i);i=raw.indexOf('<?xml',i+1);}
+  if(idxs.length<=1)return [raw];
+  return idxs.map((start,n)=>trimToWellFormedXml(raw.slice(start,n+1<idxs.length?idxs[n+1]:raw.length)));
+}
+/* A document sliced out at the next "<?xml" boundary can still carry
+   trailing non-XML content before that boundary (a stray log line, in the
+   one real case seen) — which alone is enough to make even that piece's
+   OWN otherwise well-formed content fail to parse. Trims back to the last
+   closing tag matching the root element, discarding anything after it. */
+function trimToWellFormedXml(chunk){
+  const rootMatch=chunk.match(/<([a-zA-Z_][\w:.-]*)[\s>]/);
+  if(!rootMatch)return chunk;
+  const closeTag=`</${rootMatch[1]}>`;
+  const closeIdx=chunk.lastIndexOf(closeTag);
+  return closeIdx===-1?chunk:chunk.slice(0,closeIdx+closeTag.length);
+}
+/* Checks whether quantity × net price reconciles with the line's own
+   stated line amount — a message's own internal arithmetic, not a
+   supplier↔bol mapping question. Framed neutrally throughout: ECHO never
+   claims a price is "wrong", only that the two ways of expressing the
+   line's value don't quite agree — most often because the net price shown
+   has fewer decimals than the amount was actually calculated with.
+   Tolerance scales with quantity, since rounding a price to 2 decimals can
+   shift the reconstructed amount by up to half a cent per unit; a gap
+   within that bound reads as ordinary rounding, a gap beyond it reads as
+   worth a second look — never as an error, and never sent to Transus,
+   since this has nothing to do with the mapping. */
+function checkLineArithmetic(qty,netPrice,lineAmount){
+  if(qty==null||netPrice==null||lineAmount==null)return null;
+  const expected=Math.round(qty*netPrice*100)/100;
+  const diff=Math.round((lineAmount-expected)*100)/100;
+  if(Math.abs(diff)<0.015)return null; // effectively equal — not worth mentioning
+  const roundingBound=Math.round((Math.abs(qty)*0.005+0.01)*100)/100;
+  return {expected,diff,withinRounding:Math.abs(diff)<=roundingBound};
+}
+function lineArithmeticFindingText(label,qty,netPrice,r,cur){
+  const explain=r.withinRounding
+    ?"within what rounding the net price to 2 decimals could explain"
+    :"larger than ordinary price rounding alone would explain — worth a second look";
+  return `Item <code>${esc(label)}</code>: quantity × net price (${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}) doesn't exactly match the stated line amount (${esc(fmtAmt(r.expected+r.diff,cur))}) — a difference of ${esc(fmtAmt(Math.abs(r.diff),cur))}, ${explain}.`;
+}
+/* Flattens an XML document into {tagPath: text} for its leaf elements, so
+   two versions of "the same" document can be diffed field-by-field without
+   needing to know the UBL schema in advance. */
+function flattenXmlLeaves(doc){
+  const out={};
+  const walk=(node,path)=>{
+    const children=[...node.children];
+    if(!children.length){
+      const text=(node.textContent||'').trim();
+      if(text)out[path]=text;
+      return;
+    }
+    const counts={};
+    children.forEach(c=>{counts[localName(c)]=(counts[localName(c)]||0)+1;});
+    const seen={};
+    children.forEach(c=>{
+      const name=localName(c);
+      seen[name]=(seen[name]||0)+1;
+      const key=counts[name]>1?`${name}[${seen[name]}]`:name;
+      walk(c,path?`${path}>${key}`:key);
+    });
+  };
+  if(doc&&doc.documentElement)walk(doc.documentElement,'');
+  return out;
+}
+function diffXmlLeaves(a,b){
+  const diffs=[];
+  [...new Set([...Object.keys(a),...Object.keys(b)])].sort().forEach(k=>{
+    if(a[k]!==b[k])diffs.push({path:k,from:a[k]===undefined?'(not present)':a[k],to:b[k]===undefined?'(not present)':b[k]});
+  });
+  return diffs;
+}
 function parseInvoices(raw){
+  if(isXmlText(raw)){
+    const docs=splitConcatenatedXmlDocs(raw);
+    if(docs.length>1){
+      const parsedDocs=docs.map(d=>{
+        try{const doc=new DOMParser().parseFromString(d,'application/xml');return (doc&&!doc.querySelector('parsererror'))?doc:null;}catch(e){return null;}
+      });
+      const validIdx=[];
+      parsedDocs.forEach((d,i)=>{if(d)validIdx.push(i);});
+      if(validIdx.length){
+        // A later attempt is assumed to be the corrected/final one — the one
+        // real case seen had an earlier attempt with a blank calculated
+        // field and a later one with it correctly filled in. Flagged
+        // prominently regardless, since the underlying delivery to Transus
+        // still failed either way and needs fixing upstream.
+        const lastIdx=validIdx[validIdx.length-1];
+        const r=parseInvoices(docs[lastIdx]);
+        if(r.length){
+          const diffs=validIdx.length>=2?diffXmlLeaves(flattenXmlLeaves(parsedDocs[validIdx[validIdx.length-2]]),flattenXmlLeaves(parsedDocs[lastIdx])):[];
+          r.forEach(inv=>{inv.concatenatedXml={total:docs.length,validCount:validIdx.length,usedIndex:lastIdx,diffs};});
+          return r;
+        }
+      }
+      // nothing usable in any piece — fall through to normal handling,
+      // which will report the read failure as it already does today.
+    }
+  }
   if(isXmlText(raw)){
     if(looksLikeBolUbl(raw)){
       const r=parseInvoicBolXml(raw);
@@ -2628,6 +2780,7 @@ function compareInvoice(sup,bol){
   const firstOf=(arr,f)=>{for(const l of arr)if(l[f]!==null&&l[f]!==undefined&&l[f]!=='')return l[f];return null;};
 
   const rows=[];
+  const arithmeticFindings=[]; // qty×price vs. line amount — message-own arithmetic, not a mapping question
   keys.forEach(k=>{
     const S=gs.m.get(k)||null,B=gb.m.get(k)||null;
     const ref=(S&&S[0])||(B&&B[0]);
@@ -2651,6 +2804,16 @@ function compareInvoice(sup,bol){
     cmpField('Net price','netPrice',v=>fmtAmt(v,cur));
     cmpField('Gross price','grossPrice',v=>fmtAmt(v,cur));
     cmpField('Line amount','lineAmount',v=>fmtAmt(v,cur),true);
+    // Internal arithmetic (qty × net price vs. line amount) — the
+    // message's own numbers, not a supplier↔bol question, so this runs
+    // once per row rather than once per side: if qty/netPrice/lineAmount
+    // already matched above, both sides carry the same figures anyway.
+    if(fieldState.qty.sup&&fieldState.netPrice.sup&&fieldState.lineAmount.sup){
+      const qv=sumBy(S,'qty'),pv=sumBy(S,'netPrice'),lv=sumBy(S,'lineAmount');
+      const ar=checkLineArithmetic(qv,pv,lv);
+      if(ar)arithmeticFindings.push({level:ar.withinRounding?'info':'warn',
+        text:lineArithmeticFindingText(row.gtin||row.art||k.replace(/^[GA]:/,''),qv,pv,ar,cur)});
+    }
     /* VAT% is not summed, but compared as a set */
     if(fieldState.vatPct.bol&&fieldState.vatPct.sup){
       const sv=[...new Set(S.map(l=>l.vatPct).filter(v=>v!==null))];
@@ -2775,6 +2938,17 @@ function compareInvoice(sup,bol){
     add('err',`<strong>${rest} more charge/allowance difference(s)</strong> — see Charges & allowances below for the full list.`);
   }
 
+  // Same capping pattern as everywhere else repeated findings show up here
+  // — tagged 'message' (not 'diff'), so this never reaches the verdict's
+  // mapping framing or the Copy for Transus text: it's a question about
+  // the message's own numbers, not about what the transformation did.
+  const ARITH_FINDING_CAP=5;
+  arithmeticFindings.slice(0,ARITH_FINDING_CAP).forEach(f=>add(f.level,f.text,'message'));
+  if(arithmeticFindings.length>ARITH_FINDING_CAP){
+    const rest=arithmeticFindings.length-ARITH_FINDING_CAP;
+    add('info',`<strong>${rest} more line(s) also show a quantity × price vs. line amount gap</strong> — see Line comparison below for the full list.`,'message');
+  }
+
   /* ---- totals ---- */
   const totRows=[];
   const tcmp=(label,key,soft)=>{
@@ -2836,6 +3010,7 @@ function invoiceOverviewHtml(inv,opts={}){
   const isCredit=inv.docType==='credit';
   const jumpCall=opts.side?(val=>`jumpToInvSource(${jsQuote(opts.side)},${jsQuote(val)})`):(val=>`jumpToQuickSource(${jsQuote(val)})`);
   let h='';
+  h+=concatenatedXmlBannerHtml(inv);
   h+=`<div class="ov-head"><span class="ov-type${isCredit?' credit':''}">${isCredit?'CREDIT NOTE':'INVOICE'}</span>`;
   if(inv.number)h+=`<span class="ov-sub">no. <strong>${esc(inv.number)}</strong></span>`;
   if(inv.date)h+=`<span class="ov-sub">${esc(showDate(inv.date))}</span>`;
@@ -2864,9 +3039,33 @@ function invoiceOverviewHtml(inv,opts={}){
     if(ambigDespatch)bits.push('packing reference');
     h+=`<div class="note-inline" style="color:var(--warn)">Note: some lines have an ambiguous ${bits.join(' and ')} (multiple message-level references in the message that can't be unambiguously linked to a line). No automatic match was made.</div>`;
   }
+  // Mirrors Compare's "N line(s) without an EAN or item number" — there,
+  // it's framed as "these couldn't be matched"; standalone, the more
+  // useful framing is simply that the line has no identifiable product
+  // reference at all.
+  const noIdLines=inv.lines.filter(l=>!(l.gtin&&String(l.gtin).trim())&&!(l.art&&String(l.art).trim())).length;
+  if(noIdLines)h+=`<div class="note-inline" style="color:var(--warn)">${noIdLines} line(s) have no EAN or item number at all.</div>`;
   taxIssueFindings(inv.taxIssues).forEach(t=>{
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
   });
+  // qty × net price vs. line amount — a message-own arithmetic check, run
+  // independently of any comparison, so it's just as useful when
+  // inspecting a single message with nothing to compare it against.
+  {
+    const arFindings=[];
+    inv.lines.forEach(l=>{
+      const ar=checkLineArithmetic(l.qty,l.netPrice,l.lineAmount);
+      if(ar)arFindings.push({level:ar.withinRounding?'info':'warn',text:lineArithmeticFindingText(l.art||l.gtin||'?',l.qty,l.netPrice,ar,cur)});
+    });
+    const ARITH_CAP=5;
+    arFindings.slice(0,ARITH_CAP).forEach(f=>{
+      h+=`<div class="note-inline" style="color:var(${f.level==='warn'?'--warn':'--info'})">${f.level==='warn'?'!':'ⓘ'} ${f.text}</div>`;
+    });
+    if(arFindings.length>ARITH_CAP){
+      const rest=arFindings.length-ARITH_CAP;
+      h+=`<div class="note-inline" style="color:var(--info)">ⓘ <strong>${rest} more line(s) also show a quantity × price vs. line amount gap</strong> — see Invoice lines below for the full list.</div>`;
+    }
+  }
 
   const parties=Object.keys(inv.parties).map(r=>partyHtml(r,inv.parties[r],jumpCall)).filter(Boolean).join('');
   if(parties)h+=`<div class="sec-h">Parties</div><div class="party-grid">${parties}</div>`;
@@ -2949,7 +3148,22 @@ function factsOverviewHtml(facts){
   const qcFindings=[];
   const qcAdd=(level,text)=>qcFindings.push({level,text});
   const flaggedActionItems=new Set();
+  // Order-number check applies to both message types in Compare, so it does
+  // here too. Not the SSCC/packing-reference checks below, though — those
+  // are DESADV-specific there (ORDRSP has no pallet/despatch concept), so
+  // scoped the same way here for genuine parity rather than just similarity.
+  if(facts.lines.length){
+    const hasAnyOrder=facts.lines.some(l=>l.orders&&l.orders.size)||(facts.orderRefsHeader&&facts.orderRefsHeader.size);
+    if(!hasAnyOrder)qcAdd('warn',"This message doesn't reference an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.");
+  }
   if(type==='DESADV'){
+    if(facts.lines.length&&!(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)&&!facts.docNumber)qcAdd('info','No packing reference (despatch note) found in this message.');
+    // Mirrors the Compare-mode "neither message contains an SSCC" note —
+    // checkPalletStructure below only speaks up per-pallet, so a message
+    // with items but literally zero SSCCs anywhere (not even a single
+    // pallet declared) would otherwise say nothing at all here, leaving
+    // only the "Number of SSCCs: 0" stat for the reader to notice themselves.
+    if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
     checkPalletStructure(facts,'This message',qcAdd);
   }else if(type==='ORDRSP'){
     // Grouped by which rule fired: a supplier that sends action 6 on every
@@ -3891,6 +4105,8 @@ function renderInvoiceCompare(res,notes){
   const eanText=buildEanListText(res.rows.map(r=>r.gtin));
 
   let h='';
+  h+=concatenatedXmlBannerHtml(res.sup);
+  h+=concatenatedXmlBannerHtml(res.bol);
   h+=`<div class="verdict ${res.verdict}"><div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(res.verdict,hasWC)}</div></div>`;
 
   /* statistics */
