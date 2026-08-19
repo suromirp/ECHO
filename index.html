@@ -2276,6 +2276,87 @@ function deepFirst(el,path){
 function textOf(el){return el?el.textContent.trim():null;}
 function valOf(el,path){const n=deepFirst(el,path);const t=textOf(n);return t===''?null:t;}
 
+/* A THIRD XML invoice dialect, distinct from both bol's own UBL output and
+   the generic <Invoice>/<CreditNote>-wrapped Transus XML handled above: a
+   flat <Messages><Message> structure (self-labelled MessageStandard=
+   TRANSUSXML) with repeated <Article> lines and <InvoiceTotals>/
+   <InvoiceVATTotals> summaries. Seen from at least one real supplier export — MessageType 8 in their own numbering, confirmed by the
+   figures in a real message reconciling exactly under this reading:
+   ArticleNetPrice is per ArticleQuantityPerPriceUnit (not per single unit —
+   e.g. "1235.9 per 100 pcs"), VATBaseAmount is the line's base amount
+   BEFORE ArticleCharge is added on top (matching NetLineAmount), and the
+   header VATBaseAmount/VATAmount reflect only ONE VAT-rate group — the
+   full taxable base is the SUM across every <InvoiceVATTotals> block. */
+function looksLikeTransusMessageXml(raw){
+  const head=raw.slice(0,2000);
+  return /<Messages[\s>]/.test(head)&&/<MessageStandard>\s*TRANSUSXML/i.test(head);
+}
+function pickDirect(el,parentTag,childTag){
+  const parent=childByName(el,parentTag);
+  if(!parent)return null;
+  const c=childByName(parent,childTag);
+  return c?textOf(c):null;
+}
+function parseInvoicTransusMessageXml(raw){
+  let doc;
+  try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return [];}
+  if(!doc||doc.querySelector('parsererror'))return [];
+  const messages=doc.documentElement?[...doc.documentElement.children].filter(c=>localName(c)==='Message'):[];
+  if(!messages.length)return [];
+  const toIso=v=>{
+    if(!v)return null;
+    const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})$/);
+    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
+  };
+  return messages.map(msg=>{
+    const g=name=>{const c=childByName(msg,name);const t=c?textOf(c):null;return t||null;};
+    const inv=emptyInvoice('TRANSUSXML');
+    const invAmt=num(pickDirect(msg,'InvoiceTotals','InvoiceAmount'));
+    // No confirmed credit-note indicator value has been seen for this
+    // schema yet (InvoiceType only observed as "NOR" so far) — fall back
+    // to the sign of the total, the same safety net used elsewhere when a
+    // format's own type flag can't be relied on.
+    inv.docType=(invAmt!==null&&invAmt<0)?'credit':'invoice';
+    inv.number=g('InvoiceNumber');
+    inv.date=toIso(g('InvoiceDate'));
+    inv.currency=g('CurrencyCode');
+    inv.deliveryDate=toIso(g('DeliveryDate'));
+    const orderNo=g('OrderNumberBuyer');if(orderNo)inv.orders.push(orderNo);
+    const despatchNo=g('DespatchAdviceNumber');if(despatchNo)inv.despatchNotes.push(despatchNo);
+    inv.parties.SU={gln:g('SupplierGLN'),name:null,vat:g('SupplierVATNumber')||null};
+    inv.parties.BY={gln:g('BuyerGLN'),name:null,vat:g('BuyerVATNumber')||null};
+    if(g('InvoiceeGLN'))inv.parties.IV={gln:g('InvoiceeGLN'),name:null,vat:null};
+    if(g('DeliveryPartyGLN'))inv.parties.DP={gln:g('DeliveryPartyGLN'),name:null,vat:null};
+
+    [...msg.children].filter(c=>localName(c)==='Article').forEach((art,i)=>{
+      const ag=name=>{const c=childByName(art,name);const t=c?textOf(c):null;return t||null;};
+      const priceUnit=num(ag('ArticleQuantityPerPriceUnit'))||1;
+      const rawPrice=num(ag('ArticleNetPrice'));
+      const lineNo=ag('LineNumber')||String(i+1);
+      const line={lineNo,gtin:ag('GTIN'),art:ag('ArticleCodeSupplier'),desc:ag('ArticleDescription'),
+        qty:num(ag('InvoicedQuantity')),
+        netPrice:rawPrice!==null?Math.round((rawPrice/priceUnit)*100000)/100000:null,
+        grossPrice:null,
+        lineAmount:num(ag('VATBaseAmount')),
+        vatPct:num(ag('VATPercentage')),
+        orders:[],despatch:[],charges:[]};
+      [...art.children].filter(c=>localName(c)==='ArticleCharge').forEach(ch=>{
+        const cg=name=>{const c=childByName(ch,name);const t=c?textOf(c):null;return t||null;};
+        line.charges.push({kind:'charge',code:cg('ChargeCode'),desc:cg('ChargeCode'),amount:num(cg('ChargeAmount')),level:'line',lineRef:lineNo});
+      });
+      inv.lines.push(line);
+    });
+
+    const vatTotals=[...msg.children].filter(c=>localName(c)==='InvoiceVATTotals');
+    const sumField=field=>vatTotals.reduce((s,v)=>{const c=childByName(v,field);return s+(num(c?textOf(c):null)||0);},0);
+    inv.totals.payable=invAmt;
+    inv.totals.lineTotal=num(pickDirect(msg,'InvoiceTotals','NetLineAmount'));
+    inv.totals.taxable=vatTotals.length?Math.round(sumField('VATBaseAmount')*100)/100:num(pickDirect(msg,'InvoiceTotals','VATBaseAmount'));
+    inv.totals.tax=vatTotals.length?Math.round(sumField('VATAmount')*100)/100:num(pickDirect(msg,'InvoiceTotals','VATAmount'));
+    vatTotals.forEach(v=>{const c=childByName(v,'VATPercentage');const p=num(c?textOf(c):null);if(p!==null)uniqPush(inv.taxRates,p);});
+    return inv;
+  });
+}
 function parseInvoicBolXml(raw){
   let doc;
   try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return [];}
@@ -2501,6 +2582,12 @@ function detectMsgType(raw){
   if(!raw||!raw.trim())return null;
   if(isXmlText(raw)){
     const head=raw.slice(0,6000);
+    // A third XML invoice dialect (<Messages><Message>, MessageStandard=
+    // TRANSUSXML) has fields like <DespatchAdviceNumber> and <InvoiceType>
+    // that would otherwise trip the DESADV substring check below — checked
+    // first, since its own signal (MessageStandard + an invoice field) is
+    // unambiguous regardless of what else the message happens to contain.
+    if(/<MessageStandard>\s*TRANSUSXML/i.test(head)&&/<InvoiceNumber[\s>]|<InvoiceTotals[\s>]/i.test(head))return 'INVOIC';
     // Check the most specific, unambiguous fields first. Some suppliers'
     // ORDRSP-flavoured Transus XML uses <Article> as its line element — the
     // same tag DESADV uses for despatch lines — and even includes a
@@ -2636,6 +2723,10 @@ function parseInvoices(raw){
     }
   }
   if(isXmlText(raw)){
+    if(looksLikeTransusMessageXml(raw)){
+      const r=parseInvoicTransusMessageXml(raw);
+      if(r.length)return r;
+    }
     if(looksLikeBolUbl(raw)){
       const r=parseInvoicBolXml(raw);
       if(r.length)return r;
@@ -2889,7 +2980,14 @@ function compareInvoice(sup,bol){
   /* ---- charges & allowances ---- */
   const chargeList=inv=>{
     const all=[...inv.charges];
-    inv.lines.forEach(l=>(l.charges||[]).forEach(c=>all.push(c)));
+    // Attach the line's own EAN to each line-level charge — different
+    // invoice dialects number lines completely differently (e.g. a
+    // supplier's own "10000"/"20000" LineNumbers vs. bol's UBL "1"/"2"
+    // InvoiceLine IDs), so matching charges by raw lineRef across formats
+    // would treat the exact same charge on the exact same line as two
+    // unrelated ones. The EAN is stable across formats and already used
+    // to match the lines themselves, so it does the same job here.
+    inv.lines.forEach(l=>(l.charges||[]).forEach(c=>all.push({...c,lineGtin:l.gtin||l.art||null})));
     return all;
   };
   const sc=chargeList(sup),bc=chargeList(bol);
@@ -2899,7 +2997,7 @@ function compareInvoice(sup,bol){
   // would silently blend into one number that doesn't reconcile with
   // anything (not the sum a reader would expect, not the message's own
   // stated total), which is worse than three separate, correct ones.
-  const chKey=c=>`${c.kind}|${(c.code||'').trim()}|${c.level}${c.level==='line'?'|'+(c.lineRef??''):''}`;
+  const chKey=c=>`${c.kind}|${(c.code||'').trim()}|${c.level}${c.level==='line'?'|'+(c.lineGtin||c.lineRef||''):''}`;
   const chMap=arr=>{const m=new Map();arr.forEach(c=>{const k=chKey(c);if(!m.has(k))m.set(k,{kind:c.kind,code:c.code,desc:c.desc,level:c.level,lineRef:c.lineRef,amount:0,hasAmount:false,n:0});const e=m.get(k);if(c.amount!==null&&c.amount!==undefined){e.amount+=c.amount;e.hasAmount=true;}e.n++;});return m;};
   const scm=chMap(sc),bcm=chMap(bc);
   const chargeFindings=[];
