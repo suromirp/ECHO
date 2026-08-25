@@ -2544,10 +2544,15 @@ function parseInvoicBolXml(raw){
     const taxTotal=childByName(root,'TaxTotal');
     if(taxTotal){
       inv.totals.tax=num(valOf(taxTotal,['TaxAmount']));
+      // Summed across every TaxSubtotal, not just the first — a message
+      // with more than one VAT-rate group (e.g. 9% on the goods, 0% on a
+      // line-level charge) otherwise silently under-reports the taxable
+      // total by whatever the later group(s) contribute. The same fix
+      // already applied on the TRANSUSXML supplier-side parser above.
       childrenByName(taxTotal,'TaxSubtotal').forEach(sub=>{
         const ta=num(valOf(sub,['TaxableAmount']));
         const p=num(valOf(sub,['Percent']));
-        if(inv.totals.taxable===null&&ta!==null)inv.totals.taxable=ta;
+        if(ta!==null)inv.totals.taxable=Math.round(((inv.totals.taxable||0)+ta)*100)/100;
         if(p!==null)uniqPush(inv.taxRates,p);
         if(inv.totals.tax===null){const t=num(valOf(sub,['TaxAmount']));if(t!==null)inv.totals.tax=t;}
       });
@@ -3042,7 +3047,32 @@ function compareInvoice(sup,bol){
     cmpField('Quantity','qty',v=>fmtQty(v),true);
     cmpField('Net price','netPrice',v=>fmtAmt(v,cur));
     cmpField('Gross price','grossPrice',v=>fmtAmt(v,cur));
-    cmpField('Line amount','lineAmount',v=>fmtAmt(v,cur),true);
+    // Line amount: some formats' own "line amount" already includes
+    // line-level charges (bol's own UBL LineExtensionAmount does, per
+    // standard UBL semantics), while others (TRANSUSXML, EDIFACT) report
+    // it BEFORE charges are added, listing charges as their own separate
+    // line items instead. When the raw totals don't match but DO
+    // reconcile exactly once a real line-level charge is added back in,
+    // that's this convention difference, confirmed against a real message
+    //  — not a mapping problem, so treated as a match
+    // rather than raised as a "Difference".
+    if(!fieldState.lineAmount.bol||!fieldState.lineAmount.sup){
+      row.cells.push({label:'Line amount',sup:fieldState.lineAmount.sup?fmtAmt(sumBy(S,'lineAmount'),cur):null,bol:fieldState.lineAmount.bol?fmtAmt(sumBy(B,'lineAmount'),cur):null,status:'na'});
+    }else{
+      const sv=sumBy(S,'lineAmount'),bv=sumBy(B,'lineAmount');
+      const absOrNull=v=>v===null?null:Math.abs(v);
+      let ok=(isCredit)?amtEq(absOrNull(sv),absOrNull(bv)):amtEq(sv,bv);
+      if(!ok&&sv!==null&&bv!==null){
+        const lineChargeSum=arr=>(arr||[]).flatMap(l=>l.charges||[]).filter(c=>c.kind==='charge'&&c.level==='line'&&c.amount!==null).reduce((s,c)=>s+c.amount,0);
+        const supCh=lineChargeSum(S),bolCh=lineChargeSum(B);
+        if(supCh||bolCh){
+          const a=Math.abs(sv),b=Math.abs(bv);
+          ok=amtEq(Math.round((a+supCh)*100)/100,b)||amtEq(a,Math.round((b+bolCh)*100)/100);
+        }
+      }
+      row.cells.push({label:'Line amount',sup:fmtAmt(sv,cur),bol:fmtAmt(bv,cur),status:ok?'ok':'diff'});
+      if(!ok)row.status='diff';
+    }
     // Internal arithmetic (qty × net price vs. line amount) — the
     // message's own numbers, not a supplier↔bol question, so this runs
     // once per row rather than once per side: if qty/netPrice/lineAmount
