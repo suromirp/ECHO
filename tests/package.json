@@ -1,0 +1,13 @@
+{
+  "name": "echo-regression-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright regression suite for ECHO (index.html), loaded directly via file:// — no dev server, matching the product's own zero-dependency philosophy. See docs/testing.md.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

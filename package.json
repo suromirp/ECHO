@@ -1,0 +1,9 @@
+{
+  "name": "echo",
+  "private": true,
+  "description": "ECHO is a single self-contained HTML file (index.html) — this package.json exists only so `npm test` runs the dev-only Playwright regression suite in /tests. See tests/README.md and docs/testing.md.",
+  "scripts": {
+    "pretest": "npm install --prefix tests --no-audit --no-fund",
+    "test": "npm test --prefix tests"
+  }
+}
