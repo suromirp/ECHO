@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
-const { openApp, runCompareFixtures } = require('../helpers');
+const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'invoic');
 
@@ -130,4 +130,32 @@ test('a UBL line-amount gap that exactly matches a line-level charge is a match,
 
   const lineRow = page.locator('#invoiceResults table.inv tr', { hasText: '7777777777777' });
   await expect(lineRow.locator('.pill')).toHaveText('Match');
+});
+
+// New check : a
+// message whose summary-level TAX segment states the VAT rate in a
+// different position than its own line-level TAX segments — ECHO still
+// reads the rate fine either way, but this is a confirmed real cause of
+// Transus rejecting a message with "VAT percentage/amount is missing".
+test('a VAT-rate position mismatch between line-level and summary TAX segments is flagged, in both Compare and Quick check', async ({ page }) => {
+  const sup = path.join(FIX, 'tax-rate-encoding-mismatch.sup.edi');
+  const bol = path.join(FIX, 'tax-rate-encoding-mismatch.bol.ubl.xml');
+
+  await openApp(page);
+  await runCompareFixtures(page, sup, bol);
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  const buckets = await invoiceFindingsByCategory(page);
+  const mismatchFindings = buckets.message.filter(t => /different position/i.test(t));
+  expect(mismatchFindings).toHaveLength(1);
+  expect(mismatchFindings[0]).toContain('Supplier —');
+  expect(mismatchFindings[0]).not.toContain('Bol —'); // bol side is UBL XML, not subject to this EDIFACT-only quirk
+
+  // Never a mapping question — must never reach "Copy for Transus" (cat 'diff').
+  const mismatchInDiff = buckets.diff.filter(t => /different position/i.test(t));
+  expect(mismatchInDiff).toHaveLength(0);
+
+  // Same message, read standalone in Quick check, shows the same note.
+  await runQuickFixture(page, sup);
+  await expect(page.locator('#quickOverview')).toContainText('different position');
 });

@@ -126,6 +126,25 @@ Handling:
   failure tickets). Flagged as a Message check, grouped by (type,
   category) pair so a supplier tripping it on every line gets one note,
   not one per line.
+- **A `TAX` segment stating the VAT rate at a different position than the
+  rest of the message's own `TAX` segments** is a separate, real, confirmed
+  cause of Transus rejecting a message ("VAT percentage/amount is
+  missing") — the three line-level
+  segments correctly carried the rate in C243 (element 5, 4th
+  sub-component: `TAX+7+VAT+++:::21+S'`), but the summary-level segment
+  left that element empty and appended the rate to the category code
+  instead (`TAX+7+VAT+++21.000:S'`). ECHO's own defensive scan (which
+  checks several positions and falls back to the first numeric part it
+  finds) reads the rate correctly either way, so this never affects a
+  comparison — but the inconsistency itself is exactly what trips a
+  stricter validator. Detected by comparing, per invoice, whether the
+  line-level and summary-level `TAX` segments resolved their rate via the
+  same position or not (`taxRateEncodingMismatch` in `parseInvoicEdifact`)
+  — flagged only when the two scopes are cleanly disjoint (all lines one
+  way, the summary the other), not for a message that's merely
+  inconsistent within one scope. Message check, both Quick check and
+  Compare, never sent to Transus (it's a question about how the supplier's
+  own message is built, not a mapping question).
 - **A completely blank `LIN'` segment** (no EAN, action, or line number at
   all) appearing right before a real `LIN` is a confirmed, real cause of
   "blank item line" complaints from suppliers receiving Transus-generated
