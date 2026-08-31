@@ -54,6 +54,9 @@ actual test fixtures, don't just keep this list as prose:
   (expected)", not as a difference.
 - **INVOIC**: a UBL line-amount gap that exactly matches a charge is
   treated as a match, not a difference.
+- **INVOIC**: a VAT-rate position mismatch between line-level and
+  summary-level TAX segments is flagged (in both Quick check and Compare),
+  and never sent to Transus.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.

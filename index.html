@@ -1384,6 +1384,18 @@ function taxIssueFindings(taxIssues){
     return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong> — EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one. Affected: ${g.refs.map(esc).join(', ')}.`;
   });
 }
+/* A message can state the VAT rate at the standard TAX-segment position on
+   its line-level segments, but at a different position on its summary-level
+   one, or vice versa (see the taxRateEncodingMismatch computation in
+   parseInvoicEdifact). ECHO's own defensive parsing reads the rate fine
+   either way, so this never affects a comparison — but it's a confirmed,
+   real cause of a stricter downstream validator (Transus) rejecting the
+   message outright. Structural/message-level only, never sent to Transus:
+   it's a question about how the supplier's own message is built, not a
+   mapping question. */
+function taxRateEncodingMismatchText(){
+  return "This message's summary-level TAX segment states the VAT rate in a different position than its own line-level TAX segments — ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message as a result.";
+}
 
 /* Prominent, hard-to-miss banner for the "file was actually multiple
    concatenated XML documents" case — deliberately NOT folded quietly into
@@ -2074,7 +2086,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 
@@ -2288,11 +2300,11 @@ function parseInvoicEdifact(raw){
       case 'TAX':{
         /* TAX+7+VAT+++:::21.00+S — het tarief staat in C243 (element 5, 4e component).
            Defensief: scan element 5 en 4 op de eerste numerieke component. */
-        let pct=null;
+        let pct=null,pctPrimaryPos=false;
         [5,4,6].forEach(i=>{
           if(pct!==null)return;
           const c=comp(i);
-          if(c[3]!==undefined&&num(c[3])!==null){pct=num(c[3]);return;}
+          if(c[3]!==undefined&&num(c[3])!==null){pct=num(c[3]);pctPrimaryPos=(i===5);return;}
           for(const part of c){const n=num(part);if(n!==null){pct=n;break;}}
         });
         if(curLine){if(pct!==null)curLine.vatPct=pct;}
@@ -2308,6 +2320,21 @@ function parseInvoicEdifact(raw){
         if(pct===null&&taxType&&category){
           const ref=curLine?`line ${curLine.lineNo||'?'}`:'the invoice summary';
           cur.taxIssues.push({ref,taxType,category});
+        }
+        // A message can state the identical VAT rate at the standard C243
+        // position (element 5, 4th sub-component) on its line-level TAX
+        // segments, but at a different position on its summary-level one
+        // (or vice versa) — confirmed from a real production message
+        // as the cause of a Transus "VAT percentage/amount
+        // is missing" validation failure, even though ECHO's own defensive
+        // scan above still finds the rate fine either way. Tracked per
+        // scope here; compared once the whole message has been read (see
+        // invoices.forEach below) so a message with genuinely mixed styles
+        // within the same scope (not a real signal on its own) isn't
+        // flagged, only a clean line-vs-summary split.
+        if(pct!==null){
+          cur.extras.taxRateStyles=cur.extras.taxRateStyles||{line:[],summary:[]};
+          cur.extras.taxRateStyles[curLine?'line':'summary'].push(pctPrimaryPos);
         }
         break;}
       case 'UNS':{
@@ -2326,6 +2353,11 @@ function parseInvoicEdifact(raw){
     if(inv.totals.lineTotal===null){
       const s=inv.lines.reduce((a,l)=>a+(l.lineAmount||0),0);
       if(inv.lines.length)inv.totals.lineTotal=Math.round(s*100)/100;
+    }
+    const trs=inv.extras.taxRateStyles;
+    if(trs&&trs.line.length&&trs.summary.length){
+      const lineStyles=new Set(trs.line),summaryStyles=new Set(trs.summary);
+      if([...summaryStyles].every(s=>!lineStyles.has(s)))inv.taxRateEncodingMismatch=true;
     }
   });
   return invoices;
@@ -2953,6 +2985,8 @@ function compareInvoice(sup,bol){
   // SSCC is: it's whichever side sent it that needs to fix it, not Transus.
   taxIssueFindings(sup.taxIssues).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
   taxIssueFindings(bol.taxIssues).forEach(t=>add('warn',`Bol — ${t}`,'message'));
+  if(sup.taxRateEncodingMismatch)add('warn',`Supplier — ${taxRateEncodingMismatchText()}`,'message');
+  if(bol.taxRateEncodingMismatch)add('warn',`Bol — ${taxRateEncodingMismatchText()}`,'message');
 
   /* ---- header ---- */
   const hdr=[];
@@ -3324,6 +3358,9 @@ function invoiceOverviewHtml(inv,opts={}){
   taxIssueFindings(inv.taxIssues).forEach(t=>{
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
   });
+  if(inv.taxRateEncodingMismatch){
+    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${taxRateEncodingMismatchText()}</div>`;
+  }
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
