@@ -38,6 +38,11 @@ actual test fixtures, don't just keep this list as prose:
 
 - **ORDRSP**: action-6-without-backorder findings grouped into one block,
   not repeated per line.
+- **ORDRSP**: a net price (`PRI+AAA`) missing on only one of two lines for
+  the same item split across different actions is flagged as a
+  Transformation difference (never lost by aggregating purely per EAN),
+  plus a standalone single-message observation in both Quick check and
+  Compare.
 - **DESADV**: GTIN-12/13 leading-zero padding normalized across sides.
 - **DESADV**: bol's GTIN blanked entirely, falls back to article code.
 - **DESADV**: bol's GTIN blanked *and* no article code anywhere — resolved

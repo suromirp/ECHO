@@ -1007,8 +1007,15 @@ function parseFactsEdifact(raw){
     else if(tag==='LIN'){push();
       const gtin=splitEsc(el[3]!==undefined?el[3]:'',delims.comp,delims.rel)[0]||'';
       const action=(el[2]!==undefined&&el[2]!=='')?el[2]:null;
-      cur={lineNo:el[1]||'',action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty:{},dtm:{},orders:new Set(),art:null,desc:null,__cpsRef:currentCps||null};}
+      cur={lineNo:el[1]||'',action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty:{},dtm:{},orders:new Set(),art:null,desc:null,netPrice:null,__cpsRef:currentCps||null};}
     else if(tag==='PIA'&&cur){const c=splitEsc(el[2]||'',delims.comp,delims.rel);if(c[1]==='SA')cur.art=c[0];}
+    else if(tag==='PRI'&&cur){
+      // PRI+AAA:28.1:CT — net price, ORDRSP's equivalent of INVOIC's own
+      // PRI+AAA handling. Only AAA (net price) is read; ORDRSP doesn't use
+      // a gross-price qualifier the way INVOIC's PRI+AAB does.
+      const c=splitEsc(el[1]||'',delims.comp,delims.rel);
+      if(c[0]==='AAA'){const v=num(c[1]);if(v!==null)cur.netPrice=v;}
+    }
     else if(tag==='IMD'&&cur){const c=splitEsc(el[3]||'',delims.comp,delims.rel).filter(Boolean);const t=c.join(' ').trim();if(t)cur.desc=cur.desc?cur.desc+' '+t:t;}
     else if(tag==='QTY'&&cur){const c=splitEsc(el[1]||'',delims.comp,delims.rel);cur.qty[c[0]]=c[1]!==undefined?c[1]:'';}
     else if(tag==='DTM'){const c=splitEsc(el[1]||'',delims.comp,delims.rel);
@@ -1396,6 +1403,26 @@ function taxIssueFindings(taxIssues){
 function taxRateEncodingMismatchText(){
   return "This message's summary-level TAX segment states the VAT rate in a different position than its own line-level TAX segments — ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message as a result.";
 }
+/* Groups {label,missSide,jump} entries from the ORDRSP price comparison
+   into one block per side missing the price — every affected line/action
+   bucket for that side shares the exact same explanation, so it gets ONE
+   note with a tag per line, not a paragraph per line. Same shape as
+   taxIssueFindings/groupActionFindings above. */
+function priceMissingFindings(entries){
+  if(!entries||!entries.length)return [];
+  const order=[];const groups=new Map();
+  entries.forEach(e=>{
+    if(!groups.has(e.missSide)){groups.set(e.missSide,{missSide:e.missSide,items:[]});order.push(e.missSide);}
+    groups.get(e.missSide).items.push(e);
+  });
+  return order.map(key=>{
+    const g=groups.get(key);
+    const n=g.items.length;
+    const haveSide=g.missSide==='bol'?'supplier':'bol';
+    const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.label)}</span></li>`).join('');
+    return `<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  });
+}
 
 /* Prominent, hard-to-miss banner for the "file was actually multiple
    concatenated XML documents" case — deliberately NOT folded quietly into
@@ -1441,6 +1468,36 @@ function palletsBySSCC(facts){
     if(!m.has(p.sscc))m.set(p.sscc,p);
   });
   return m;
+}
+
+/* A single message's own internal consistency (ORDRSP): the same item
+   split across multiple lines with different actions — e.g. one line
+   accepted, another cancelled, often a later addendum to the original
+   message — can legitimately carry a net price (PRI+AAA) on one line and
+   not another. Traced to a real Transus "Unit price is unknown"
+   rejection where exactly this happened on bol's output for a line split
+   this way; a different, unsplit cancelled item elsewhere in the same
+   message had no such issue, so this is specifically about the split,
+   not "cancelled lines never get a price". A single-message observation
+   — no second message needed — so it's called standalone in Quick check
+   and per-side in Compare (CLAUDE.md's parity rule). */
+function checkSplitItemPriceGap(facts,label,add){
+  const groups=new Map();
+  facts.lines.forEach(l=>{
+    const id=(l.art&&l.art.trim())||(l.gtin?normalizeGtin(l.gtin):null);
+    if(!id)return;
+    if(!groups.has(id))groups.set(id,[]);
+    groups.get(id).push(l);
+  });
+  groups.forEach(lines=>{
+    if(lines.length<2)return; // only relevant once the same item is genuinely split across lines
+    const withPrice=lines.filter(l=>l.netPrice!==null&&l.netPrice!==undefined);
+    if(!withPrice.length||withPrice.length===lines.length)return; // all or none have a price — nothing inconsistent
+    const ref=lines[0];
+    const actionsPresent=[...new Set(withPrice.map(l=>l.action||'?'))].join(', ');
+    const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
+    add('warn',`${label} — item <code>${esc(ref.art||ref.gtin||'?')}</code> appears on ${lines.length} lines in this message (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price (present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}) — worth checking whether the price should be there on every occurrence of this item.`,'message');
+  });
 }
 
 /* structural, single-side observations about a message's own pallet groups.
@@ -2014,6 +2071,61 @@ function compare(bol,sup){
       groupActionFindings(entries).forEach(g=>add(g.level,`${lab} — ${g.text}`,'message'));
     };
     validate(sup,'Supplier');validate(bol,'Bol');
+  }
+
+  // Single-message consistency check (parity rule: also runs standalone in
+  // Quick check, see checkSplitItemPriceGap below) — per side, independent
+  // of the cross-side price comparison further down.
+  if(type==='ORDRSP'){
+    checkSplitItemPriceGap(sup,'Supplier',add);
+    checkSplitItemPriceGap(bol,'Bol',add);
+  }
+
+  // ORDRSP price comparison (PRI+AAA net price). Bucketed per item key +
+  // action, not merely aggregated per EAN — a real Transus "Unit price is
+  // unknown" rejection traced to an EAN split across two ORDRSP lines with
+  // different actions (one accepted, one cancelled), where bol's output
+  // dropped the price on only one of the two lines. Aggregating purely by
+  // EAN would let a price missing from just one of the two lines disappear
+  // into the other's price, hiding exactly this scenario again. A genuine
+  // mapping question (did the transformation preserve the price?), so
+  // cat:'diff' — reaches "Copy for Transus". See
+  // docs/formats-and-quirks.md.
+  if(type==='ORDRSP'){
+    const priceBuckets=facts=>{
+      const m=new Map();
+      facts.lines.forEach(l=>{
+        const k=keyFn(l)+'|'+(l.action??'?');
+        if(!m.has(k))m.set(k,{price:null,art:l.art,gtin:l.gtin,action:l.action});
+        const b=m.get(k);
+        if(b.price===null&&l.netPrice!==null&&l.netPrice!==undefined)b.price=l.netPrice;
+      });
+      return m;
+    };
+    const bPrice=priceBuckets(bol),sPrice=priceBuckets(sup);
+    const priceKeys=[...new Set([...bPrice.keys(),...sPrice.keys()])];
+    const priceDiffs=[],priceMissing=[];
+    priceKeys.forEach(k=>{
+      const b=bPrice.get(k),s=sPrice.get(k);
+      // A bucket entirely missing on one side is already covered by the
+      // item-missing check earlier — nothing new to say about its price.
+      if(!b||!s)return;
+      if(b.price===null&&s.price===null)return; // neither side sent a price — nothing to compare
+      const label=s.art||s.gtin||b.art||b.gtin||k.split('|')[0];
+      const action=s.action||b.action;
+      const jumpVal=s.gtin||b.gtin||s.art||b.art||'';
+      if(b.price===null||s.price===null){
+        const missSide=b.price===null?'bol':'supplier';
+        const jumpSide=missSide==='bol'?'bol':'sup';
+        priceMissing.push({label:`${label} — action ${action||'?'}`,missSide,jump:`jumpToFactsSource(${jsQuote(jumpSide)},${jsQuote(jumpVal)})`});
+      }else if(!amtEq(b.price,s.price)){
+        priceDiffs.push({label,sup:s.price,bol:b.price});
+      }
+    });
+    priceMissingFindings(priceMissing).forEach(t=>add('err',t,'diff'));
+    addCapped('err',priceDiffs,
+      ({label,sup,bol})=>`Item <code>${esc(label)}</code>: net price differs — supplier <span class="val-sup">${esc(sup.toFixed(2))}</span> vs bol <span class="val-bol">${esc(bol.toFixed(2))}</span>.`,
+      rest=>`<strong>${rest} more item(s) also show a net price difference</strong> — see the Line comparison below for the full list.`);
   }
 
   // action matrix data
@@ -3497,6 +3609,7 @@ function factsOverviewHtml(facts){
       }
     });
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
+    checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
