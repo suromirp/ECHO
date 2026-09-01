@@ -157,6 +157,30 @@ Handling:
   quantity is present" error reserved for the field being missing
   entirely. Conflating "explicitly zero" with "absent" was a real,
   reported point of confusion.
+- **An item split across multiple ORDRSP lines with different actions can
+  lose its net price (`PRI+AAA`) on only one of those lines** : an EAN appeared
+  twice in the same message, once accepted (action 5) and once cancelled
+  (action 2, likely a later addendum), and bol's output carried the price
+  on the accepted line but dropped it on the cancelled one for that exact
+  EAN. A *different*, non-split cancelled item elsewhere in the same
+  message had no such issue — so this is specifically about the split,
+  not "cancelled lines never get a price". ORDRSP previously compared no
+  price field at all, so this was invisible; comparing purely aggregated
+  by EAN (summing/merging across actions, as the rest of ORDRSP's
+  comparison does) would also hide it again, since one bucket's price
+  would mask the other's gap. Compared per (item, action) bucket instead
+  (`parseFactsEdifact` now reads `PRI+AAA` into `netPrice`; the bucketing
+  lives in `compare()`). Two distinct findings: a plain price mismatch is
+  worded as "differs" (`cat:'diff'`, capped like other per-item diffs); a
+  price present on only one side is worded distinctly ("Net price is
+  missing on the \<side\> side ... — present on the \<other side\>",
+  `cat:'diff'`, grouped by which side is missing it — `priceMissingFindings`)
+  so it never reads like an ordinary rounding-style mismatch. Both reach
+  "Copy for Transus" — this is a mapping question, not a message-quality
+  one. A related, single-message observation (the same split-with-a-price-
+  gap pattern, visible without any second message) also runs standalone
+  in Quick check and per-side in Compare as a Message check
+  (`checkSplitItemPriceGap`), per CLAUDE.md's parity rule.
 - **Credit notes**: EDIFACT's own BGM function code (381/384) is
   authoritative for detecting a credit note — bol's `InvoiceTypeCode`
   isn't reliable (looks constant regardless of document type). Bol's own
