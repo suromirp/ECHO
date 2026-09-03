@@ -132,8 +132,7 @@ test('a UBL line-amount gap that exactly matches a line-level charge is a match,
   await expect(lineRow.locator('.pill')).toHaveText('Match');
 });
 
-// New check : a
-// message whose summary-level TAX segment states the VAT rate in a
+// A message whose summary-level TAX segment states the VAT rate in a
 // different position than its own line-level TAX segments — ECHO still
 // reads the rate fine either way, but this is a confirmed real cause of
 // Transus rejecting a message with "VAT percentage/amount is missing".

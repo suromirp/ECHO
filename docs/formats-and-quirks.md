@@ -45,7 +45,9 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
 ### 2. TRANSUSXML
 
 `<Messages><Message>`, self-labelled `MessageStandard=TRANSUSXML`,
-`<Article>` lines. - `ArticleNetPrice` is per `ArticleQuantityPerPriceUnit`, **not** per
+`<Article>` lines.
+
+- `ArticleNetPrice` is per `ArticleQuantityPerPriceUnit`, **not** per
   single unit (e.g. "1235.9 per 100 pcs") — divide before treating it as
   a unit price, or every qty×price check produces nonsense.
 - Header `VATBaseAmount`/`VATAmount` reflect only **one** VAT-rate group;
@@ -55,7 +57,9 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
 ### 3. Exact Online raw export
 
 `<Invoice type="object">`, `<SalesInvoiceLines><SalesInvoiceLine>`,
-Exact-specific fields like `<SupplierTID>`. - `NetPrice` is already per single unit here (no basis-quantity wrinkle).
+Exact-specific fields like `<SupplierTID>`.
+
+- `NetPrice` is already per single unit here (no basis-quantity wrinkle).
 - **Must be detected and routed before the generic `<Invoice>`-wrapped
   Transus XML parser**, or that parser matches the same root element,
   assumes the wrong field names, and silently extracts zero lines — which
@@ -129,9 +133,9 @@ Handling:
 - **A `TAX` segment stating the VAT rate at a different position than the
   rest of the message's own `TAX` segments** is a separate, real, confirmed
   cause of Transus rejecting a message ("VAT percentage/amount is
-  missing") — the three line-level
-  segments correctly carried the rate in C243 (element 5, 4th
-  sub-component: `TAX+7+VAT+++:::21+S'`), but the summary-level segment
+  missing"): the three line-level segments correctly carried the rate in
+  C243 (element 5, 4th sub-component: `TAX+7+VAT+++:::21+S'`), but the
+  summary-level segment
   left that element empty and appended the rate to the category code
   instead (`TAX+7+VAT+++21.000:S'`). ECHO's own defensive scan (which
   checks several positions and falls back to the first numeric part it
@@ -158,7 +162,7 @@ Handling:
   entirely. Conflating "explicitly zero" with "absent" was a real,
   reported point of confusion.
 - **An item split across multiple ORDRSP lines with different actions can
-  lose its net price (`PRI+AAA`) on only one of those lines** : an EAN appeared
+  lose its net price (`PRI+AAA`) on only one of those lines**: an EAN appeared
   twice in the same message, once accepted (action 5) and once cancelled
   (action 2, likely a later addendum), and bol's output carried the price
   on the accepted line but dropped it on the cancelled one for that exact

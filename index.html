@@ -967,12 +967,11 @@ function parseFactsEdifact(raw){
       const isBlank=!cur.gtin&&!cur.action&&!cur.lineNo&&Object.keys(cur.qty).length===0;
       if(isBlank){f.blankLinCount++;return;}
       // A DTM qualifier (e.g. 67, 69) appearing more than once within this
-      // LIN group with genuinely different values — confirmed directly by
-      // Transus support, not just inferred: their system only supports one
-      // DTM+67 and one DTM+69 per article line, and silently drops other
-      // line fields (seen: PRI+AAA, the price) when it sees more than one,
-      // rather than raising a clear error. Recorded per line so it can be
-      // reported even though cur.dtm itself only ever kept the last value.
+      // LIN group with genuinely different values can cause a downstream
+      // EDI processor to silently drop other line fields (seen: PRI+AAA,
+      // the price) instead of raising a clear error. Recorded per line so
+      // it can be reported even though cur.dtm itself only ever kept the
+      // last value.
       if(cur.__dtmSeen){
         const conflicts=Object.keys(cur.__dtmSeen)
           .filter(q=>new Set(cur.__dtmSeen[q]).size>1)
@@ -1499,9 +1498,8 @@ function palletsBySSCC(facts){
    split across multiple lines with different actions — e.g. one line
    accepted, another cancelled, often a later addendum to the original
    message — can legitimately carry a net price (PRI+AAA) on one line and
-   not another. Traced to a real Transus "Unit price is unknown"
-   rejection where exactly this happened on bol's output for a line split
-   this way; a different, unsplit cancelled item elsewhere in the same
+   not another, which can then get dropped on bol's output for that split
+   line; a different, unsplit cancelled item elsewhere in the same
    message had no such issue, so this is specifically about the split,
    not "cancelled lines never get a price". A single-message observation
    — no second message needed — so it's called standalone in Quick check
@@ -1527,18 +1525,16 @@ function checkSplitItemPriceGap(facts,label,add){
 
 /* A DTM qualifier code (e.g. 67 delivery date, 69 despatch date) appearing
    more than once within the same LIN group with genuinely different
-   values — their system only supports one DTM+67 and one DTM+69 per article line,
-   and silently drops other line fields (confirmed case: the price,
-   PRI+AAA) when it sees more than one, instead of raising a clear error.
-   Report this to whoever generates the feed, not to Transus — they
-   already know. Shared by ORDRSP and DESADV, since both go through the
-   same LIN-parsing code (parseFactsEdifact reads DTM identically for
-   both); see docs/formats-and-quirks.md. A single-message observation —
-   no second message needed — so it's called standalone in Quick check
-   and per-side in Compare (CLAUDE.md's parity rule). Grouped by
-   qualifier code, groupActionFindings-style, so a message tripping this
-   on every line gets one block per qualifier, not one paragraph per
-   line. */
+   values can cause a downstream EDI processor to silently drop other
+   line fields (confirmed case: the price, PRI+AAA) instead of raising a
+   clear error. Worth reporting to whoever generates the feed. Shared by
+   ORDRSP and DESADV, since both go through the same LIN-parsing code
+   (parseFactsEdifact reads DTM identically for both); see
+   docs/formats-and-quirks.md. A single-message observation — no second
+   message needed — so it's called standalone in Quick check and per-side
+   in Compare (CLAUDE.md's parity rule). Grouped by qualifier code,
+   groupActionFindings-style, so a message tripping this on every line
+   gets one block per qualifier, not one paragraph per line. */
 function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
   const entries=[];
   facts.lines.forEach(l=>{
@@ -1558,7 +1554,7 @@ function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
     const g=groups.get(qual);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
-    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'} — some EDI processors (only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'} — some EDI processors only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
   });
 }
 
@@ -2152,14 +2148,13 @@ function compare(bol,sup){
   }
 
   // ORDRSP price comparison (PRI+AAA net price). Bucketed per item key +
-  // action, not merely aggregated per EAN — a real Transus "Unit price is
-  // unknown" rejection traced to an EAN split across two ORDRSP lines with
-  // different actions (one accepted, one cancelled), where bol's output
-  // dropped the price on only one of the two lines. Aggregating purely by
-  // EAN would let a price missing from just one of the two lines disappear
-  // into the other's price, hiding exactly this scenario again. A genuine
-  // mapping question (did the transformation preserve the price?), so
-  // cat:'diff' — reaches "Copy for Transus". See
+  // action, not merely aggregated per EAN — an EAN split across two ORDRSP
+  // lines with different actions (one accepted, one cancelled) can end up
+  // with bol's output dropping the price on only one of the two lines.
+  // Aggregating purely by EAN would let a price missing from just one of
+  // the two lines disappear into the other's price, hiding exactly this
+  // scenario again. A genuine mapping question (did the transformation
+  // preserve the price?), so cat:'diff' — reaches "Copy for Transus". See
   // docs/formats-and-quirks.md.
   if(type==='ORDRSP'){
     const priceBuckets=facts=>{
@@ -2506,14 +2501,14 @@ function parseInvoicEdifact(raw){
         // A message can state the identical VAT rate at the standard C243
         // position (element 5, 4th sub-component) on its line-level TAX
         // segments, but at a different position on its summary-level one
-        // (or vice versa) — confirmed from a real production message
-        // as the cause of a Transus "VAT percentage/amount
-        // is missing" validation failure, even though ECHO's own defensive
-        // scan above still finds the rate fine either way. Tracked per
-        // scope here; compared once the whole message has been read (see
-        // invoices.forEach below) so a message with genuinely mixed styles
-        // within the same scope (not a real signal on its own) isn't
-        // flagged, only a clean line-vs-summary split.
+        // (or vice versa) — a real, confirmed cause of a "VAT percentage/
+        // amount is missing" validation failure downstream, even though
+        // ECHO's own defensive scan above still finds the rate fine
+        // either way. Tracked per scope here; compared once the whole
+        // message has been read (see invoices.forEach below) so a
+        // message with genuinely mixed styles within the same scope (not
+        // a real signal on its own) isn't flagged, only a clean
+        // line-vs-summary split.
         if(pct!==null){
           cur.extras.taxRateStyles=cur.extras.taxRateStyles||{line:[],summary:[]};
           cur.extras.taxRateStyles[curLine?'line':'summary'].push(pctPrimaryPos);
@@ -2572,7 +2567,7 @@ function valOf(el,path){const n=deepFirst(el,path);const t=textOf(n);return t===
    don't overlap) — which reads as if every one of bol's lines has no
    supplier-side counterpart at all, rather than what's actually true: a
    format ECHO didn't know how to read yet. Confirmed against a real
-   message : NetPrice is already per single unit
+   message: NetPrice is already per single unit
    (Quantity × NetPrice reconciles exactly with AmountDC, no basis-quantity
    wrinkle like the TRANSUSXML dialect above), and AmountDC/VATAmountDC sum
    exactly to InvoiceNetLineAmount/InvoiceVATAmountFC. */
@@ -2603,8 +2598,8 @@ function parseInvoicExactOnlineXml(raw){
   inv.date=toIso(g('InvoiceDate'));
   inv.currency=g('Currency');
   inv.deliveryDate=toIso(g('DeliveryDate'));
-  // YourRef (not OrderNumber) is used here: OrderNumber is this source system's
-  // own internal sales-order ID, but bol's own UBL puts its header
+  // YourRef (not OrderNumber) is used here: OrderNumber is this source
+  // system's own internal sales-order ID, but bol's own UBL puts its header
   // OrderReference under a non-standard <SalesOrderID> element that ECHO's
   // bol-XML parser doesn't read (every other bol INVOIC example uses the
   // standard <cbc:ID>) — so bol's own parsed order value actually comes
@@ -2638,7 +2633,8 @@ function parseInvoicExactOnlineXml(raw){
    the generic <Invoice>/<CreditNote>-wrapped Transus XML handled above: a
    flat <Messages><Message> structure (self-labelled MessageStandard=
    TRANSUSXML) with repeated <Article> lines and <InvoiceTotals>/
-   <InvoiceVATTotals> summaries. Seen from at least one real supplier export — MessageType 8 in their own numbering, confirmed by the
+   <InvoiceVATTotals> summaries. Seen from at least one real supplier
+   export — MessageType 8 in their own numbering, confirmed by the
    figures in a real message reconciling exactly under this reading:
    ArticleNetPrice is per ArticleQuantityPerPriceUnit (not per single unit —
    e.g. "1235.9 per 100 pcs"), VATBaseAmount is the line's base amount
@@ -3269,9 +3265,9 @@ function compareInvoice(sup,bol){
     // it BEFORE charges are added, listing charges as their own separate
     // line items instead. When the raw totals don't match but DO
     // reconcile exactly once a real line-level charge is added back in,
-    // that's this convention difference, confirmed against a real message
-    //  — not a mapping problem, so treated as a match
-    // rather than raised as a "Difference".
+    // that's this convention difference, confirmed against a real
+    // message — not a mapping problem, so treated as a match rather than
+    // raised as a "Difference".
     if(!fieldState.lineAmount.bol||!fieldState.lineAmount.sup){
       row.cells.push({label:'Line amount',sup:fieldState.lineAmount.sup?fmtAmt(sumBy(S,'lineAmount'),cur):null,bol:fieldState.lineAmount.bol?fmtAmt(sumBy(B,'lineAmount'),cur):null,status:'na'});
     }else{
@@ -3402,7 +3398,7 @@ function compareInvoice(sup,bol){
     // bol's invoice process deliberately never forwards line-level
     // allowances (article discounts) — only line-level charges (surcharges)
     // are processed and carried through. Confirmed with Transus (support
-    // ticket, Aug 2026): an ALC+A discount segment — even an empty one with
+    // ticket): an ALC+A discount segment — even an empty one with
     // no amount at all, as some suppliers send — is expected to have no
     // bol-side counterpart. That's documented, structural behaviour, not a
     // mapping gap, so it's shown in the table (for transparency) but not
