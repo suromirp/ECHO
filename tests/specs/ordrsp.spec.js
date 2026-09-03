@@ -101,3 +101,56 @@ test('the split-item price gap is also flagged standalone in Quick check', async
   await runQuickFixture(page, path.join(FIX, 'split-item-price-gap.bol.edi'));
   await expect(page.locator('#quickOverview')).toContainText('appears on 2 lines in this message');
 });
+
+// docs/formats-and-quirks.md: a DTM qualifier (67, 69) repeated within one
+// LIN group with different dates can cause a downstream EDI processor to
+// silently drop other line fields (the price, in the confirmed real case)
+// instead of raising a clear error.
+test('a DTM qualifier repeated with different dates within one line is flagged as a Message check, not sent to Transus', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'dtm-duplicate-qualifier.sup.edi'),
+    path.join(FIX, 'dtm-duplicate-qualifier.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+
+  const dtm67 = buckets.message.filter(t => /DTM\+67 appears more than once/i.test(t));
+  const dtm69 = buckets.message.filter(t => /DTM\+69 appears more than once/i.test(t));
+  expect(dtm67).toHaveLength(1);
+  expect(dtm69).toHaveLength(1);
+  expect(dtm67[0]).toContain('Supplier —');
+  expect(dtm67[0]).toContain('20260908');
+  expect(dtm67[0]).toContain('20260916');
+  expect(dtm69[0]).toContain('Supplier —');
+
+  // Bol's own output only ever carries a single DTM+67 for this line — the
+  // duplication is a supplier-side message-generation defect, not
+  // something bol's transformation introduced.
+  expect(dtm67.some(t => t.includes('Bol —'))).toBe(false);
+  expect(dtm69.some(t => t.includes('Bol —'))).toBe(false);
+
+  // Never a Transformation difference: it's a property of the supplier's
+  // own message, and Transus already knows about it — this is meant to be
+  // reported back to the supplier, not copied to Transus.
+  expect(buckets.diff.some(t => /DTM\+/i.test(t))).toBe(false);
+
+  // The confirmed real-world consequence also surfaces independently, via
+  // the existing price comparison: bol's output dropped the price on
+  // exactly this line.
+  const priceMissing = buckets.diff.filter(t => /Net price is missing/i.test(t));
+  expect(priceMissing).toHaveLength(1);
+
+  // No finding at all about the unrelated, unaffected control line.
+  expect([...buckets.diff, ...buckets.message].some(t => t.includes('2222222222222'))).toBe(false);
+});
+
+// Same message, read standalone (CLAUDE.md's parity rule).
+test('the DTM duplicate-qualifier finding is also flagged standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'dtm-duplicate-qualifier.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('DTM+67 appears more than once');
+  await expect(page.locator('#quickOverview')).toContainText('DTM+69 appears more than once');
+});

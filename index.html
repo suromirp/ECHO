@@ -966,6 +966,20 @@ function parseFactsEdifact(raw){
       // instead of silently becoming an empty row in the Lines table.
       const isBlank=!cur.gtin&&!cur.action&&!cur.lineNo&&Object.keys(cur.qty).length===0;
       if(isBlank){f.blankLinCount++;return;}
+      // A DTM qualifier (e.g. 67, 69) appearing more than once within this
+      // LIN group with genuinely different values — confirmed directly by
+      // Transus support, not just inferred: their system only supports one
+      // DTM+67 and one DTM+69 per article line, and silently drops other
+      // line fields (seen: PRI+AAA, the price) when it sees more than one,
+      // rather than raising a clear error. Recorded per line so it can be
+      // reported even though cur.dtm itself only ever kept the last value.
+      if(cur.__dtmSeen){
+        const conflicts=Object.keys(cur.__dtmSeen)
+          .filter(q=>new Set(cur.__dtmSeen[q]).size>1)
+          .map(q=>({qual:q,values:[...new Set(cur.__dtmSeen[q])]}));
+        if(conflicts.length)cur.dtmConflicts=conflicts;
+        delete cur.__dtmSeen;
+      }
       f.lines.push(cur);
       if(cur.__cpsRef)cur.__cpsRef.items.push({lineNo:cur.lineNo,gtin:cur.gtin,art:cur.art,qty:cur.qty,action:cur.action});
     }
@@ -1019,7 +1033,18 @@ function parseFactsEdifact(raw){
     else if(tag==='IMD'&&cur){const c=splitEsc(el[3]||'',delims.comp,delims.rel).filter(Boolean);const t=c.join(' ').trim();if(t)cur.desc=cur.desc?cur.desc+' '+t:t;}
     else if(tag==='QTY'&&cur){const c=splitEsc(el[1]||'',delims.comp,delims.rel);cur.qty[c[0]]=c[1]!==undefined?c[1]:'';}
     else if(tag==='DTM'){const c=splitEsc(el[1]||'',delims.comp,delims.rel);
-      if(cur)cur.dtm[c[0]]=c[1]!==undefined?c[1]:'';
+      if(cur){
+        cur.dtm[c[0]]=c[1]!==undefined?c[1]:'';
+        // Track every raw occurrence too (not just the latest, which is
+        // all cur.dtm above keeps) — a DTM qualifier repeated within the
+        // same LIN group with a DIFFERENT value is a confirmed, real cause
+        // of Transus silently dropping other fields on that line (e.g. the
+        // price); see checkDtmDuplicateQualifier / push() below. Deleted
+        // again once push() has turned it into cur.dtmConflicts, so it
+        // never leaks into the stored line object.
+        cur.__dtmSeen=cur.__dtmSeen||{};
+        (cur.__dtmSeen[c[0]]=cur.__dtmSeen[c[0]]||[]).push(c[1]!==undefined?c[1]:'');
+      }
       else{const q=c[0],v=c[1];f.headerDtm[q]=v;
         if(q==='137')f.docDate=v;
         else if(q==='17'||q==='2')f.arrivalDate=v;
@@ -1497,6 +1522,43 @@ function checkSplitItemPriceGap(facts,label,add){
     const actionsPresent=[...new Set(withPrice.map(l=>l.action||'?'))].join(', ');
     const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
     add('warn',`${label} — item <code>${esc(ref.art||ref.gtin||'?')}</code> appears on ${lines.length} lines in this message (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price (present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}) — worth checking whether the price should be there on every occurrence of this item.`,'message');
+  });
+}
+
+/* A DTM qualifier code (e.g. 67 delivery date, 69 despatch date) appearing
+   more than once within the same LIN group with genuinely different
+   values — their system only supports one DTM+67 and one DTM+69 per article line,
+   and silently drops other line fields (confirmed case: the price,
+   PRI+AAA) when it sees more than one, instead of raising a clear error.
+   Report this to whoever generates the feed, not to Transus — they
+   already know. Shared by ORDRSP and DESADV, since both go through the
+   same LIN-parsing code (parseFactsEdifact reads DTM identically for
+   both); see docs/formats-and-quirks.md. A single-message observation —
+   no second message needed — so it's called standalone in Quick check
+   and per-side in Compare (CLAUDE.md's parity rule). Grouped by
+   qualifier code, groupActionFindings-style, so a message tripping this
+   on every line gets one block per qualifier, not one paragraph per
+   line. */
+function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
+  const entries=[];
+  facts.lines.forEach(l=>{
+    (l.dtmConflicts||[]).forEach(c=>{
+      const item=l.art||l.gtin||l.lineNo||'?';
+      const jumpVal=l.gtin||l.art||l.lineNo||'';
+      entries.push({qual:c.qual,itemLabel:`${item} (${c.values.join(', ')})`,jump:jumpCall(jumpVal)});
+    });
+  });
+  if(!entries.length)return;
+  const order=[];const groups=new Map();
+  entries.forEach(e=>{
+    if(!groups.has(e.qual)){groups.set(e.qual,{qual:e.qual,items:[]});order.push(e.qual);}
+    groups.get(e.qual).items.push(e);
+  });
+  order.forEach(qual=>{
+    const g=groups.get(qual);
+    const n=g.items.length;
+    const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
+    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'} — some EDI processors (only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
   });
 }
 
@@ -2079,6 +2141,14 @@ function compare(bol,sup){
   if(type==='ORDRSP'){
     checkSplitItemPriceGap(sup,'Supplier',add);
     checkSplitItemPriceGap(bol,'Bol',add);
+  }
+
+  // DTM qualifier repeated with different values within one LIN group —
+  // shared by ORDRSP and DESADV (same underlying parser), so checked for
+  // both, per side.
+  if(type==='ORDRSP'||type==='DESADV'){
+    checkDtmDuplicateQualifier(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkDtmDuplicateQualifier(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
   }
 
   // ORDRSP price comparison (PRI+AAA net price). Bucketed per item key +
@@ -3611,6 +3681,7 @@ function factsOverviewHtml(facts){
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
     checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
+  if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
   if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;
