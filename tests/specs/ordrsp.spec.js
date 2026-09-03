@@ -133,8 +133,8 @@ test('a DTM qualifier repeated with different dates within one line is flagged a
   expect(dtm69.some(t => t.includes('Bol —'))).toBe(false);
 
   // Never a Transformation difference: it's a property of the supplier's
-  // own message, and Transus already knows about it — this is meant to be
-  // reported back to the supplier, not copied to Transus.
+  // own message, meant to be reported back to the supplier, not copied to
+  // Transus.
   expect(buckets.diff.some(t => /DTM\+/i.test(t))).toBe(false);
 
   // The confirmed real-world consequence also surfaces independently, via

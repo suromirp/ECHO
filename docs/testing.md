@@ -45,8 +45,9 @@ actual test fixtures, don't just keep this list as prose:
   Compare.
 - **ORDRSP** (and **DESADV**, same shared parser): a `DTM` qualifier
   (e.g. `67`, `69`) repeated within one `LIN` group with different dates
-  is flagged as a Message check (never sent to Transus). Grouped by qualifier code; runs standalone in
-  Quick check and per side in Compare for both message types.
+  is flagged as a Message check (never sent to Transus). Grouped by
+  qualifier code; runs standalone in Quick check and per side in Compare
+  for both message types.
 - **DESADV**: GTIN-12/13 leading-zero padding normalized across sides.
 - **DESADV**: bol's GTIN blanked entirely, falls back to article code.
 - **DESADV**: bol's GTIN blanked *and* no article code anywhere — resolved
