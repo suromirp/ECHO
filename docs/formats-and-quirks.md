@@ -181,6 +181,38 @@ Handling:
   gap pattern, visible without any second message) also runs standalone
   in Quick check and per-side in Compare as a Message check
   (`checkSplitItemPriceGap`), per CLAUDE.md's parity rule.
+- **A `DTM` qualifier code (e.g. `67` delivery date, `69` despatch date)
+  appearing more than once within the same `LIN` group, with genuinely
+  different dates, can cause a downstream EDI processor to silently drop
+  other fields on that line** (confirmed case: the price, `PRI+AAA`).
+  Some systems only accept one `DTM+67` and one `DTM+69` per article
+  line; a real affected line carried both twice, with different dates:
+  ```
+  LIN+<line>+2+<EAN>:EN'
+  PIA+1+<article>:SA'
+  QTY+182:<qty>'
+  DTM+67:<date1>:102'
+  DTM+69:<date1>:102'
+  DTM+67:<date2>:102'
+  DTM+69:<date2>:102'
+  PRI+AAA:<price>:CT:NTP'
+  ```
+  (quantity, dates and price shown as placeholders here — the exact
+  values aren't relevant to the pattern, only the duplicated qualifiers)
+  A different, unaffected line in the same message had only one `DTM+67`
+  and one `DTM+69` — confirming the trigger is the duplication itself, not
+  something about that particular item or action. Worth reporting back to
+  whoever generates the feed, since the duplication originates in the
+  supplier's own message. Detected by tracking every raw `DTM` occurrence
+  per line during parsing (not just the last value, which is all
+  `cur.dtm` itself keeps) and flagging when a qualifier's distinct values
+  within one line number more than one (`cur.dtmConflicts`,
+  `checkDtmDuplicateQualifier`). Message check (`cat:'message'`) — never
+  sent to Transus, since it's a property of the supplier's own message,
+  not a mapping question. `parseFactsEdifact` is shared by ORDRSP and
+  DESADV, so this check runs for both, in both Quick check and Compare
+  (per side), per CLAUDE.md's parity rule — confirmed to actually fire
+  for DESADV too, not just assumed from the shared code path.
 - **Credit notes**: EDIFACT's own BGM function code (381/384) is
   authoritative for detecting a credit note — bol's `InvoiceTypeCode`
   isn't reliable (looks constant regardless of document type). Bol's own

@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
-const { openApp, runCompareFixtures } = require('../helpers');
+const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'desadv');
 
@@ -98,4 +98,15 @@ test('blank LIN segments are flagged and excluded from the line count', async ({
   await expect(itemsStat).toContainText('1');
   const supBolLines = page.locator('.stat:has-text("Supplier / bol lines")').first();
   await expect(supBolLines).toContainText('1/1');
+});
+
+// docs/formats-and-quirks.md: the DTM-duplicate-qualifier check (is shared by ORDRSP and DESADV — both go
+// through the same LIN-parsing code (parseFactsEdifact) — so it must fire
+// for DESADV too, not just ORDRSP where the real case was first found.
+test('a DTM qualifier repeated with different dates within one line is also flagged for DESADV', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'dtm-duplicate-qualifier.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('DTM+67 appears more than once');
+  await expect(page.locator('#quickOverview')).toContainText('20260908');
+  await expect(page.locator('#quickOverview')).toContainText('20260916');
 });
