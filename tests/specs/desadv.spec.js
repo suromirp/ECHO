@@ -111,3 +111,52 @@ test('a DTM qualifier repeated with different dates within one line is also flag
   await expect(page.locator('#quickOverview')).toContainText('20260908');
   await expect(page.locator('#quickOverview')).toContainText('20260916');
 });
+
+// RFF+BM: per bol's own implementation guide (not generic EDIFACT
+// semantics), the number that must be unique per shipment and appear on
+// the physical package — distinct from the BGM-based "Packing reference".
+// A real delivery error ("Packing List Reference Invalid") turned out to
+// hinge on exactly which of these two fields was meant, and ECHO didn't
+// surface RFF+BM at all before this — so it needs its own labeled field,
+// in both Compare and Quick check (parity rule).
+test('the RFF+BM bill-of-lading reference is shown as its own field, in both Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'bill-of-lading-reference.sup.edi'),
+    path.join(FIX, 'bill-of-lading-reference.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const bolStat = page.locator('.stat', { hasText: 'Bill of lading' }).first();
+  await expect(bolStat).toContainText('123456789012345678');
+
+  await runQuickFixture(page, path.join(FIX, 'bill-of-lading-reference.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('Bill of lading');
+  await expect(page.locator('#quickOverview')).toContainText('123456789012345678');
+});
+
+// docs/ui-conventions.md: repeated findings of the same pattern group into
+// one block with affected items as tags, and large lists (past ~20 items)
+// collapse behind a way to still see everything — a real DESADV with 51
+// SSCC-less pallets on each side produced 102 nearly-identical "No SSCC
+// found" lines before this, one per pallet.
+test('many pallets missing an SSCC are grouped into one finding with a collapsed list, not one line per pallet', async ({ page }) => {
+  const fixture = path.join(FIX, 'many-pallets-missing-sscc.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+
+  const findings = page.locator('#findings li');
+  const texts = await findings.allInnerTexts();
+  const groupedLines = texts.filter(t => t.includes('No SSCC found'));
+  // One grouped block per side, not one per pallet (25 pallets/side would
+  // otherwise mean 50 separate findings).
+  expect(groupedLines).toHaveLength(2);
+  groupedLines.forEach(t => expect(t).toContain('25 pallet groups'));
+
+  // Past the ~20-item threshold, the tag list collapses behind <details>.
+  const details = page.locator('#findings .wc-affected').locator('xpath=ancestor::details');
+  await expect(details).toHaveCount(2);
+  const tagCount = await page.locator('#findings .wc-affected li').count();
+  expect(tagCount).toBe(50); // 25 pallets x 2 sides
+});

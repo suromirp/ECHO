@@ -228,6 +228,30 @@ Handling:
   DESADV, so this check runs for both, in both Quick check and Compare
   (per side), per CLAUDE.md's parity rule — confirmed to actually fire
   for DESADV too, not just assumed from the shared code path.
+- **DESADV's `RFF+BM` (Bill of lading number) is a distinct field from the
+  BGM document number ECHO already surfaces as "Packing reference"** — not
+  generic EDIFACT semantics, but bol's own implementation guide: `RFF+BM`
+  is specifically the number that must be **unique per shipment** and
+  appear on the physical package, separate from BGM's despatch/packing-list
+  document number. A real "Packing List Reference Invalid" delivery error
+  couldn't be diagnosed from ECHO's output because the field that actually
+  mattered wasn't shown anywhere — `RFF+BM` was parsed but silently dropped
+  into the generic `extras.rff` bucket alongside every other unhandled RFF
+  qualifier, with no dedicated label. Now tracked as `billOfLadingRef`
+  (header-level, first occurrence) and shown as its own "Bill of lading"
+  field, in both Quick check and Compare (parity rule) — not compared
+  cross-side as a finding (matching how the existing "Packing reference"
+  field is also display-only, not a flagged check).
+- **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
+  found" finding per `CPS` group — a real message with 51 pallets on each
+  side meant 102 near-identical lines, exactly what
+  `docs/ui-conventions.md`'s grouping rule exists to prevent.
+  `checkPalletStructure` now collects every SSCC-less pallet into one
+  finding per side, with each `CPS` as a clickable tag (`checkDtmDuplicateQualifier`'s
+  `wc-affected` tag-list style) — and past ~20 tags, wrapped in a collapsed
+  `<details>` per the same doc's "large lists collapse past roughly 20
+  items" rule, so the finding list stays scannable regardless of pallet
+  count.
 - **Credit notes**: EDIFACT's own BGM function code (381/384) is
   authoritative for detecting a credit note — bol's `InvoiceTypeCode`
   isn't reliable (looks constant regardless of document type). Bol's own
