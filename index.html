@@ -952,7 +952,7 @@ const STATUS_TO_ACTION={'5':'5','6':'6','3':'6','2':'2','7':'2'};
 function parseFactsEdifact(raw){
   const {segs,delims}=splitSegments(raw);
   const f={format:'EDIFACT',msgType:null,bgmFunc:null,orderRefsHeader:new Set(),lines:[],ssccs:[],segs,delims,
-    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0};
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0,billOfLadingRef:null};
   let cur=null;
   let currentCps=null; // active CPS (pallet/package) group, DESADV only
   const push=()=>{
@@ -1051,7 +1051,12 @@ function parseFactsEdifact(raw){
     else if(tag==='RFF'){const c=splitEsc(el[1]||'',delims.comp,delims.rel);
       if(c[0]==='ON'&&c[1]){if(cur)cur.orders.add(c[1]);else f.orderRefsHeader.add(c[1]);}
       else if((c[0]==='DQ'||c[0]==='AAS')&&c[1]&&!cur){if(!f.deliveryNoteRefs.includes(c[1]))f.deliveryNoteRefs.push(c[1]);}
-      else if(c[0]==='VA'&&c[1]&&lastParty&&f.parties[lastParty])f.parties[lastParty].vat=c[1];}
+      else if(c[0]==='VA'&&c[1]&&lastParty&&f.parties[lastParty])f.parties[lastParty].vat=c[1];
+      // Bill of lading number — per bol's own implementation guide (not
+      // generic EDIFACT semantics), this is the number that must be unique
+      // per shipment and appear on the physical package. Header-level only,
+      // first occurrence kept.
+      else if(c[0]==='BM'&&c[1]&&!cur&&!f.billOfLadingRef)f.billOfLadingRef=c[1];}
   });
   push();
   if(currentCps)f.pallets.push(currentCps);
@@ -1563,12 +1568,27 @@ function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
    flow, so its absence is the normal case and isn't flagged — only its
    presence is worth a note (handled separately, as informational), and a
    pallet EAN that's incorrectly reused as an item GTIN is still flagged below. */
-function checkPalletStructure(facts,label,add){
+function checkPalletStructure(facts,label,add,jumpCall){
   if(!facts.pallets||!facts.pallets.length)return;
+  // Grouped into one finding (with every affected CPS as a clickable tag)
+  // rather than one line per pallet — a supplier that never sends SSCCs at
+  // all would otherwise produce one near-identical finding per pallet,
+  // sometimes 50+ of them, per docs/ui-conventions.md's grouping rule. Past
+  // ~20 tags the list itself collapses behind <details>, per the same
+  // doc's "large lists collapse past roughly 20 items" rule.
+  const noSscc=facts.pallets.filter(p=>p.items&&p.items.length>0&&!p.sscc);
+  if(noSscc.length){
+    const n=noSscc.length;
+    const tags=noSscc.map(p=>{
+      const cpsLabel=esc(p.cps||'?');
+      const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
+      return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
+    }).join('');
+    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+    const body=n>20?`<details><summary>Show ${n} affected pallets</summary>${tagList}</details>`:tagList;
+    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'this':'each of these'} contains item lines, but no GIN+BJ SSCC was found. ${body}`,'message');
+  }
   facts.pallets.forEach(p=>{
-    const hasItems=p.items&&p.items.length>0;
-    if(hasItems&&!p.sscc)
-      add('warn',`${label} — pallet CPS ${esc(p.cps||'?')}: <strong>No SSCC found</strong>. This pallet group contains item lines, but no GIN+BJ SSCC was found.`,'message');
     if(p.palletGtin){
       p.items.forEach(it=>{
         if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){
@@ -2095,8 +2115,8 @@ function compare(bol,sup){
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
   if(type==='DESADV'){
-    checkPalletStructure(sup,'Supplier',add);
-    checkPalletStructure(bol,'Bol',add);
+    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
@@ -3664,7 +3684,7 @@ function factsOverviewHtml(facts){
     // pallet declared) would otherwise say nothing at all here, leaving
     // only the "Number of SSCCs: 0" stat for the reader to notice themselves.
     if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
-    checkPalletStructure(facts,'This message',qcAdd);
+    checkPalletStructure(facts,'This message',qcAdd,jumpCall);
   }else if(type==='ORDRSP'){
     // Grouped by which rule fired: a supplier that sends action 6 on every
     // line gets ONE block explaining that pattern with every affected item
@@ -3736,6 +3756,12 @@ function factsOverviewHtml(facts){
     // reference not being present alongside it isn't worth flagging as missing.
     if(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)f.push(fieldHtml('Packing reference(s)',facts.deliveryNoteRefs.map(r=>clickField(r)).join(', '),null,true));
     else if(!facts.docNumber)f.push(fieldHtml('Packing reference(s)','Not found in this message',null,false));
+    // RFF+BM: the number that must be unique per shipment and appear on the
+    // physical package, per bol's own implementation guide — distinct from
+    // the BGM-based "Packing reference number" above, and worth surfacing on
+    // its own since a delivery error about this specific reference gives no
+    // other clue which field it means.
+    if(facts.billOfLadingRef)f.push(fieldHtml('Bill of lading (RFF+BM)',clickField(facts.billOfLadingRef),null,true));
   }
   f.push(fieldHtml('Number of lines',facts.lines.length||null));
   if(facts.ssccs&&facts.ssccs.length)f.push(fieldHtml("Number of SSCCs",facts.ssccs.length));
@@ -4001,6 +4027,23 @@ function render(result,bol,sup,notes){
         packVal=`${supSpan} → ${bolSpan}`;
       }
       strip.push(`<div class="stat"><div class="l"><span>Packing reference</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supPack||bolPack||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="BGM document number, or the RFF-based despatch note reference when present">${packVal}</div></div>`);
+    }
+    // RFF+BM: per bol's own implementation guide, the number that must be
+    // unique per shipment and appear on the physical package — a separate
+    // field from the BGM-based packing reference above, shown distinctly
+    // since a "packing list reference invalid" delivery error gives no
+    // other clue which of the two it means.
+    const supBol=sup.billOfLadingRef,bolBol=bol.billOfLadingRef;
+    if(supBol||bolBol){
+      let bolRefVal;
+      if(supBol&&bolBol&&supBol===bolBol){
+        bolRefVal=`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(supBol)})">${esc(supBol)}</span>`;
+      }else{
+        const supSpan=supBol?`<span class="val-sup clickable-val" onclick="jumpToFactsSource('sup',${jsQuote(supBol)})">${esc(supBol)}</span>`:'<span class="val-sup">—</span>';
+        const bolSpan=bolBol?`<span class="val-bol clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(bolBol)})">${esc(bolBol)}</span>`:'<span class="val-bol">—</span>';
+        bolRefVal=`${supSpan} → ${bolSpan}`;
+      }
+      strip.push(`<div class="stat"><div class="l"><span>Bill of lading</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supBol||bolBol||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="RFF+BM — must be unique per shipment and appear on the physical package">${bolRefVal}</div></div>`);
     }
   }
   strip.push(`<div class="stat"><div class="l">Supplier / bol format</div><div class="v" style="font-size:13px">${result.fmtSup}<br>${result.fmtBol}</div></div>`);
