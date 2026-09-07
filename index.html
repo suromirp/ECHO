@@ -4035,7 +4035,7 @@ function render(result,bol,sup,notes){
   strip.push(`<div class="stat"><div class="l">Supplier / bol format</div><div class="v" style="font-size:13px">${result.fmtSup}<br>${result.fmtBol}</div></div>`);
   strip.push(`<div class="stat ${st.qtyMatch?'match':'diff'}"><div class="l">Quantities</div><div class="v">${st.qtyMatch?'Match':'Difference'}</div></div>`);
   if(st.actionMatch!==null)strip.push(`<div class="stat ${st.actionMatch?'match':'diff'}"><div class="l">Actions</div><div class="v">${st.actionMatch?'Match':'Difference'}</div></div>`);
-  strip.push(`<div class="stat"><div class="l">Items</div><div class="v">${st.keys}</div></div>`);
+  strip.push(`<div class="stat" title="Distinct products, matched by EAN/article code — not the number of lines or pallets (see those below)."><div class="l">Distinct items</div><div class="v">${st.keys}</div></div>`);
   strip.push(`<div class="stat"><div class="l">Supplier / bol lines</div><div class="v">${st.linesSup}/${st.linesBol}</div></div>`);
   if(st.ssccBol||st.ssccSup){const sm=result.ssccResult.onlyBol.length===0&&result.ssccResult.onlySup.length===0;strip.push(`<div class="stat ${sm?'match':'diff'}"><div class="l">SSCCs</div><div class="v">${sm?st.ssccBol:'≠'}</div></div>`);}
   document.getElementById('strip').innerHTML=strip.join('');

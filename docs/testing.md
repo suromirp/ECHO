@@ -60,6 +60,8 @@ actual test fixtures, don't just keep this list as prose:
   source, not a second field — in both Quick check and Compare.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
   side with a collapsed tag list, not one finding per pallet.
+- **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
+  tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable
   total (both the TRANSUSXML-style and bol's-own-UBL-style aggregation).
 - **INVOIC**: TAX segment missing rate detected and grouped.
