@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV7001</cbc:ID>
+  <cbc:IssueDate>2026-03-01</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount>50.77</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount>50.77</cbc:TaxExclusiveAmount>
+    <cbc:PayableAmount>61.43</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:TaxTotal>
+    <cbc:TaxAmount>10.66</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount>50.77</cbc:TaxableAmount>
+      <cbc:TaxAmount>10.66</cbc:TaxAmount>
+      <cbc:Percent>21</cbc:Percent>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity>5</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>50.77</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Item</cbc:Name><cac:SellersItemIdentification><cbc:ID>8888888888888</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>10.00</cbc:PriceAmount></cac:Price>
+    <cac:AllowanceCharge>
+      <cbc:ID>RAD</cbc:ID>
+      <cbc:ChargeIndicator>true</cbc:ChargeIndicator>
+      <cbc:AllowanceChargeReason>RAD</cbc:AllowanceChargeReason>
+      <cbc:Amount>0.77</cbc:Amount>
+    </cac:AllowanceCharge>
+  </cac:InvoiceLine>
+</Invoice>

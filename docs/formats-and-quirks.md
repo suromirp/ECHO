@@ -148,7 +148,18 @@ Handling:
   way, the summary the other), not for a message that's merely
   inconsistent within one scope. Message check, both Quick check and
   Compare, never sent to Transus (it's a question about how the supplier's
-  own message is built, not a mapping question).
+  own message is built, not a mapping question). Independently
+  reconfirmed in a second, later real case: Transus support gave the exact
+  same diagnosis and the exact same fix shape for a different supplier's
+  summary-level segment (`TAX+7+VAT+++21:S'` → `TAX+7+VAT+++:::21:S'` —
+  same missing-colons pattern, category glued to the composite instead of
+  the rate sitting in its own 4th sub-component). ECHO's defensive scan
+  reads that variant correctly too (category as the composite's 5th
+  sub-component or as a separate element both resolve the rate the same
+  way), and the mismatch check still fires on it. The finding text now
+  includes this corrected-segment shape directly, since generic phrasing
+  alone had already led to more than one failed supplier-side fix attempt
+  before the exact expected format was spelled out.
 - **A completely blank `LIN'` segment** (no EAN, action, or line number at
   all) appearing right before a real `LIN` is a confirmed, real cause of
   "blank item line" complaints from suppliers receiving Transus-generated

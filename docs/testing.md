@@ -67,6 +67,10 @@ actual test fixtures, don't just keep this list as prose:
 - **INVOIC**: a VAT-rate position mismatch between line-level and
   summary-level TAX segments is flagged (in both Quick check and Compare),
   and never sent to Transus.
+- **INVOIC**: a line-level charge (e.g. `RAD`) matches across sides despite
+  a GTIN-12/13 leading-zero difference on that line, instead of showing up
+  as two contradictory findings ("only on the supplier" and "only on bol"
+  at once).
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
