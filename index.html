@@ -1425,7 +1425,7 @@ function taxIssueFindings(taxIssues){
    it's a question about how the supplier's own message is built, not a
    mapping question. */
 function taxRateEncodingMismatchText(){
-  return "This message's summary-level TAX segment states the VAT rate in a different position than its own line-level TAX segments — ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message as a result.";
+  return "This message's summary-level TAX segment states the VAT rate in a different position than its own line-level TAX segments — ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message as a result. The rate belongs in the 4th sub-component of the C243 composite, e.g. <code>TAX+7+VAT+++:::21+S'</code> rather than <code>TAX+7+VAT+++21:S'</code>.";
 }
 /* Groups {label,missSide,jump} entries from the ORDRSP price comparison
    into one block per side missing the price — every affected line/action
@@ -3376,8 +3376,13 @@ function compareInvoice(sup,bol){
     // InvoiceLine IDs), so matching charges by raw lineRef across formats
     // would treat the exact same charge on the exact same line as two
     // unrelated ones. The EAN is stable across formats and already used
-    // to match the lines themselves, so it does the same job here.
-    inv.lines.forEach(l=>(l.charges||[]).forEach(c=>all.push({...c,lineGtin:l.gtin||l.art||null})));
+    // to match the lines themselves, so it does the same job here — run
+    // through normalizeGtin() the same way the line match itself does,
+    // otherwise a GTIN-12/13 leading-zero difference between the two
+    // sides (the line still matches fine) makes the exact same charge
+    // key differently per side and show up as "only on the supplier"
+    // and "only on bol" at once instead of matching.
+    inv.lines.forEach(l=>(l.charges||[]).forEach(c=>all.push({...c,lineGtin:(l.gtin?normalizeGtin(l.gtin):null)||l.art||null})));
     return all;
   };
   const sc=chargeList(sup),bc=chargeList(bol);

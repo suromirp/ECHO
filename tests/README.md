@@ -58,6 +58,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | line-level allowance "not forwarded (expected)" | `invoic/line-allowance-not-forwarded.sup.edi`, `invoic/line-allowance-not-forwarded.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | UBL line-amount gap matching a charge treated as a match | `invoic/ubl-line-amount-includes-charge.sup.edi`, `invoic/ubl-line-amount-includes-charge.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | VAT-rate position mismatch between line and summary TAX segments | `invoic/tax-rate-encoding-mismatch.sup.edi`, `invoic/tax-rate-encoding-mismatch.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | line-level charge matches across sides despite a GTIN-12/13 leading-zero difference on that line | `invoic/line-charge-gtin-padding.sup.edi`, `invoic/line-charge-gtin-padding.bol.ubl.xml` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 

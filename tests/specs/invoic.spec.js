@@ -150,6 +150,12 @@ test('a VAT-rate position mismatch between line-level and summary TAX segments i
   expect(mismatchFindings[0]).toContain('Supplier —');
   expect(mismatchFindings[0]).not.toContain('Bol —'); // bol side is UBL XML, not subject to this EDIFACT-only quirk
 
+  // The finding spells out the exact corrected segment shape, confirmed by
+  // Transus support across more than one real case — not just "something's
+  // wrong here", so it's directly actionable without a second round-trip.
+  expect(mismatchFindings[0]).toContain("TAX+7+VAT+++:::21+S'");
+  expect(mismatchFindings[0]).toContain("TAX+7+VAT+++21:S'");
+
   // Never a mapping question — must never reach "Copy for Transus" (cat 'diff').
   const mismatchInDiff = buckets.diff.filter(t => /different position/i.test(t));
   expect(mismatchInDiff).toHaveLength(0);
@@ -157,4 +163,29 @@ test('a VAT-rate position mismatch between line-level and summary TAX segments i
   // Same message, read standalone in Quick check, shows the same note.
   await runQuickFixture(page, sup);
   await expect(page.locator('#quickOverview')).toContainText('different position');
+});
+
+// Line-level charges are matched across sides by the line's own GTIN
+// (index.html's chargeList()), separately from the line-matching key used
+// for the rest of the comparison. A GTIN-12/13 leading-zero difference
+// between supplier and bol (already normalized fine for the line match
+// itself) previously wasn't run through normalizeGtin() for this second,
+// charge-specific key — so the exact same charge, present on both sides
+// with the same amount, showed up as two contradictory findings ("only on
+// the supplier" and "only on bol" at once) instead of matching.
+test('a line-level charge matches across sides despite a GTIN-12/13 leading-zero difference on that line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'line-charge-gtin-padding.sup.edi'),
+    path.join(FIX, 'line-charge-gtin-padding.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  const buckets = await invoiceFindingsByCategory(page);
+  expect([...buckets.diff, ...buckets.message].some(t => /RAD/i.test(t))).toBe(false);
+
+  const chargeRows = page.locator('#invoiceResults table.inv tr', { hasText: 'RAD' });
+  await expect(chargeRows).toHaveCount(1);
+  await expect(chargeRows).toContainText('Match');
 });

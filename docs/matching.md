@@ -42,6 +42,17 @@ differently — e.g. a supplier's own `"10000"`/`"20000"` vs. bol's UBL
 `"1"`/`"2"` `InvoiceLine` IDs — so the exact same charge on the exact same
 line looks unrelated if matched on line numbering alone.
 
+That GTIN must go through `normalizeGtin()` for this too, exactly like
+every other match key in this cascade — confirmed by a real case: a
+supplier and bol agreed on a line (GTIN-12/13 leading-zero difference,
+normalized fine for the line match itself), but the charge-matching key
+was built from the raw, unnormalized GTIN. The result wasn't a missed
+match reported once — it was the same line-level charge, present on both
+sides with the same amount, appearing as **two** contradictory findings
+at once ("only on the supplier" *and* "only on bol"). Any code path that
+derives its own matching key from a line's GTIN — not just the main line
+match — needs to normalize it the same way.
+
 ## Why this took two rounds to get right
 
 The first version only added the article-code fallback (step 1) — enough
