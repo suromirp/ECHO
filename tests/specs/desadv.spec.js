@@ -112,14 +112,13 @@ test('a DTM qualifier repeated with different dates within one line is also flag
   await expect(page.locator('#quickOverview')).toContainText('20260916');
 });
 
-// RFF+BM: per bol's own implementation guide (not generic EDIFACT
-// semantics), the number that must be unique per shipment and appear on
-// the physical package — distinct from the BGM-based "Packing reference".
-// A real delivery error ("Packing List Reference Invalid") turned out to
-// hinge on exactly which of these two fields was meant, and ECHO didn't
-// surface RFF+BM at all before this — so it needs its own labeled field,
-// in both Compare and Quick check (parity rule).
-test('the RFF+BM bill-of-lading reference is shown as its own field, in both Compare and Quick check', async ({ page }) => {
+// RFF+BM is the leading/authoritative source for the packing reference in
+// bol's own systems (confirmed against bol's data sources) — so when
+// present, it's shown AS "Packing reference" instead of BGM's document
+// number, not as a second field alongside it. The fixture deliberately
+// gives BGM and RFF+BM different values so a test asserting the wrong one
+// would fail.
+test('RFF+BM, when present, is shown as the packing reference instead of the BGM document number', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(
     page,
@@ -127,11 +126,11 @@ test('the RFF+BM bill-of-lading reference is shown as its own field, in both Com
     path.join(FIX, 'bill-of-lading-reference.bol.edi'),
   );
   await expect(page.locator('#results')).toBeVisible();
-  const bolStat = page.locator('.stat', { hasText: 'Bill of lading' }).first();
-  await expect(bolStat).toContainText('123456789012345678');
+  const packStat = page.locator('.stat', { hasText: 'Packing reference' }).first();
+  await expect(packStat).toContainText('123456789012345678');
+  await expect(packStat).not.toContainText('DESADV0030');
 
   await runQuickFixture(page, path.join(FIX, 'bill-of-lading-reference.sup.edi'));
-  await expect(page.locator('#quickOverview')).toContainText('Bill of lading');
   await expect(page.locator('#quickOverview')).toContainText('123456789012345678');
 });
 

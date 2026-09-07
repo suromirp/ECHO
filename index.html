@@ -3741,7 +3741,11 @@ function factsOverviewHtml(facts){
   const clickField=v=>v?`<span class="clickable-val" onclick="${jumpCall(v)}">${esc(v)}</span>`:'';
   const clickDateField=iso=>iso?`<span class="clickable-val" onclick="${jumpCall(iso)}">${esc(showDate(iso))}</span>`:'';
   const f=[];
-  f.push(fieldHtml(isD?'Packing reference number':'Document number',clickField(facts.docNumber),null,true));
+  // RFF+BM (bill of lading number) is the leading/authoritative source for
+  // the packing reference in bol's own systems — confirmed against bol's
+  // data sources — so it takes priority over BGM's document number here
+  // rather than being shown as a second, separate field.
+  f.push(fieldHtml(isD?'Packing reference number':'Document number',clickField(isD?(facts.billOfLadingRef||facts.docNumber):facts.docNumber),null,true));
   f.push(fieldHtml('Document date',clickDateField(facts.docDate),null,true));
   const orders=[...new Set([...(facts.orderRefsHeader||[]),...facts.lines.flatMap(l=>[...(l.orders||[])])])];
   const orderVal=orders.length?orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}`).join(', '):'';
@@ -3755,13 +3759,7 @@ function factsOverviewHtml(facts){
     // (shown separately above as "Packing reference number") — an RFF-based
     // reference not being present alongside it isn't worth flagging as missing.
     if(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)f.push(fieldHtml('Packing reference(s)',facts.deliveryNoteRefs.map(r=>clickField(r)).join(', '),null,true));
-    else if(!facts.docNumber)f.push(fieldHtml('Packing reference(s)','Not found in this message',null,false));
-    // RFF+BM: the number that must be unique per shipment and appear on the
-    // physical package, per bol's own implementation guide — distinct from
-    // the BGM-based "Packing reference number" above, and worth surfacing on
-    // its own since a delivery error about this specific reference gives no
-    // other clue which field it means.
-    if(facts.billOfLadingRef)f.push(fieldHtml('Bill of lading (RFF+BM)',clickField(facts.billOfLadingRef),null,true));
+    else if(!facts.docNumber&&!facts.billOfLadingRef)f.push(fieldHtml('Packing reference(s)','Not found in this message',null,false));
   }
   f.push(fieldHtml('Number of lines',facts.lines.length||null));
   if(facts.ssccs&&facts.ssccs.length)f.push(fieldHtml("Number of SSCCs",facts.ssccs.length));
@@ -4015,8 +4013,13 @@ function render(result,bol,sup,notes){
     strip.push(`<div class="stat"><div class="l"><span>Order${allOrders.length>1?'(s)':''}</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(orderCopyText)},this)">📋</button></div><div class="v" style="font-size:13px">${orderVal}</div></div>`);
   }
   if(result.type==='DESADV'){
-    const supPack=sup.docNumber||(sup.deliveryNoteRefs&&sup.deliveryNoteRefs[0])||null;
-    const bolPack=bol.docNumber||(bol.deliveryNoteRefs&&bol.deliveryNoteRefs[0])||null;
+    // RFF+BM (bill of lading number) is the leading/authoritative source
+    // for the packing reference in bol's own systems — confirmed against
+    // bol's data sources, not just the implementation guide's wording —
+    // so it takes priority over BGM's document number here, the same
+    // field rather than a second one next to it.
+    const supPack=sup.billOfLadingRef||sup.docNumber||(sup.deliveryNoteRefs&&sup.deliveryNoteRefs[0])||null;
+    const bolPack=bol.billOfLadingRef||bol.docNumber||(bol.deliveryNoteRefs&&bol.deliveryNoteRefs[0])||null;
     if(supPack||bolPack){
       let packVal;
       if(supPack&&bolPack&&supPack===bolPack){
@@ -4026,24 +4029,7 @@ function render(result,bol,sup,notes){
         const bolSpan=bolPack?`<span class="val-bol clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(bolPack)})">${esc(bolPack)}</span>`:'<span class="val-bol">—</span>';
         packVal=`${supSpan} → ${bolSpan}`;
       }
-      strip.push(`<div class="stat"><div class="l"><span>Packing reference</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supPack||bolPack||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="BGM document number, or the RFF-based despatch note reference when present">${packVal}</div></div>`);
-    }
-    // RFF+BM: per bol's own implementation guide, the number that must be
-    // unique per shipment and appear on the physical package — a separate
-    // field from the BGM-based packing reference above, shown distinctly
-    // since a "packing list reference invalid" delivery error gives no
-    // other clue which of the two it means.
-    const supBol=sup.billOfLadingRef,bolBol=bol.billOfLadingRef;
-    if(supBol||bolBol){
-      let bolRefVal;
-      if(supBol&&bolBol&&supBol===bolBol){
-        bolRefVal=`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(supBol)})">${esc(supBol)}</span>`;
-      }else{
-        const supSpan=supBol?`<span class="val-sup clickable-val" onclick="jumpToFactsSource('sup',${jsQuote(supBol)})">${esc(supBol)}</span>`:'<span class="val-sup">—</span>';
-        const bolSpan=bolBol?`<span class="val-bol clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(bolBol)})">${esc(bolBol)}</span>`:'<span class="val-bol">—</span>';
-        bolRefVal=`${supSpan} → ${bolSpan}`;
-      }
-      strip.push(`<div class="stat"><div class="l"><span>Bill of lading</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supBol||bolBol||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="RFF+BM — must be unique per shipment and appear on the physical package">${bolRefVal}</div></div>`);
+      strip.push(`<div class="stat"><div class="l"><span>Packing reference</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(supPack||bolPack||'')},this)">📋</button></div><div class="v" style="font-size:13px" title="RFF+BM when present, otherwise the BGM document number or an RFF-based despatch note reference">${packVal}</div></div>`);
     }
   }
   strip.push(`<div class="stat"><div class="l">Supplier / bol format</div><div class="v" style="font-size:13px">${result.fmtSup}<br>${result.fmtBol}</div></div>`);
