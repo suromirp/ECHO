@@ -159,3 +159,18 @@ test('many pallets missing an SSCC are grouped into one finding with a collapsed
   const tagCount = await page.locator('#findings .wc-affected li').count();
   expect(tagCount).toBe(50); // 25 pallets x 2 sides
 });
+
+// docs/ui-conventions.md: "Distinct items", not "Items" — real user
+// confusion over a message with many pallets/lines of the exact same EAN,
+// where a bare "Items: 1" read as a total-units count rather than a
+// distinct-product count.
+test('the distinct-items stat is labeled and explained, not just a bare number', async ({ page }) => {
+  const fixture = path.join(FIX, 'many-pallets-missing-sscc.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+
+  const itemsStat = page.locator('.stat', { hasText: 'Distinct items' }).first();
+  await expect(itemsStat).toContainText('1'); // one EAN, spread across 25 pallets
+  await expect(itemsStat).toHaveAttribute('title', /not the number of lines or pallets/i);
+});

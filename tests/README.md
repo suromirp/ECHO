@@ -54,6 +54,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | `DTM` qualifier repeated with different dates within one line (same shared check as ORDRSP) | `desadv/dtm-duplicate-qualifier.edi` | `specs/desadv.spec.js` |
 | DESADV | `RFF+BM`, when present, shown as the packing reference instead of the BGM document number | `desadv/bill-of-lading-reference.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
+| ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | qty×price vs. line-amount gap, rounding tolerance | `invoic/line-arithmetic-tolerance.sup.edi`, `invoic/line-arithmetic-tolerance.bol.ubl.xml` | `specs/invoic.spec.js` |

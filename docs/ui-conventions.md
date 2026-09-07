@@ -3,7 +3,12 @@
 - Icons: **⚠** errors, **!** warnings, **ⓘ** info, **✓** ok. Never ✕ or a
   bare "i".
 - Terminology: **"EAN"** in all visible text (internal variable/field
-  names stay `gtin`); **"Packing reference"**, not "Despatch note".
+  names stay `gtin`); **"Packing reference"**, not "Despatch note";
+  **"Distinct items"**, not "Items" — a bare "Items" count reads as a
+  quantity/pallet count at a glance (real user confusion, ORDRSP/DESADV
+  Compare strip); it's actually the number of distinct EAN/article
+  matches. Pair a distinct-count stat with a tooltip spelling out what it
+  is *not* counting, not just what it is.
 - A clickable *value* jumps to the source text. A separate, small **↗**
   icon opens an external tool (Summa for EAN→product page, Purple for
   order→trace). Never combine the two actions into one click target.
