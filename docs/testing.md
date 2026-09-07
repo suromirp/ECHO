@@ -55,9 +55,9 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: pallet-weight sum vs. shipment-total mismatch detected.
 - **DESADV**: blank `LIN'` segments detected and excluded from the line
   count.
-- **DESADV**: `RFF+BM` (bill of lading number) shown as its own labeled
-  field, distinct from the BGM-based "Packing reference", in both Quick
-  check and Compare.
+- **DESADV**: `RFF+BM` (bill of lading number), when present, is shown as
+  the "Packing reference" instead of the BGM document number — leading
+  source, not a second field — in both Quick check and Compare.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
   side with a collapsed tag list, not one finding per pallet.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

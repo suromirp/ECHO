@@ -228,20 +228,24 @@ Handling:
   DESADV, so this check runs for both, in both Quick check and Compare
   (per side), per CLAUDE.md's parity rule — confirmed to actually fire
   for DESADV too, not just assumed from the shared code path.
-- **DESADV's `RFF+BM` (Bill of lading number) is a distinct field from the
-  BGM document number ECHO already surfaces as "Packing reference"** — not
-  generic EDIFACT semantics, but bol's own implementation guide: `RFF+BM`
-  is specifically the number that must be **unique per shipment** and
-  appear on the physical package, separate from BGM's despatch/packing-list
-  document number. A real "Packing List Reference Invalid" delivery error
-  couldn't be diagnosed from ECHO's output because the field that actually
-  mattered wasn't shown anywhere — `RFF+BM` was parsed but silently dropped
-  into the generic `extras.rff` bucket alongside every other unhandled RFF
-  qualifier, with no dedicated label. Now tracked as `billOfLadingRef`
-  (header-level, first occurrence) and shown as its own "Bill of lading"
-  field, in both Quick check and Compare (parity rule) — not compared
-  cross-side as a finding (matching how the existing "Packing reference"
-  field is also display-only, not a flagged check).
+- **DESADV's `RFF+BM` (Bill of lading number), when present, is the
+  leading/authoritative source for what ECHO shows as "Packing
+  reference"** — confirmed against bol's own data sources, overriding an
+  earlier assumption (based only on bol's implementation guide wording)
+  that `RFF+BM` and the BGM document number were two distinct fields
+  worth showing separately. They aren't: `RFF+BM` is parsed as
+  `billOfLadingRef` (header-level, first occurrence) and takes priority
+  over `docNumber` wherever the packing reference is shown — in both
+  Quick check and Compare (parity rule) — falling back to the BGM
+  document number, then an RFF-based despatch note reference, only when
+  `RFF+BM` is absent. Not compared cross-side as a finding, matching how
+  the packing reference itself has always been display-only, not a
+  flagged check. The original trigger was real: a "Packing List Reference
+  Invalid" delivery error couldn't be diagnosed from ECHO's output because
+  `RFF+BM` was parsed but silently dropped into the generic `extras.rff`
+  bucket alongside every other unhandled RFF qualifier, with no dedicated
+  label at all — that gap is what's fixed, not by adding a second field,
+  but by making the existing one point at the right source.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what

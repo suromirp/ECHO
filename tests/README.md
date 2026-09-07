@@ -52,7 +52,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | pallet-weight sum vs. shipment-total mismatch | `desadv/pallet-weight-mismatch.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | blank `LIN'` segments excluded from the line count | `desadv/blank-lin.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | `DTM` qualifier repeated with different dates within one line (same shared check as ORDRSP) | `desadv/dtm-duplicate-qualifier.edi` | `specs/desadv.spec.js` |
-| DESADV | `RFF+BM` bill-of-lading reference shown as its own field | `desadv/bill-of-lading-reference.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | `RFF+BM`, when present, shown as the packing reference instead of the BGM document number | `desadv/bill-of-lading-reference.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |
