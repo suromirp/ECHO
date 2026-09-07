@@ -48,6 +48,12 @@ actual test fixtures, don't just keep this list as prose:
   is flagged as a Message check (never sent to Transus). Grouped by
   qualifier code; runs standalone in Quick check and per side in Compare
   for both message types.
+- **ORDRSP (TRANSUSXML `<Article>` dialect)**: a cancelled quantity
+  (`CancelledQuantity`, distinct from `RejectedQuantity` even when the
+  latter is present as a literal `"0"`) is read correctly, correctly
+  derives action 6 when paired with a delivered quantity and no
+  backorder, doesn't trip the "action 6 without backorder" Message check,
+  and `ArticleNetPrice` is read into the net-price comparison.
 - **DESADV**: GTIN-12/13 leading-zero padding normalized across sides.
 - **DESADV**: bol's GTIN blanked entirely, falls back to article code.
 - **DESADV**: bol's GTIN blanked *and* no article code anywhere — resolved
