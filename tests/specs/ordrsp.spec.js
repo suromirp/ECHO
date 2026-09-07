@@ -154,3 +154,32 @@ test('the DTM duplicate-qualifier finding is also flagged standalone in Quick ch
   await expect(page.locator('#quickOverview')).toContainText('DTM+67 appears more than once');
   await expect(page.locator('#quickOverview')).toContainText('DTM+69 appears more than once');
 });
+
+// docs/formats-and-quirks.md: this TRANSUSXML ORDRSP dialect's <Article>
+// element carries CancelledQuantity and RejectedQuantity as two distinct
+// fields, not interchangeable dialect variants of the same concept — a
+// real message had RejectedQuantity present as a literal "0" (masking the
+// real CancelledQuantity value under a plain `||` fallback) and no branch
+// deriving action 6 from a cancelled quantity alone, plus ArticleNetPrice
+// wasn't read into netPrice at all. All three together made a message
+// bol/Transus mapped correctly look like it had multiple mapping problems.
+test('a cancelled quantity, its action-6 derivation, and its net price are all read correctly for this TRANSUSXML ORDRSP dialect', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-cancelled-quantity.sup.xml'),
+    path.join(FIX, 'transusxml-cancelled-quantity.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const qtyStat = page.locator('.stat', { hasText: 'Quantities' }).first();
+  await expect(qtyStat).toContainText('Match');
+  const actionStat = page.locator('.stat', { hasText: 'Actions' }).first();
+  await expect(actionStat).toContainText('Match');
+
+  const buckets = await findingsByCategory(page);
+  const allText = [...buckets.message, ...buckets.diff, ...buckets.info].join(' | ');
+  expect(allText).not.toMatch(/nothing is backordered/i);
+  expect(allText).not.toMatch(/net price is missing/i);
+  expect(allText).not.toMatch(/action codes differ/i);
+});

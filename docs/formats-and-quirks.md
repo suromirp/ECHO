@@ -53,6 +53,42 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
 - Header `VATBaseAmount`/`VATAmount` reflect only **one** VAT-rate group;
   the full taxable base is the sum across every `<InvoiceVATTotals>`
   block.
+- **This dialect's ORDRSP variant** (same `<Messages><Message><Article>`
+  shape, distinguished from the INVOIC one by `<OrderResponseNumber>`
+  and the absence of `<OrderLine>`) has its own confirmed quirks:
+  - **`CancelledQuantity` and `RejectedQuantity` are two distinct
+    fields, not dialect-variant names for the same concept** — a real
+    message carried both, `RejectedQuantity` present as a literal `"0"`
+    (a non-empty string) and `CancelledQuantity` holding the real,
+    non-zero figure. A plain `g(el,'RejectedQuantity')||g(el,'CancelledQuantity')`
+    fallback never reached the second field, since `"0"` is truthy as a
+    string — checked for an empty string explicitly now, and
+    `CancelledQuantity` preferred (matching what ECHO's own UI already
+    calls this quantity, "Cancelled").
+  - **A cancelled quantity alongside a delivered one, with no backorder,
+    is still action 6 (amendment)** — the action-derivation heuristic
+    (there's no reliable action code in this dialect's `<Article>`
+    element, only a header/line `<Action>` string like `"CHA"` with an
+    unconfirmed full value set) had no branch for this; it silently fell
+    through to action 5 (fully accepted). Confirmed against a real
+    message where bol's own EDIFACT output correctly used 6 for exactly
+    this pattern. `validateOrdrspLine`'s action-6 rule was also missing
+    this: it only recognized a backorder quantity as valid grounds for
+    an amendment, not a cancelled one, so even a *correctly* derived
+    action 6 with a cancelled (not backordered) quantity still produced
+    a "worth confirming these weren't meant to be action 5" Message
+    check.
+  - **`ArticleNetPrice` wasn't read into `netPrice` at all** for this
+    ORDRSP variant (unlike the INVOIC one above) — every comparison
+    against this dialect showed a "Net price is missing on the supplier
+    side" finding regardless of the actual data. No basis-quantity
+    division needed here (no `ArticleQuantityPerPriceUnit` in this
+    flavour) — confirmed against a real message where `ArticleNetPrice`
+    matched bol's own `PRI+AAA` exactly, 1:1.
+  - All three together, on the same real line, made a message bol/Transus
+    had mapped correctly look like it had a quantity difference, an
+    action mismatch, *and* a missing price — three ECHO-side reading
+    gaps stacked on one line, not three real mapping problems.
 
 ### 3. Exact Online raw export
 

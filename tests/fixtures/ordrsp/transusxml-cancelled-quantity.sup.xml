@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<Messages>
+  <Message>
+    <MessageFormat>TRANSUSXML</MessageFormat>
+    <MessageType>5</MessageType>
+    <SenderGLN>4000000000001</SenderGLN>
+    <RecipientGLN>8712423020597</RecipientGLN>
+    <OrderResponseNumber>9001</OrderResponseNumber>
+    <OrderDate>20260101</OrderDate>
+    <Action>CHA</Action>
+    <BuyerGLN>8712423020597</BuyerGLN>
+    <SupplierGLN>4000000000001</SupplierGLN>
+    <CurrencyCode>EUR</CurrencyCode>
+    <OrderResponseDate>20260101</OrderResponseDate>
+    <OrderNumberBuyer>PO9001</OrderNumberBuyer>
+    <DeliveryDate>20260101</DeliveryDate>
+    <Article>
+      <LineNumber>1</LineNumber>
+      <ArticlePriceCurrencyCode>EUR</ArticlePriceCurrencyCode>
+      <BackOrderQuantity>0</BackOrderQuantity>
+      <ArticleDescription>Fictional item</ArticleDescription>
+      <ArticleCodeSupplier>ART900</ArticleCodeSupplier>
+      <GTIN>1111111111111</GTIN>
+      <ArticleNetPrice>10.00</ArticleNetPrice>
+      <Action>CHA</Action>
+      <OrderedQuantity>100</OrderedQuantity>
+      <DeliveredQuantity>80</DeliveredQuantity>
+      <CancelledQuantity>20</CancelledQuantity>
+      <RejectedQuantity>0</RejectedQuantity>
+    </Article>
+  </Message>
+</Messages>

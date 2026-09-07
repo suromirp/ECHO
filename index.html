@@ -1171,18 +1171,41 @@ function parseFactsTransusXml(raw){
       const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
       const delivered=toInt(g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity'));
       const backorder=toInt(g(el,'BackOrderQuantity'));
-      const rejected=toInt(g(el,'RejectedQuantity')||g(el,'CancelledQuantity'));
+      // CancelledQuantity and RejectedQuantity aren't just alternate names
+      // for the same field across dialect variants — a real message
+      // carried both, with RejectedQuantity present as a literal "0" (a
+      // non-empty string, so a plain `||` fallback never reached
+      // CancelledQuantity's actual value, 27). Checked for an empty string
+      // explicitly rather than falsy, and CancelledQuantity preferred,
+      // since that's the concept ECHO's own UI already labels this
+      // quantity as ("Cancelled").
+      const cancelledRaw=g(el,'CancelledQuantity');
+      const cancelled=toInt(cancelledRaw!==''?cancelledRaw:g(el,'RejectedQuantity'));
       const qty={};
       if(delivered!==null)qty['12']=String(delivered);
       if(backorder)qty['83']=String(backorder);
-      if(rejected)qty['182']=String(rejected);
+      if(cancelled)qty['182']=String(cancelled);
       let action=null;
-      if(rejected&&!delivered&&!backorder)action='2';
-      else if(backorder)action='6';
+      // A cancelled quantity alongside a delivered one, with no backorder,
+      // is still an amendment (action 6) — not a plain accept (action 5).
+      // Confirmed against a real message where this branch was missing
+      // entirely: the line silently defaulted to 5 even though bol's own
+      // EDIFACT output (matching the source system's own cancelled-qty
+      // records) correctly used 6 for the same line.
+      if(cancelled&&!delivered&&!backorder)action='2';
+      else if(backorder||cancelled)action='6';
       else if(delivered!==null)action='5';
       const orders=new Set();const ob=g(el,'OrderNumberBuyer')||headerOrder;if(ob)orders.add(ob);
+      // ArticleNetPrice wasn't read at all — every ORDRSP compare against
+      // this dialect showed a "Net price is missing on the supplier side"
+      // finding regardless of the actual data, since the field silently
+      // stayed null. Confirmed against a real message: ArticleNetPrice
+      // (118.68) matched bol's own PRI+AAA (118.68) exactly, no per-unit
+      // conversion needed here (unlike this dialect's ArticleNetPrice
+      // usage for INVOIC, which divides by ArticleQuantityPerPriceUnit —
+      // not present in this ORDRSP flavour).
       f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,
-        art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,
+        art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,netPrice:num(g(el,'ArticleNetPrice')),
         desc:g(el,'ArticleDescription')||g(el,'Description')||null});
     });
   }
@@ -1332,8 +1355,8 @@ const ACTION_RULE_EXPLAIN={
   'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
   'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
   'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
-  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), but nothing is backordered — the confirmed quantity already covers the full amount. Action 6 normally means either a backorder or just a changed delivery date; with no backorder, this looks like the date-only kind. Worth confirming these weren't meant to be action 5 instead.",
-  'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
+  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), but nothing is backordered or cancelled — the confirmed quantity already covers the full amount. Action 6 normally means a backorder, a cancelled quantity, or just a changed delivery date; with neither of the first two, this looks like the date-only kind. Worth confirming these weren't meant to be action 5 instead.",
+  'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder, a cancelled quantity, nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
   'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
   'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
   'action2-has-confirmed':"Action 2 (cancelled), but a confirmed quantity is present too — a cancelled line shouldn't have anything confirmed."
@@ -1366,8 +1389,14 @@ function validateOrdrspLine(bgmFunc,line){
     if(has('83')){keys.push('action5-has-backorder');bump('err');}
     if(has('182')){keys.push('action5-has-cancelled');bump('err');}
   }else if(a==='6'){
-    // amendment: needs backorder qty>0 and new delivery date. Transus XML may express as delivered 0 + backorder.
-    if(!has('83')&&!(line.qty['12']==='0')){
+    // amendment: needs backorder qty>0 and new delivery date, OR a
+    // cancelled quantity (partial cancellation is also a valid reason for
+    // an amendment, not just a backorder or a date-only change) — checked
+    // against a real message where a cancelled quantity (QTY+182) alone,
+    // with no backorder, was flagged here as "worth confirming this wasn't
+    // meant to be action 5" even though the cancellation was the whole
+    // reason for the amendment. Transus XML may express as delivered 0 + backorder.
+    if(!has('83')&&!has('182')&&!(line.qty['12']==='0')){
       keys.push(line.qty['12']?'action6-no-backorder-has-confirmed':'action6-no-backorder-no-data');
       bump('warn');
     }
