@@ -209,3 +209,42 @@ test('the VAT number is shown per party in the Invoice details table, alongside 
   const buyVatRow = page.locator('#invoiceResults table.inv tr', { hasText: 'Buyer (VAT)' });
   await expect(buyVatRow).toContainText('NL222222222B01');
 });
+
+// Confirmed against a real 25-line invoice: every line sat at exactly
+// ~90.0% of qty×net price, with nothing in the message (no ALC/PCD
+// segment) explaining why — 25 near-identical "worth a second look" notes
+// (capped at 5, "20 more" hidden) completely buried that it was one
+// uniform pattern, not 25 separate arithmetic mistakes. Fixture: 4 lines
+// at a consistent 90%, plus a 5th at a distinctly different ratio (75%)
+// that must stay its own, separate finding rather than being swept in.
+test('a uniform percentage gap across multiple lines is grouped into one finding, not one per line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'uniform-discount-pattern.sup.edi'),
+    path.join(FIX, 'uniform-discount-pattern.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  const buckets = await invoiceFindingsByCategory(page);
+  const grouped = buckets.message.filter(t => /consistently at about/i.test(t));
+  expect(grouped).toHaveLength(1);
+  expect(grouped[0]).toContain('4 items');
+  expect(grouped[0]).toContain('90.0%');
+  expect(grouped[0]).toContain('1111111111111');
+  expect(grouped[0]).toContain('2222222222222');
+  expect(grouped[0]).toContain('3333333333333');
+  expect(grouped[0]).toContain('4444444444444');
+  // Never claims which side introduced it — attributes it to the message
+  // itself and points at the feed generator, not bol/Transus.
+  expect(grouped[0]).toContain("bol's transformation");
+
+  // The outlier (a genuinely different ratio) is never folded into the
+  // group — it still gets its own individual finding.
+  const individual = buckets.message.filter(t => /quantity × net price/i.test(t) && t.includes('5555555555555'));
+  expect(individual).toHaveLength(1);
+  expect(individual[0]).not.toContain('consistently at about');
+
+  // Never a mapping question — must never reach "Copy for Transus" (cat 'diff').
+  expect(buckets.diff.some(t => /consistently at about/i.test(t))).toBe(false);
+});

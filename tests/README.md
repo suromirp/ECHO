@@ -59,6 +59,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | qty×price vs. line-amount gap, rounding tolerance | `invoic/line-arithmetic-tolerance.sup.edi`, `invoic/line-arithmetic-tolerance.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | uniform percentage gap across multiple lines grouped into one finding; a genuine outlier stays individual | `invoic/uniform-discount-pattern.sup.edi`, `invoic/uniform-discount-pattern.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | line-level allowance "not forwarded (expected)" | `invoic/line-allowance-not-forwarded.sup.edi`, `invoic/line-allowance-not-forwarded.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | UBL line-amount gap matching a charge treated as a match | `invoic/ubl-line-amount-includes-charge.sup.edi`, `invoic/ubl-line-amount-includes-charge.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | VAT-rate position mismatch between line and summary TAX segments | `invoic/tax-rate-encoding-mismatch.sup.edi`, `invoic/tax-rate-encoding-mismatch.bol.ubl.xml` | `specs/invoic.spec.js` |
