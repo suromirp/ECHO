@@ -3239,6 +3239,13 @@ function compareInvoice(sup,bol){
     if(!s&&!b)return;
     const sv=s?(s.gln||s.name||''):null,bv=b?(b.gln||b.name||''):null;
     hrow(`${NAD_ROLE[role]||role} (GLN)`,sv,bv,{soft:true});
+    // VAT number was already parsed (RFF+VA / PartyTaxScheme) but never
+    // shown in this side-by-side table — only buried in the "Show invoice
+    // overview" detail panel further down. Real workflow need: checking
+    // the VAT number is part of the normal invoice-verification routine,
+    // not just an occasional lookup.
+    const svat=s?s.vat:null,bvat=b?b.vat:null;
+    if(svat||bvat)hrow(`${NAD_ROLE[role]||role} (VAT)`,svat,bvat,{soft:true});
   });
   if(sup.paymentTerms.days!==null||bol.paymentTerms.days!==null)
     hrow('Payment term (days)',sup.paymentTerms.days,bol.paymentTerms.days,{soft:true});
@@ -4714,7 +4721,7 @@ function renderInvoiceCompare(res,notes){
     <tr><th>Field</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
   h+=res.hdr.map(r=>{
     const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillInfo());
-    const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)'));
+    const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)')||r.label.endsWith('(VAT)'));
     const isOrderRow=r.label==='Order(s)';
     const supTxt=r.sup??'—',bolTxt=r.bol??'—';
     const supFirst=String(r.sup??'').split(',')[0].trim(),bolFirst=String(r.bol??'').split(',')[0].trim();

@@ -292,6 +292,14 @@ Handling:
   `<details>` per the same doc's "large lists collapse past roughly 20
   items" rule, so the finding list stays scannable regardless of pallet
   count.
+- **The VAT number (`RFF+VA` / UBL `PartyTaxScheme/CompanyID`) was parsed
+  correctly but only ever shown in the "Show invoice overview" detail
+  panel, never in the top-level "Invoice details" side-by-side table**
+  where GLNs already are — real, stated workflow need: checking the VAT
+  number is part of the normal invoice-verification routine, not an
+  occasional detail lookup. Now a row per party (`Supplier (VAT)`,
+  `Buyer (VAT)`, etc.), shown only when at least one side has one,
+  clickable like the GLN rows already were.
 - **Credit notes**: EDIFACT's own BGM function code (381/384) is
   authoritative for detecting a credit note — bol's `InvoiceTypeCode`
   isn't reliable (looks constant regardless of document type). Bol's own
