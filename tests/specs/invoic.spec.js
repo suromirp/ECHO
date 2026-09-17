@@ -189,3 +189,23 @@ test('a line-level charge matches across sides despite a GTIN-12/13 leading-zero
   await expect(chargeRows).toHaveCount(1);
   await expect(chargeRows).toContainText('Match');
 });
+
+// The VAT number (RFF+VA / PartyTaxScheme CompanyID) was already parsed
+// and shown in the "Show invoice overview" detail panel, but never in the
+// top-level "Invoice details" side-by-side table where GLNs already are —
+// real workflow need: checking the VAT number is part of the normal
+// invoice-verification routine, not just an occasional detail lookup.
+test('the VAT number is shown per party in the Invoice details table, alongside GLN', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'vat-number-shown.sup.edi'),
+    path.join(FIX, 'vat-number-shown.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  const supVatRow = page.locator('#invoiceResults table.inv tr', { hasText: 'Supplier (VAT)' });
+  await expect(supVatRow).toContainText('DE111111111');
+  const buyVatRow = page.locator('#invoiceResults table.inv tr', { hasText: 'Buyer (VAT)' });
+  await expect(buyVatRow).toContainText('NL222222222B01');
+});
