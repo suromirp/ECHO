@@ -3071,6 +3071,51 @@ function lineArithmeticFindingText(label,qty,netPrice,r,cur){
     :"larger than ordinary price rounding alone would explain — worth a second look";
   return `Item <code>${esc(label)}</code>: quantity × net price (${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}) doesn't exactly match the stated line amount (${esc(fmtAmt(r.expected+r.diff,cur))}) — a difference of ${esc(fmtAmt(Math.abs(r.diff),cur))}, ${explain}.`;
 }
+/* When several/most flagged lines share almost exactly the same ratio
+   between the stated line amount and quantity × net price, that isn't N
+   separate arithmetic mistakes — it's one uniform pattern (most likely an
+   undisclosed discount or rebate) applied the same way on every line.
+   Confirmed against a real invoice: 25 of 25 lines sat at exactly ~90.0%
+   of qty×price, with no ALC/PCD segment anywhere explaining a discount —
+   a wall of 25 near-identical "worth a second look" notes (5 shown, "20
+   more" hidden) buried that signal completely. Grouped into one finding
+   with every affected item as a tag instead. Needs at least 3 lines at
+   (within 0.1 percentage point of) the same ratio to call it a pattern
+   rather than coincidence — fewer than that stays as individual findings,
+   and any line with a genuinely different ratio is left alone too, so a
+   real one-off arithmetic issue never gets swept into the group. */
+function groupUniformArithmeticGap(entries){
+  const flagged=entries.filter(e=>e.ar&&!e.ar.withinRounding);
+  if(flagged.length<3)return {grouped:null,rest:entries};
+  const byKey=new Map();
+  flagged.forEach(e=>{
+    const ratio=(e.ar.expected+e.ar.diff)/e.ar.expected;
+    e.__ratio=ratio;
+    const key=Math.round(ratio*1000); // group to within 0.1 percentage point
+    if(!byKey.has(key))byKey.set(key,[]);
+    byKey.get(key).push(e);
+  });
+  let best=null;
+  byKey.forEach(g=>{if(!best||g.length>best.length)best=g;});
+  if(!best||best.length<3)return {grouped:null,rest:entries};
+  const bestSet=new Set(best);
+  const rest=entries.filter(e=>!bestSet.has(e));
+  const meanPct=(best.reduce((s,e)=>s+e.__ratio,0)/best.length)*100;
+  return {grouped:{items:best,pct:meanPct},rest};
+}
+/* Neutral about which side is "wrong" (CLAUDE.md: never claim a message
+   is valid/invalid) — states only what's observed (the exact percentage,
+   that it repeats across N lines, and that nothing in the message itself
+   explains it) plus a concrete, checkable next step. Message check
+   (cat:'message') already signals this is a property of the message's own
+   numbers, not something bol's transformation introduced or could fix —
+   worth reporting to whoever generates this feed, not to Transus. */
+function uniformArithmeticGapText(g){
+  const n=g.items.length;
+  const pctTxt=g.pct.toFixed(1)+'%';
+  const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
+  return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong> — not ${n} separate arithmetic mistakes, but one uniform pattern (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix — worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance reference rather than folding it silently into the line amount. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+}
 /* Flattens an XML document into {tagPath: text} for its leaf elements, so
    two versions of "the same" document can be diffed field-by-field without
    needing to know the UBL schema in advance. */
@@ -3348,8 +3393,11 @@ function compareInvoice(sup,bol){
     if(fieldState.qty.sup&&fieldState.netPrice.sup&&fieldState.lineAmount.sup){
       const qv=sumBy(S,'qty'),pv=sumBy(S,'netPrice'),lv=sumBy(S,'lineAmount');
       const ar=checkLineArithmetic(qv,pv,lv);
-      if(ar)arithmeticFindings.push({level:ar.withinRounding?'info':'warn',
-        text:lineArithmeticFindingText(row.gtin||row.art||k.replace(/^[GA]:/,''),qv,pv,ar,cur)});
+      if(ar){
+        const itemLabel=row.gtin||row.art||k.replace(/^[GA]:/,'');
+        arithmeticFindings.push({ar,qty:qv,netPrice:pv,itemLabel,
+          jump:`jumpToInvSource('both',${jsQuote(row.gtin||itemLabel)})`});
+      }
     }
     /* VAT% is not summed, but compared as a set */
     if(fieldState.vatPct.bol&&fieldState.vatPct.sup){
@@ -3491,10 +3539,17 @@ function compareInvoice(sup,bol){
   // — tagged 'message' (not 'diff'), so this never reaches the verdict's
   // mapping framing or the Copy for Transus text: it's a question about
   // the message's own numbers, not about what the transformation did.
+  // First split off any uniform-percentage pattern into its own grouped
+  // finding — see groupUniformArithmeticGap — then cap what's left same as
+  // before.
+  const {grouped:arithGroup,rest:arithRest}=groupUniformArithmeticGap(arithmeticFindings);
+  if(arithGroup)add('warn',uniformArithmeticGapText(arithGroup),'message');
+  const arithIndividual=arithRest.map(e=>({level:e.ar.withinRounding?'info':'warn',
+    text:lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur)}));
   const ARITH_FINDING_CAP=5;
-  arithmeticFindings.slice(0,ARITH_FINDING_CAP).forEach(f=>add(f.level,f.text,'message'));
-  if(arithmeticFindings.length>ARITH_FINDING_CAP){
-    const rest=arithmeticFindings.length-ARITH_FINDING_CAP;
+  arithIndividual.slice(0,ARITH_FINDING_CAP).forEach(f=>add(f.level,f.text,'message'));
+  if(arithIndividual.length>ARITH_FINDING_CAP){
+    const rest=arithIndividual.length-ARITH_FINDING_CAP;
     add('info',`<strong>${rest} more line(s) also show a quantity × price vs. line amount gap</strong> — see Line comparison below for the full list.`,'message');
   }
 
@@ -3604,11 +3659,18 @@ function invoiceOverviewHtml(inv,opts={}){
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
   {
-    const arFindings=[];
+    const arEntries=[];
     inv.lines.forEach(l=>{
       const ar=checkLineArithmetic(l.qty,l.netPrice,l.lineAmount);
-      if(ar)arFindings.push({level:ar.withinRounding?'info':'warn',text:lineArithmeticFindingText(l.art||l.gtin||'?',l.qty,l.netPrice,ar,cur)});
+      if(ar){
+        const itemLabel=l.art||l.gtin||'?';
+        arEntries.push({ar,qty:l.qty,netPrice:l.netPrice,itemLabel,jump:jumpCall(l.gtin||itemLabel)});
+      }
     });
+    const {grouped:arGroup,rest:arRest}=groupUniformArithmeticGap(arEntries);
+    if(arGroup)h+=`<div class="note-inline" style="color:var(--warn)">! ${uniformArithmeticGapText(arGroup)}</div>`;
+    const arFindings=arRest.map(e=>({level:e.ar.withinRounding?'info':'warn',
+      text:lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur)}));
     const ARITH_CAP=5;
     arFindings.slice(0,ARITH_CAP).forEach(f=>{
       h+=`<div class="note-inline" style="color:var(${f.level==='warn'?'--warn':'--info'})">${f.level==='warn'?'!':'ⓘ'} ${f.text}</div>`;

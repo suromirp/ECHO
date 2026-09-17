@@ -152,6 +152,23 @@ Handling:
   sent," which must render as `—`, never as `0.00` — a `0.00` display
   looks like a real, business-meaningful zero rather than "nothing was
   stated."
+- **When several/most lines flagged by the qty×price-vs-line-amount check
+  share almost exactly the same ratio, it's one uniform pattern, not N
+  separate arithmetic mistakes** — confirmed against a real 25-line
+  invoice: every single line sat at exactly ~90.0% of quantity × net
+  price, with no `ALC`/`PCD` segment anywhere explaining a discount. The
+  per-line finding is genuinely correct (the numbers really don't
+  reconcile at face value) but a wall of 25 near-identical "worth a second
+  look" notes (capped at 5, "20 more" hidden) completely buried that it
+  was one pattern. `groupUniformArithmeticGap` now groups lines within 0.1
+  percentage point of each other's ratio (needs ≥3 to call it a pattern)
+  into one finding — grouped, or listing every affected item as a tag;
+  any line at a genuinely different ratio stays its own individual
+  finding, so a real one-off issue is never swept in. Deliberately never
+  says which side is "wrong" (per CLAUDE.md's neutral-framing rule): it
+  states what's observed and that this is a property of the message's own
+  numbers, not something bol's transformation introduced or could fix —
+  worth reporting to whoever generates the feed, not to Transus.
 - **Line-level allowances (discounts) are deliberately dropped by bol's
   invoice process** — confirmed via a real Transus support ticket: bol's
   documented process (since 2015) only forwards article-level *charges*,

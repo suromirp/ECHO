@@ -73,6 +73,9 @@ actual test fixtures, don't just keep this list as prose:
 - **INVOIC**: TAX segment missing rate detected and grouped.
 - **INVOIC**: qty×price vs. line-amount gap flagged only outside a
   rounding tolerance, and never sent to Transus.
+- **INVOIC**: a uniform percentage gap shared by several/most lines is
+  grouped into one finding, not repeated once per line — while a
+  genuinely different, one-off gap stays its own individual finding.
 - **INVOIC**: line-level allowance correctly shown as "not forwarded
   (expected)", not as a difference.
 - **INVOIC**: a UBL line-amount gap that exactly matches a charge is
