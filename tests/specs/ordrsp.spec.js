@@ -183,3 +183,37 @@ test('a cancelled quantity, its action-6 derivation, and its net price are all r
   expect(allText).not.toMatch(/net price is missing/i);
   expect(allText).not.toMatch(/action codes differ/i);
 });
+
+// docs/formats-and-quirks.md: a message where NONE of its accepted lines
+// carry a net price is a confirmed real cause of a "Unit price is
+// unknown" delivery failure — but quantities and actions matching
+// perfectly on both sides meant ECHO read this as a clean "Loud and
+// clear" match before this check existed, with nothing about the missing
+// price surfaced anywhere.
+test('a message with no net price on any accepted line is flagged, not read as a clean match', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'no-price-anywhere.sup.edi'),
+    path.join(FIX, 'no-price-anywhere.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+  const supFinding = buckets.message.filter(t => /none of the 3 accepted lines/i.test(t) && t.includes('Supplier —'));
+  const bolFinding = buckets.message.filter(t => /none of the 3 accepted lines/i.test(t) && t.includes('Bol —'));
+  expect(supFinding).toHaveLength(1);
+  expect(bolFinding).toHaveLength(1);
+  expect(supFinding[0]).toContain('Unit price is unknown');
+
+  // Never a mapping question — it's a property of the message itself, not
+  // something to send to Transus.
+  expect(buckets.diff.some(t => /net price/i.test(t))).toBe(false);
+});
+
+// Same message, read standalone in Quick check (CLAUDE.md's parity rule).
+test('the no-price-anywhere finding is also flagged standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'no-price-anywhere.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('none of the 3 accepted lines');
+});

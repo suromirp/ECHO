@@ -225,6 +225,23 @@ Handling:
   quantity is present" error reserved for the field being missing
   entirely. Conflating "explicitly zero" with "absent" was a real,
   reported point of confusion.
+- **An ORDRSP message where NONE of its accepted (action 5) lines carry a
+  net price (`PRI+AAA`) at all** is a distinct, simpler pattern from the
+  split-item gap below — not one item's price lost somewhere, but the
+  whole message never stating a price for anything it confirms. Confirmed
+  against a real message (226 accepted lines, zero with `PRI+AAA` on
+  either the supplier or the bol side) that triggered a "Unit price is
+  unknown; item EAN: ..." delivery failure, repeated once per affected
+  EAN — but quantities and actions matched perfectly on both sides, so
+  ECHO read it as a clean "Loud and clear" match beforehand, with nothing
+  about the missing price surfaced anywhere. `checkNoPriceAnywhere` fires
+  only when the gap is total across every accepted line — a partial gap
+  is already the split-item check's territory, and a genuinely
+  price-free ORDRSP flow (if one exists) shouldn't be flagged for a few
+  isolated lines. Message check, both Quick check and per-side in Compare
+  (CLAUDE.md's parity rule) — never sent to Transus, since bol's own
+  output showed the identical gap, meaning it originates in the
+  supplier's own message, not something the transformation introduced.
 - **An item split across multiple ORDRSP lines with different actions can
   lose its net price (`PRI+AAA`) on only one of those lines**: an EAN appeared
   twice in the same message, once accepted (action 5) and once cancelled

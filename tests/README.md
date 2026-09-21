@@ -44,6 +44,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | Message type | Scenario | Fixture(s) | Spec |
 |---|---|---|---|
 | ORDRSP | action-6-without-backorder grouped, not repeated per line | `ordrsp/action6-no-backorder.edi` (same file both sides) | `specs/ordrsp.spec.js` |
+| ORDRSP | no net price anywhere on any accepted line flagged, not read as a clean match | `ordrsp/no-price-anywhere.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
 | ORDRSP | net price missing on only one of two split-action lines for the same item | `ordrsp/split-item-price-gap.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
 | ORDRSP | `DTM` qualifier repeated with different dates within one line | `ordrsp/dtm-duplicate-qualifier.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
 | ORDRSP | TRANSUSXML `<Article>` dialect: cancelled quantity, its action-6 derivation, and net price all read correctly | `ordrsp/transusxml-cancelled-quantity.sup.xml`, `ordrsp/transusxml-cancelled-quantity.bol.edi` | `specs/ordrsp.spec.js` |

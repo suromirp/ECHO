@@ -1528,6 +1528,31 @@ function palletsBySSCC(facts){
   return m;
 }
 
+/* A single message's own internal consistency (ORDRSP): if EVERY accepted
+   line (action 5) in the message is missing a net price (PRI+AAA), that's
+   a different, simpler, and more consequential pattern than the split-item
+   gap below — not "this one item's price got lost somewhere," but "this
+   message never states a price for anything it's confirming." Confirmed
+   against a real message (226 accepted lines, zero of them carrying
+   PRI+AAA on either the supplier or the bol side) that triggered exactly
+   the delivery error this check exists to catch: bol's own downstream
+   pipeline rejecting with "Unit price is unknown; item EAN: ..." repeated
+   once per affected EAN. ECHO's own comparison still read as "Loud and
+   clear" beforehand, since quantities and actions matched perfectly on
+   both sides — the mapping was correct, but nothing checked whether a
+   price existed at all. Deliberately conservative: only fires when the
+   gap is total (every accepted line, not just most), since a partial gap
+   is already covered by checkSplitItemPriceGap and a genuinely price-free
+   ORDRSP flow shouldn't be flagged just because a few isolated lines lack
+   one. A single-message observation — no second message needed — so it's
+   called standalone in Quick check and per-side in Compare (CLAUDE.md's
+   parity rule). */
+function checkNoPriceAnywhere(facts,label,add){
+  const accepted=facts.lines.filter(l=>l.action==='5');
+  if(accepted.length<2)return; // one line alone isn't enough to call it a pattern
+  if(accepted.some(l=>l.netPrice!==null&&l.netPrice!==undefined))return; // at least one has a price — not a total gap
+  add('warn',`${label} — <strong>none of the ${accepted.length} accepted lines in this message carry a net price (PRI+AAA)</strong> — worth checking whether that's expected. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) will reject the message outright rather than accept it without one. Worth reporting to whoever generates this feed.`,'message');
+}
 /* A single message's own internal consistency (ORDRSP): the same item
    split across multiple lines with different actions — e.g. one line
    accepted, another cancelled, often a later addendum to the original
@@ -2184,6 +2209,8 @@ function compare(bol,sup){
   // Quick check, see checkSplitItemPriceGap below) — per side, independent
   // of the cross-side price comparison further down.
   if(type==='ORDRSP'){
+    checkNoPriceAnywhere(sup,'Supplier',add);
+    checkNoPriceAnywhere(bol,'Bol',add);
     checkSplitItemPriceGap(sup,'Supplier',add);
     checkSplitItemPriceGap(bol,'Bol',add);
   }
@@ -3798,6 +3825,7 @@ function factsOverviewHtml(facts){
       }
     });
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
+    checkNoPriceAnywhere(facts,'This message',qcAdd);
     checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
   if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
