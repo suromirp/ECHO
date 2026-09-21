@@ -14,6 +14,12 @@
   order→trace). Never combine the two actions into one click target.
 - Large lists (pallets, lines) collapse/filter past roughly 20 items, with
   sensible defaults, but always with a way to still see everything.
+- One search box (Compare and Quick check each have their own) filters the
+  line table and the pallet/SSCC overview together, live, by EAN, order
+  number, SSCC or article code — not a separate box per table. A search
+  match always overrides the "only show differences"/"only show flagged"
+  filter, never gets hidden by it — the whole point of searching is to
+  find one specific thing regardless of its status.
 - Status text is always specific ("No SSCC — can't match"), never vague
   ("Not applicable" used as a catch-all for anything unclear).
 - The legend block stays in sync with whatever terms are actually in use

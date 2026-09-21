@@ -216,3 +216,60 @@ test('a nested CPS group that carries its own SSCC is marked as nested, not show
   await page.locator('#quickOverview .pallet-block .switch').click();
   await expect(page.locator('#quickOverview .pallet-det.hidden')).toHaveCount(0);
 });
+
+// docs/ui-conventions.md / docs/testing.md: one search box filters the line
+// table and the pallet/SSCC overview together, live, by EAN, order number,
+// SSCC or article code — in both Compare and Quick check. Also covers a
+// real bug caught while building this: the box was originally ANDed with
+// the existing "only show flagged/differences" filter, so searching for a
+// specific item inside an all-clean message hid everything instead of
+// finding it — a search match now overrides that filter while active.
+test('a single search box filters the line table and pallet overview together, by EAN, order, SSCC or article code', async ({ page }) => {
+  const fixture = path.join(FIX, 'search-fields.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickSearchPanel')).toBeVisible();
+
+  await page.locator('#quickSearchInput').fill('2222222222223'); // EAN
+  await expect(page.locator('#quickLinesTable tr[data-search]:not(.hidden)')).toHaveCount(1);
+  await expect(page.locator('#quickOverview .pallet-det:not(.hidden)')).toHaveCount(1);
+
+  await page.locator('#quickSearchInput').fill('ARTCCC'); // article code
+  await expect(page.locator('#quickLinesTable tr[data-search]:not(.hidden)')).toHaveCount(1);
+  await expect(page.locator('#quickOverview .pallet-det:not(.hidden)')).toHaveCount(1);
+
+  await page.locator('#quickSearchInput').fill('PO4001'); // order number (line table only — pallets don't carry order refs)
+  await expect(page.locator('#quickLinesTable tr[data-search]:not(.hidden)')).toHaveCount(1);
+
+  await page.locator('#quickSearchInput').fill('000000000000000302'); // SSCC (pallet overview only)
+  await expect(page.locator('#quickOverview .pallet-det:not(.hidden)')).toHaveCount(1);
+  await expect(page.locator('#quickOverview .pallet-det:not(.hidden)')).toContainText('000000000000000302');
+
+  await page.locator('#quickSearchInput').fill('does-not-exist');
+  await expect(page.locator('#quickSearchNote')).toContainText('No lines match');
+  await expect(page.locator('#quickOverview .pallet-block-note')).toContainText('No pallets match');
+
+  await page.locator('#quickSearchInput').fill('');
+  await expect(page.locator('#quickLinesTable tr[data-search]:not(.hidden)')).toHaveCount(3);
+});
+
+// Same fixture, Compare mode — and the specific regression: a search match
+// must show up even though every pallet in this message matches cleanly
+// (status 'ok'), which the diff-only toggle would otherwise hide.
+test('the search box also works in Compare, across both sides, and overrides the "only show differences" filter', async ({ page }) => {
+  const fixture = path.join(FIX, 'search-fields.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#searchPanel')).toBeVisible();
+
+  await page.locator('#resultSearchInput').fill('ARTBBB');
+  await expect(page.locator('#lineTable tr:not(:has(th))')).toHaveCount(1);
+  // One pallet per side (supplier + bol), both carrying this article code.
+  await expect(page.locator('#ssccBody .pallet-det:not(.hidden)')).toHaveCount(2);
+
+  await page.locator('#resultSearchInput').fill('000000000000000301');
+  await expect(page.locator('#ssccBody .pallet-det:not(.hidden)')).toHaveCount(2);
+
+  await page.locator('#resultSearchInput').fill('');
+  await expect(page.locator('#lineTable tr:not(:has(th))')).toHaveCount(3);
+});
