@@ -38,6 +38,9 @@ actual test fixtures, don't just keep this list as prose:
 
 - **ORDRSP**: action-6-without-backorder findings grouped into one block,
   not repeated per line.
+- **ORDRSP**: a message where none of its accepted lines carry a net price
+  anywhere is flagged (both Quick check and per-side in Compare), rather
+  than read as a clean match just because quantities and actions agree.
 - **ORDRSP**: a net price (`PRI+AAA`) missing on only one of two lines for
   the same item split across different actions is flagged as a
   Transformation difference (never lost by aggregating purely per EAN),
