@@ -69,6 +69,10 @@ actual test fixtures, don't just keep this list as prose:
   source, not a second field — in both Quick check and Compare.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
   side with a collapsed tag list, not one finding per pallet.
+- **DESADV**: a nested `CPS` group that carries its own SSCC is marked as
+  "nested under" its parent pallet's SSCC, not shown as an independent
+  pallet; a pallet overview past ~20 entries in Quick check defaults to
+  "Only show flagged" with a toggle to see everything.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

@@ -326,6 +326,33 @@ Handling:
   `<details>` per the same doc's "large lists collapse past roughly 20
   items" rule, so the finding list stays scannable regardless of pallet
   count.
+- **A `CPS` group nested under a pallet `CPS` (`CPS+<own>+<parent>'`) can
+  legitimately carry its own SSCC** — a real, confirmed two-level GS1
+  packing hierarchy (e.g. cartons each with their own SSCC, packed onto
+  one pallet SSCC), not a mistake, and distinct from the existing fold-up
+  case just above `parseFactsEdifact`'s pallet parsing (that one only
+  merges a nested `CPS` group that has *no* SSCC of its own up into its
+  nearest SSCC-bearing ancestor). Left flat and unmarked, though,
+  `palletOverviewHtml` listed every SSCC-bearing `CPS` — true top-level
+  pallets and nested children alike — as an equal, independent "pallet",
+  with nothing distinguishing the two. On a real 268-entry message this
+  read as "an SSCC generated per unit instead of per pallet" even though
+  the structure itself was plausibly fine — CLAUDE.md rule 2/6/7 (never
+  claim valid/invalid, verify before agreeing, neutral framing) meant the
+  fix couldn't just confirm or deny that impression; it had to stop the
+  rendering from erasing the hierarchy that would let a reader judge it
+  themselves. Each nested-child entry now shows "↳ nested under `<parent
+  SSCC>`"; each parent with nested children shows "+N nested units with
+  own SSCC"; and the section intro states the true top-level-vs-nested
+  split (e.g. "30 entries here — 28 top-level pallets, 2 nested units...,
+  not 30 independent pallets") so the real pallet count is visible without
+  opening a single entry. Same fix also closed a separate, plainer gap:
+  Quick check's pallet/SSCC overview had no collapsing at all above ~20
+  entries (only Compare's separate panel did) — past the same threshold,
+  it now defaults to "Only show flagged" (self-contained toggle per
+  `docs/ui-conventions.md`'s "large lists collapse... with a way to still
+  see everything" rule), independent of Compare's own existing toggle so
+  the two never both appear at once.
 - **The VAT number (`RFF+VA` / UBL `PartyTaxScheme/CompanyID`) was parsed
   correctly but only ever shown in the "Show invoice overview" detail
   panel, never in the top-level "Invoice details" side-by-side table**
