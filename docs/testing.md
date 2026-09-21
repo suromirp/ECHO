@@ -73,6 +73,11 @@ actual test fixtures, don't just keep this list as prose:
   "nested under" its parent pallet's SSCC, not shown as an independent
   pallet; a pallet overview past ~20 entries in Quick check defaults to
   "Only show flagged" with a toggle to see everything.
+- **ORDRSP/DESADV**: a single search box filters the line table and the
+  pallet/SSCC overview together, live, by EAN, order number, SSCC or
+  article code, in both Compare and Quick check — and a search match
+  overrides the "only show differences"/"only show flagged" filter rather
+  than being hidden by it.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

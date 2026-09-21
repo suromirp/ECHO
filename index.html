@@ -422,6 +422,10 @@
       <div class="status" id="quickStatus"></div>
     </div>
 
+    <div class="panel hidden" id="quickSearchPanel">
+      <input type="search" id="quickSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyQuickSearch()">
+      <div class="note-inline" id="quickSearchNote"></div>
+    </div>
     <div id="quickOverview"></div>
 
     <div class="panel">
@@ -475,6 +479,10 @@
 
     <div id="results" class="hidden">
       <div id="verdict"></div>
+      <div class="panel" id="searchPanel">
+        <input type="search" id="resultSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyResultSearch()">
+        <div class="note-inline" id="resultSearchNote"></div>
+      </div>
       <div class="strip" id="strip"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
@@ -835,6 +843,17 @@ function quickFormat(){
   }
   ovBox.innerHTML=ovHtml;
   if(pendingEyeReaction)echoSignalReact(pendingEyeReaction);
+  // Search only makes sense where there's a Lines/pallet table to filter —
+  // ORDRSP/DESADV/ORDERS via factsOverviewHtml. INVOIC has no such table
+  // here, so the box would just sit there doing nothing.
+  const qSearchPanel=document.getElementById('quickSearchPanel');
+  if((msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS')&&ovHtml){
+    qSearchPanel.classList.remove('hidden');
+    document.getElementById('quickSearchInput').value='';
+    document.getElementById('quickSearchNote').innerHTML='';
+  }else{
+    qSearchPanel.classList.add('hidden');
+  }
 
   /* ---------- 2. original message ---------- */
   if(isXmlText(raw)){
@@ -898,6 +917,9 @@ document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickOverview').innerHTML='';
   document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
+  document.getElementById('quickSearchPanel').classList.add('hidden');
+  document.getElementById('quickSearchInput').value='';
+  document.getElementById('quickSearchNote').innerHTML='';
 });
 document.getElementById('quickCopyBtn').addEventListener('click',async()=>{
   if(!quickPlain){quickSetStatus('Nothing to copy yet.',true);return;}
@@ -1944,7 +1966,8 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       ?`<span class="dim" title="This CPS group is nested under another CPS group that already carries its own SSCC — a two-level packing hierarchy (e.g. cartons each with their own SSCC, packed onto one pallet), not necessarily an issue.">↳ nested under <span class="clickable-val" onclick="${jumpCall(nestedUnder.sscc)}">${esc(nestedUnder.sscc)}</span></span>`
       :(nestedChildren.length?`<span class="dim" title="These CPS groups are nested under this one and already carry their own SSCC — each listed as its own separate entry below, not merged into this pallet's item count.">+${nestedChildren.length} nested unit${nestedChildren.length===1?'':'s'} with own SSCC</span>`:'');
     const hideByDefault=defaultOnlyFlagged&&status==='ok';
-    blocks+=`<details class="pallet-det${hideByDefault?' hidden':''}" data-status="${status}"><summary>
+    const searchAttr=esc([p.sscc,p.palletGtin,...items.flatMap(it=>[it.gtin,it.art])].filter(Boolean).join(' ').toLowerCase());
+    blocks+=`<details class="pallet-det${hideByDefault?' hidden':''}" data-status="${status}" data-search="${searchAttr}"><summary>
         <span class="mono">CPS ${esc(p.cps||'?')}</span>
         <span class="dim">Pallet EAN ${esc(p.palletGtin||'—')}</span>
         <span class="mono">SSCC ${ssccTxt}</span>
@@ -1957,12 +1980,18 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   });
   const total=relevant.length;
   const hiddenCount=defaultOnlyFlagged?statuses.filter(s=>s==='ok').length:0;
+  // The note div is always present in Quick check (even below the collapse
+  // threshold), not just alongside the toggle — otherwise a search with no
+  // matches in a short pallet list has nowhere to say "nothing found",
+  // which reads as a silent failure rather than a clear zero-result state.
   let filterUI='';
-  if(singleMode&&total>PALLET_FILTER_THRESHOLD){
+  if(singleMode){
+    const showToggle=total>PALLET_FILTER_THRESHOLD;
     const noteTxt=hiddenCount===0?'':(hiddenCount===total
       ?`All ${total} match cleanly — nothing to review here. Toggle off to see them all.`
       :`Showing ${total-hiddenCount} of ${total} (${hiddenCount} clean match${hiddenCount===1?'':'es'} hidden).`);
-    filterUI=`<div class="toggle-bar" style="margin:4px 0 8px"><label class="switch"><input type="checkbox" ${defaultOnlyFlagged?'checked':''} onchange="filterPalletBlock(this)"><span class="track"></span><span>Only show flagged</span></label></div><div class="note-inline pallet-block-note">${noteTxt}</div>`;
+    const toggleHtml=showToggle?`<div class="toggle-bar" style="margin:4px 0 8px"><label class="switch"><input type="checkbox" ${defaultOnlyFlagged?'checked':''} onchange="filterPalletBlock(this)"><span class="track"></span><span>Only show flagged</span></label></div>`:'';
+    filterUI=`${toggleHtml}<div class="note-inline pallet-block-note">${noteTxt}</div>`;
   }
   const hierarchyIntro=nestedCount?`<p class="panel-intro" style="margin-top:-4px">${total} entries here — ${total-nestedCount} top-level pallet${total-nestedCount===1?'':'s'}, ${nestedCount} nested unit${nestedCount===1?'':'s'} that carry their own SSCC (marked "nested under" below), not ${total} independent pallets.</p>`:'';
   return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${total})</div>${hierarchyIntro}<div class="pallet-block">${filterUI}<div class="pallet-list">${blocks}</div></div>`;
@@ -4008,9 +4037,10 @@ function factsOverviewHtml(facts){
         const d=l.dtm?Object.values(l.dtm)[0]:null;
         t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;
       }
-      return `<tr>${t}</tr>`;
+      const searchAttr=esc([l.gtin,l.art,...(l.orders||[])].filter(Boolean).join(' ').toLowerCase());
+      return `<tr data-search="${searchAttr}">${t}</tr>`;
     }).join('');
-    h+=`<div class="sec-h">Lines (${facts.lines.length})</div><div class="inv-scroll"><table class="inv">${th}${body}</table></div>`;
+    h+=`<div class="sec-h">Lines (${facts.lines.length})</div><div class="inv-scroll"><table class="inv" id="quickLinesTable">${th}${body}</table></div>`;
   }
 
   // pallet/SSCC overview (single-message mode: no Mapping column, since
@@ -4048,7 +4078,18 @@ function renderLineTable(){
   if(!lastLineRows)return;
   const {isO,rows}=lastLineRows;
   const onlyDiff=document.getElementById('lineFilterToggle').checked;
-  const shown=onlyDiff?rows.filter(r=>r.status!=='ok'):rows;
+  const searchEl=document.getElementById('resultSearchInput');
+  const q=searchEl?searchEl.value.trim().toLowerCase():'';
+  const matchesSearch=r=>{
+    if(!q)return true;
+    const hay=[r.art,r.gtin,...(r.supOrders||[]),...(r.bolOrders||[])].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  };
+  // While searching, show every match regardless of the diff-only toggle —
+  // otherwise looking up one specific EAN/order/SSCC in an all-clean
+  // message would show nothing at all, which reads as "not found" rather
+  // than "found, but hidden by an unrelated filter".
+  const shown=rows.filter(r=>q?matchesSearch(r):(!onlyDiff||r.status!=='ok'));
   let thead=`<tr><th>Supplier item</th><th>EAN</th><th>Order</th>`;
   if(isO)thead+=`<th>Supplier action</th><th>bol action</th>`;
   thead+=`<th>Quantities (supplier → bol)</th><th>Status</th></tr>`;
@@ -4085,10 +4126,14 @@ function renderLineTable(){
   document.getElementById('lineTable').innerHTML=thead+body;
   const hidden=rows.length-shown.length;
   const note=document.getElementById('lineFilterNote');
-  if(onlyDiff&&!shown.length){
+  if(q&&!shown.length){
+    note.innerHTML=`No lines match "${esc(searchEl.value.trim())}".`;
+  }else if(onlyDiff&&!shown.length){
     note.innerHTML=`All ${rows.length} lines match — nothing to review here. Toggle off to see them all.`;
   }else if(hidden>0){
-    note.innerHTML=`Showing ${shown.length} of ${rows.length} lines (${hidden} matching line${hidden===1?'':'s'} hidden).`;
+    note.innerHTML=q
+      ?`Showing ${shown.length} of ${rows.length} lines matching "${esc(searchEl.value.trim())}".`
+      :`Showing ${shown.length} of ${rows.length} lines (${hidden} matching line${hidden===1?'':'s'} hidden).`;
   }else{
     note.innerHTML='';
   }
@@ -4367,41 +4412,53 @@ document.getElementById('lineFilterToggle').addEventListener('change',renderLine
 /* Mirrors the line-comparison "Only show differences" toggle: when a pallet
    overview has many entries (checked by default above 20, same threshold as
    the line table), hide the ones that already match so a systemic mismatch
-   doesn't bury itself under dozens of "Match" pallets nobody needs to open. */
+   doesn't bury itself under dozens of "Match" pallets nobody needs to open.
+   Also factors in the search box (#resultSearchInput) — a pallet must pass
+   BOTH the diff filter and the search text to stay visible, so typing an
+   EAN/SSCC/order/article code narrows down to just the matching pallets
+   regardless of the toggle's state. */
 function renderPalletFilter(){
   const onlyDiff=document.getElementById('palletFilterToggle').checked;
+  const searchEl=document.getElementById('resultSearchInput');
+  const q=searchEl?searchEl.value.trim().toLowerCase():'';
   const lists=[...document.querySelectorAll('#ssccBody .pallet-list')];
   let totalDets=0,totalHidden=0;
   lists.forEach(list=>{
     const dets=[...list.querySelectorAll('.pallet-det')];
     let hiddenHere=0;
     dets.forEach(d=>{
-      const show=!onlyDiff||d.dataset.status!=='ok';
+      // While searching, a match wins regardless of the diff-only toggle —
+      // same reasoning as renderLineTable above.
+      const searchOk=!q||(d.dataset.search||'').includes(q);
+      const show=q?searchOk:(!onlyDiff||d.dataset.status!=='ok');
       d.classList.toggle('hidden',!show);
       if(!show)hiddenHere++;
     });
     totalDets+=dets.length;totalHidden+=hiddenHere;
-    // Without this, a side where every pallet matches would show its
-    // "Supplier/bol — pallet overview (N)" heading followed by nothing at
-    // all once filtered — reads as broken rather than "nothing to review".
+    // Without this, a side where every pallet matches (or nothing matches
+    // the search) would show its "Supplier/bol — pallet overview (N)"
+    // heading followed by nothing at all once filtered — reads as broken
+    // rather than "nothing to review".
     let placeholder=list.querySelector('.pallet-list-empty');
-    if(onlyDiff&&dets.length&&hiddenHere===dets.length){
+    if(dets.length&&hiddenHere===dets.length){
       if(!placeholder){
         placeholder=document.createElement('div');
         placeholder.className='pallet-list-empty empty-state';
         list.appendChild(placeholder);
       }
-      placeholder.textContent=`All ${dets.length} pallets here match — nothing to review.`;
+      placeholder.textContent=q?`No pallets here match "${searchEl.value.trim()}".`:`All ${dets.length} pallets here match — nothing to review.`;
     }else if(placeholder){
       placeholder.remove();
     }
   });
   const note=document.getElementById('palletFilterNote');
   if(!totalDets){note.innerHTML='';return;}
-  if(onlyDiff&&totalHidden===totalDets){
-    note.innerHTML=`All ${totalDets} pallets match — nothing to review here. Toggle off to see them all.`;
+  if(totalHidden===totalDets){
+    note.innerHTML=q?`No pallets match "${searchEl.value.trim()}".`:`All ${totalDets} pallets match — nothing to review here. Toggle off to see them all.`;
   }else if(totalHidden>0){
-    note.innerHTML=`Showing ${totalDets-totalHidden} of ${totalDets} pallets (${totalHidden} matching pallet${totalHidden===1?'':'s'} hidden).`;
+    note.innerHTML=q
+      ?`Showing ${totalDets-totalHidden} of ${totalDets} pallets matching "${searchEl.value.trim()}".`
+      :`Showing ${totalDets-totalHidden} of ${totalDets} pallets (${totalHidden} matching pallet${totalHidden===1?'':'s'} hidden).`;
   }else{
     note.innerHTML='';
   }
@@ -4417,25 +4474,63 @@ document.getElementById('palletFilterToggle').addEventListener('change',renderPa
    combined toggle over both sides); this one only ever appears in Quick
    check, so the two never show up on the same page at once. */
 function filterPalletBlock(cb){
-  const block=cb.closest('.pallet-block');
+  applyPalletBlockFilter(cb.closest('.pallet-block'),cb.checked);
+}
+function applyPalletBlockFilter(block,onlyFlagged){
   if(!block)return;
-  const onlyFlagged=cb.checked;
+  const searchEl=document.getElementById('quickSearchInput');
+  const q=searchEl?searchEl.value.trim().toLowerCase():'';
   const dets=[...block.querySelectorAll('.pallet-det')];
   let hidden=0;
   dets.forEach(d=>{
-    const show=!onlyFlagged||d.dataset.status!=='ok';
+    // While searching, a match wins regardless of the "only show flagged"
+    // toggle — otherwise looking up one specific SSCC in an all-clean
+    // message would show nothing, which reads as "not found".
+    const searchOk=!q||(d.dataset.search||'').includes(q);
+    const show=q?searchOk:(!onlyFlagged||d.dataset.status!=='ok');
     d.classList.toggle('hidden',!show);
     if(!show)hidden++;
   });
   const note=block.querySelector('.pallet-block-note');
   if(!note||!dets.length)return;
-  if(onlyFlagged&&hidden===dets.length){
-    note.innerHTML=`All ${dets.length} match cleanly — nothing to review here. Toggle off to see them all.`;
+  if(hidden===dets.length){
+    note.innerHTML=q?`No pallets match "${searchEl.value.trim()}".`:`All ${dets.length} match cleanly — nothing to review here. Toggle off to see them all.`;
   }else if(hidden>0){
-    note.innerHTML=`Showing ${dets.length-hidden} of ${dets.length} (${hidden} clean match${hidden===1?'':'es'} hidden).`;
+    note.innerHTML=q
+      ?`Showing ${dets.length-hidden} of ${dets.length} matching "${searchEl.value.trim()}".`
+      :`Showing ${dets.length-hidden} of ${dets.length} (${hidden} clean match${hidden===1?'':'es'} hidden).`;
   }else{
     note.innerHTML='';
   }
+}
+
+/* The single search box (#resultSearchInput in Compare, #quickSearchInput
+   in Quick check) filters every relevant section live — line table and
+   pallet overview alike — by EAN, order number, SSCC or article code, per
+   CLAUDE.md's parity rule: one field, not a separate box per table. */
+function applyResultSearch(){
+  renderLineTable();
+  renderPalletFilter();
+}
+function applyQuickSearch(){
+  const q=document.getElementById('quickSearchInput').value.trim().toLowerCase();
+  const rows=[...document.querySelectorAll('#quickLinesTable tr[data-search]')];
+  let hidden=0;
+  rows.forEach(r=>{
+    const show=!q||(r.dataset.search||'').includes(q);
+    r.classList.toggle('hidden',!show);
+    if(!show)hidden++;
+  });
+  const note=document.getElementById('quickSearchNote');
+  if(rows.length){
+    if(q&&hidden===rows.length)note.innerHTML=`No lines match "${document.getElementById('quickSearchInput').value.trim()}".`;
+    else if(hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} lines matching "${document.getElementById('quickSearchInput').value.trim()}".`;
+    else note.innerHTML='';
+  }
+  document.querySelectorAll('#quickOverview .pallet-block').forEach(block=>{
+    const cb=block.querySelector('input[type=checkbox]');
+    applyPalletBlockFilter(block,cb?cb.checked:false);
+  });
 }
 
 /* =====================================================================
