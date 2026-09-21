@@ -1814,7 +1814,37 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   const singleMode=!otherMap; // Quick check: nothing to compare against, so no Mapping column
   const jumpCall=sideKey?(val=>`jumpToFactsSource(${jsQuote(sideKey)},${jsQuote(val)})`):(val=>`jumpToQuickSource(${jsQuote(val)})`);
   const mappingTh=singleMode?'':'<th title="Did the supplier → bol transformation preserve this SSCC\'s items and quantities?">Mapping</th>';
+  // Some suppliers nest inner packaging levels *that carry their own SSCC*
+  // under a pallet CPS — e.g. cartons each with their own SSCC, packed onto
+  // one pallet SSCC. That's a legitimate two-level GS1 packing hierarchy,
+  // distinct from the fold-up further up (which only merges children that
+  // DON'T carry their own SSCC). Left unmarked, a long list of these nested
+  // units reads as if every single unit got its own independent "pallet" —
+  // confirmed real confusion on a 268-entry message. Flagging the
+  // parent/child relationship on the summary line (not buried inside each
+  // entry) is what fixes that reading without claiming either side did
+  // anything wrong.
+  const byCps=new Map(facts.pallets.map(p=>[p.cps,p]));
+  const childrenOf=new Map();
+  facts.pallets.forEach(p=>{
+    if(!p.parentCps)return;
+    const parent=byCps.get(p.parentCps);
+    if(parent&&parent.sscc){
+      if(!childrenOf.has(p.parentCps))childrenOf.set(p.parentCps,[]);
+      childrenOf.get(p.parentCps).push(p);
+    }
+  });
+  const nestedCount=[...childrenOf.values()].reduce((n,arr)=>n+arr.length,0);
+  // docs/ui-conventions.md: large lists collapse past ~20 items, with a way
+  // to still see everything. Compare mode already has its own "Only show
+  // differences" toggle around the whole panel (see renderPalletFilter);
+  // Quick check had nothing, so a message with hundreds of pallets rendered
+  // as one long flat scroll. Self-contained here so Quick check gets the
+  // same treatment without a second toggle appearing on top of Compare's.
+  const PALLET_FILTER_THRESHOLD=20;
+  const defaultOnlyFlagged=singleMode&&relevant.length>PALLET_FILTER_THRESHOLD;
   let blocks='';
+  const statuses=[];
   relevant.forEach(p=>{
     const items=(p.items&&p.items.length)?p.items:[{gtin:null,qty:{}}];
     const hasItems=p.items&&p.items.length>0;
@@ -1906,17 +1936,36 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     if(!singleMode&&anyDiff){summaryBadge=pillDiff();status='diff';}
     else if(allNotes.length){summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;status='warn';}
     else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
-    blocks+=`<details class="pallet-det" data-status="${status}"><summary>
+    statuses.push(status);
+    const parent=p.parentCps?byCps.get(p.parentCps):null;
+    const nestedUnder=(parent&&parent.sscc)?parent:null;
+    const nestedChildren=childrenOf.get(p.cps)||[];
+    const hierarchyNote=nestedUnder
+      ?`<span class="dim" title="This CPS group is nested under another CPS group that already carries its own SSCC — a two-level packing hierarchy (e.g. cartons each with their own SSCC, packed onto one pallet), not necessarily an issue.">↳ nested under <span class="clickable-val" onclick="${jumpCall(nestedUnder.sscc)}">${esc(nestedUnder.sscc)}</span></span>`
+      :(nestedChildren.length?`<span class="dim" title="These CPS groups are nested under this one and already carry their own SSCC — each listed as its own separate entry below, not merged into this pallet's item count.">+${nestedChildren.length} nested unit${nestedChildren.length===1?'':'s'} with own SSCC</span>`:'');
+    const hideByDefault=defaultOnlyFlagged&&status==='ok';
+    blocks+=`<details class="pallet-det${hideByDefault?' hidden':''}" data-status="${status}"><summary>
         <span class="mono">CPS ${esc(p.cps||'?')}</span>
         <span class="dim">Pallet EAN ${esc(p.palletGtin||'—')}</span>
         <span class="mono">SSCC ${ssccTxt}</span>
         <span class="dim">${items.length} item${items.length===1?'':'s'}</span>
+        ${hierarchyNote}
         ${summaryBadge}
       </summary>
       <table class="inv"><tr><th>Item EAN</th><th>Quantity</th>${mappingTh}<th title="Flags only one specific thing: whether this item's own EAN accidentally repeats the pallet's own EAN (GIN+SRV) — a sign of a possible mix-up.">Check</th></tr>${rows}</table>
     </details>`;
   });
-  return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${relevant.length})</div><div class="pallet-list">${blocks}</div>`;
+  const total=relevant.length;
+  const hiddenCount=defaultOnlyFlagged?statuses.filter(s=>s==='ok').length:0;
+  let filterUI='';
+  if(singleMode&&total>PALLET_FILTER_THRESHOLD){
+    const noteTxt=hiddenCount===0?'':(hiddenCount===total
+      ?`All ${total} match cleanly — nothing to review here. Toggle off to see them all.`
+      :`Showing ${total-hiddenCount} of ${total} (${hiddenCount} clean match${hiddenCount===1?'':'es'} hidden).`);
+    filterUI=`<div class="toggle-bar" style="margin:4px 0 8px"><label class="switch"><input type="checkbox" ${defaultOnlyFlagged?'checked':''} onchange="filterPalletBlock(this)"><span class="track"></span><span>Only show flagged</span></label></div><div class="note-inline pallet-block-note">${noteTxt}</div>`;
+  }
+  const hierarchyIntro=nestedCount?`<p class="panel-intro" style="margin-top:-4px">${total} entries here — ${total-nestedCount} top-level pallet${total-nestedCount===1?'':'s'}, ${nestedCount} nested unit${nestedCount===1?'':'s'} that carry their own SSCC (marked "nested under" below), not ${total} independent pallets.</p>`:'';
+  return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${total})</div>${hierarchyIntro}<div class="pallet-block">${filterUI}<div class="pallet-list">${blocks}</div></div>`;
 }
 
 /* =====================================================================
@@ -4358,6 +4407,36 @@ function renderPalletFilter(){
   }
 }
 document.getElementById('palletFilterToggle').addEventListener('change',renderPalletFilter);
+
+/* Quick check's own pallet/SSCC overview has no surrounding panel to hang a
+   fixed toggle+note off (it's one long dynamically-built HTML blob), so
+   palletOverviewHtml renders a self-contained "Only show flagged" toggle
+   per block instead — wired to this via a plain onchange attribute rather
+   than an addEventListener, since the block doesn't exist yet at page-load
+   time. Compare mode keeps its own separate renderPalletFilter above (one
+   combined toggle over both sides); this one only ever appears in Quick
+   check, so the two never show up on the same page at once. */
+function filterPalletBlock(cb){
+  const block=cb.closest('.pallet-block');
+  if(!block)return;
+  const onlyFlagged=cb.checked;
+  const dets=[...block.querySelectorAll('.pallet-det')];
+  let hidden=0;
+  dets.forEach(d=>{
+    const show=!onlyFlagged||d.dataset.status!=='ok';
+    d.classList.toggle('hidden',!show);
+    if(!show)hidden++;
+  });
+  const note=block.querySelector('.pallet-block-note');
+  if(!note||!dets.length)return;
+  if(onlyFlagged&&hidden===dets.length){
+    note.innerHTML=`All ${dets.length} match cleanly — nothing to review here. Toggle off to see them all.`;
+  }else if(hidden>0){
+    note.innerHTML=`Showing ${dets.length-hidden} of ${dets.length} (${hidden} clean match${hidden===1?'':'es'} hidden).`;
+  }else{
+    note.innerHTML='';
+  }
+}
 
 /* =====================================================================
    INVOIC — rendering of the comparison

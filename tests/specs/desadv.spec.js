@@ -174,3 +174,45 @@ test('the distinct-items stat is labeled and explained, not just a bare number',
   await expect(itemsStat).toContainText('1'); // one EAN, spread across 25 pallets
   await expect(itemsStat).toHaveAttribute('title', /not the number of lines or pallets/i);
 });
+
+// docs/formats-and-quirks.md: a CPS group can be nested under a pallet CPS
+// yet still carry its own SSCC (e.g. cartons each with their own SSCC,
+// packed onto one pallet) — a legitimate two-level GS1 packing hierarchy,
+// not the fold-up case (that only merges children with no SSCC of their
+// own). Left flat and unmarked, this read as "an SSCC generated per unit
+// instead of per pallet" on a real 268-entry message. Also covers
+// docs/ui-conventions.md's "large lists collapse past ~20 items, with a
+// way to still see everything" for Quick check's pallet overview, which
+// previously had no collapsing at all (only Compare's separate panel did).
+test('a nested CPS group that carries its own SSCC is marked as nested, not shown as an independent pallet, and a long pallet list collapses behind a toggle', async ({ page }) => {
+  const fixture = path.join(FIX, 'nested-sscc-hierarchy.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+
+  const heading = page.locator('#quickOverview .sec-h', { hasText: 'pallet / SSCC overview' });
+  await expect(heading).toContainText('(30)');
+
+  // The intro line makes the true top-level-vs-nested split explicit,
+  // instead of letting 30 flat entries read as 30 independent pallets.
+  await expect(page.locator('#quickOverview .panel-intro')).toContainText('28 top-level pallets');
+  await expect(page.locator('#quickOverview .panel-intro')).toContainText('2 nested units');
+
+  // Each nested child names the parent pallet's SSCC it belongs under.
+  await expect(page.locator('#quickOverview .pallet-list')).toContainText('nested under');
+  await expect(page.locator('#quickOverview .pallet-list')).toContainText('000000000000000101');
+  // The parent pallet, in turn, says how many nested units it has.
+  await expect(page.locator('#quickOverview .pallet-list')).toContainText('+2 nested unit');
+
+  // Past the 20-item threshold, the list defaults to collapsed (only
+  // flagged entries shown) with a toggle to see everything.
+  const toggle = page.locator('#quickOverview .pallet-block input[type=checkbox]');
+  await expect(toggle).toBeChecked();
+  const hiddenByDefault = await page.locator('#quickOverview .pallet-det.hidden').count();
+  expect(hiddenByDefault).toBe(30); // every entry here matches cleanly, so all 30 start hidden
+  await expect(page.locator('#quickOverview .pallet-block-note')).toContainText('All 30 match cleanly');
+
+  // Toggling off reveals everything.
+  await page.locator('#quickOverview .pallet-block .switch').click();
+  await expect(page.locator('#quickOverview .pallet-det.hidden')).toHaveCount(0);
+});
