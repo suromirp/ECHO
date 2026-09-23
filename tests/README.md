@@ -58,6 +58,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | DESADV | nested CPS group with its own SSCC marked as nested, not an independent pallet; long Quick check pallet list collapses behind a toggle | `desadv/nested-sscc-hierarchy.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | one search box filters the line table and pallet overview together (EAN, order, SSCC, article code), overriding the diff/flagged-only filter, in both Compare and Quick check | `desadv/search-fields.edi` (same file both sides) | `specs/desadv.spec.js` |
+| DESADV | a pallet wrapper missing its own SSCC is flagged even though nested packages inside it carry one; a bare shipment-root CPS is never flagged for this | `desadv/pallet-sscc-only-on-package.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |

@@ -78,6 +78,13 @@ actual test fixtures, don't just keep this list as prose:
   article code, in both Compare and Quick check — and a search match
   overrides the "only show differences"/"only show flagged" filter rather
   than being hidden by it.
+- **DESADV**: a pallet `CPS` group that wraps nested package `CPS` groups
+  (instead of carrying items directly) but has no SSCC of its own is
+  flagged, even though the packages nested inside it each carry their own
+  — bol's system never reads an SSCC below pallet level, so this pallet
+  has no usable SSCC at all. A bare shipment-root `CPS` (no `PAC`/`GIN`,
+  just grouping several independent pallets) is never itself flagged for
+  this, even when real pallets are nested under it.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

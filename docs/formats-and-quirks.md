@@ -353,6 +353,35 @@ Handling:
   `docs/ui-conventions.md`'s "large lists collapse... with a way to still
   see everything" rule), independent of Compare's own existing toggle so
   the two never both appear at once.
+- **A pallet `CPS` group that wraps nested package `CPS` groups instead of
+  carrying items directly can itself lack an SSCC, even though every
+  package nested inside it has its own.** Confirmed as a real, distinct
+  concern (not just a rendering question): bol's own system only ever
+  reads the SSCC stated at pallet level — never one on a package nested
+  underneath — so a pallet like this has no usable SSCC from bol's side at
+  all, regardless of how many nested SSCCs it contains. This was
+  completely invisible before: `checkPalletStructure`'s existing "No SSCC
+  found" check only ever looked at a `CPS` group with items *directly* on
+  it (`p.items.length>0`), and a wrapper with zero items of its own (all
+  its cargo living one level down, under nested packages) doesn't just
+  pass that check — it's filtered out of `facts.pallets`' visible set
+  before the check even runs, and out of the pallet/SSCC overview table
+  too, so nothing about it showed up anywhere. Now flagged as a distinct
+  "No SSCC at pallet level" finding, worded specifically to say a nested
+  package's SSCC doesn't substitute. Getting this right required telling
+  a genuine pallet wrapper apart from a bare shipment-root `CPS` segment
+  (e.g. a `CPS+1'` with no `PAC`/`GIN` at all, just there to group several
+  independent pallets under one shipment) — the root should never itself
+  be flagged just because real pallets happen to be nested under it. The
+  fix: `parseFactsEdifact` now also tracks whether a `CPS` group ever saw
+  its own `PAC` segment (`hasPac`) — a bare grouping root never does — and
+  the new check only fires on a `CPS` that (a) declared itself a real
+  packaging unit via `PAC`, (b) has genuine cargo somewhere beneath it,
+  (c) has at least one directly-nested child carrying its own SSCC, and
+  (d) isn't itself nested under a further SSCC-bearing ancestor. Message
+  check, both Quick check and per-side in Compare (parity rule) — never
+  sent to Transus, since this is about how the supplier's own message is
+  built, not a mapping question.
 - **The VAT number (`RFF+VA` / UBL `PartyTaxScheme/CompanyID`) was parsed
   correctly but only ever shown in the "Show invoice overview" detail
   panel, never in the top-level "Invoice details" side-by-side table**

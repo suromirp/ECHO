@@ -4,6 +4,20 @@ const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'desadv');
 
+async function findingsByCategory(page) {
+  const items = await page.locator('#findings li').evaluateAll(
+    els => els.map(el => ({ isCat: el.classList.contains('findings-cat'), text: el.textContent })),
+  );
+  const buckets = { message: [], diff: [], info: [] };
+  let current = null;
+  const titleToKey = { 'Message checks': 'message', 'Transformation differences': 'diff', 'Good to know': 'info' };
+  items.forEach(it => {
+    if (it.isCat) { current = titleToKey[it.text.trim()] || null; return; }
+    if (current) buckets[current].push(it.text);
+  });
+  return buckets;
+}
+
 // docs/testing.md: "DESADV: GTIN-12/13 leading-zero padding normalized
 // across sides."
 test('GTIN-12/13 leading-zero padding is normalized across sides', async ({ page }) => {
@@ -272,4 +286,48 @@ test('the search box also works in Compare, across both sides, and overrides the
 
   await page.locator('#resultSearchInput').fill('');
   await expect(page.locator('#lineTable tr:not(:has(th))')).toHaveCount(3);
+});
+
+// docs/formats-and-quirks.md: a pallet CPS can wrap nested package CPS
+// groups instead of carrying items directly. If that top-level wrapper
+// itself has no SSCC — even though the packages nested inside it do —
+// the pallet has no usable SSCC from bol's point of view, since bol's
+// system only reads the SSCC at pallet level, never one nested inside.
+// This is a materially different, easy-to-miss gap from a flat pallet with
+// no SSCC anywhere, and was previously invisible: a wrapper CPS with no
+// items of its own and no SSCC was filtered out of both the "no SSCC"
+// check and the pallet overview entirely.
+test('a pallet wrapper missing its own SSCC is flagged even though nested packages inside it do carry one', async ({ page }) => {
+  const fixture = path.join(FIX, 'pallet-sscc-only-on-package.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('No SSCC at pallet level');
+  expect(overviewText).toContain('No SSCC found'); // the separate flat case (CPS 4) still fires too
+
+  // A bare shipment-root CPS (no PAC/GIN at all, e.g. CPS+1 here) must
+  // never be treated as "a pallet missing its SSCC" just because real
+  // pallets happen to be nested under it — only 2 pallet groups total are
+  // flagged here (the wrapper and the flat one), not the root.
+  const wrapperMatches = overviewText.match(/No SSCC at pallet level on (\d+) pallet group/);
+  expect(wrapperMatches[1]).toBe('1');
+});
+
+// Same fixture, Compare mode — parity rule: fires per side, stays a
+// Message check (never sent to Transus, since it's a property of one
+// side's own message construction, not a mapping question).
+test('the pallet-level SSCC gap is also flagged per side in Compare, as a Message check never sent to Transus', async ({ page }) => {
+  const fixture = path.join(FIX, 'pallet-sscc-only-on-package.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+  const wrapper = buckets.message.filter(t => /No SSCC at pallet level/i.test(t));
+  expect(wrapper).toHaveLength(2); // one per side
+  expect(wrapper.some(t => t.includes('Supplier —'))).toBe(true);
+  expect(wrapper.some(t => t.includes('Bol —'))).toBe(true);
+  expect(buckets.diff.some(t => /No SSCC at pallet level/i.test(t))).toBe(false);
 });
