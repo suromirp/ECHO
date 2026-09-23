@@ -1013,7 +1013,17 @@ function parseFactsEdifact(raw){
     else if(tag==='CPS'){
       push();cur=null;
       if(currentCps)f.pallets.push(currentCps);
-      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[],weight:null};
+      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[],weight:null,hasPac:false};
+    }
+    else if(tag==='PAC'&&currentCps&&!cur){
+      // Mere presence (regardless of content) marks this CPS as declaring
+      // itself an actual packaging unit, not just a bare structural
+      // grouping segment — used to tell a genuine pallet that's missing
+      // its own SSCC apart from a plain shipment-level CPS root (which
+      // never carries PAC/GIN at all and shouldn't be treated as "a
+      // pallet missing its SSCC" just because pallets happen to be nested
+      // under it).
+      currentCps.hasPac=true;
     }
     else if(tag==='MEA'&&currentCps&&!cur){
       // MEA+PD+AAD+KGM:1123.080 — weight measurement for the current CPS
@@ -1639,6 +1649,18 @@ function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
   });
 }
 
+/* Shared definition of "nested" for CPS parent/child structure — a CPS
+   group counts as nested only when its parent CPS carries its own SSCC;
+   a CPS whose parent has no SSCC (e.g. a bare shipment-level grouping
+   segment) is still its own top-level unit. Used by both the pallet
+   overview rendering (palletOverviewHtml) and the pallet-level-SSCC check
+   below, so the two can never disagree about what "nested" means. */
+function palletIsNested(p,byCps){
+  if(!p.parentCps)return false;
+  const parent=byCps.get(p.parentCps);
+  return !!(parent&&parent.sscc);
+}
+
 /* structural, single-side observations about a message's own pallet groups.
    A package-level GIN+SRV pallet EAN is optional and uncommon in this DESADV
    flow, so its absence is the normal case and isn't flagged — only its
@@ -1652,17 +1674,46 @@ function checkPalletStructure(facts,label,add,jumpCall){
   // sometimes 50+ of them, per docs/ui-conventions.md's grouping rule. Past
   // ~20 tags the list itself collapses behind <details>, per the same
   // doc's "large lists collapse past roughly 20 items" rule.
-  const noSscc=facts.pallets.filter(p=>p.items&&p.items.length>0&&!p.sscc);
-  if(noSscc.length){
-    const n=noSscc.length;
-    const tags=noSscc.map(p=>{
-      const cpsLabel=esc(p.cps||'?');
-      const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
-      return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
-    }).join('');
-    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
-    const body=n>20?`<details><summary>Show ${n} affected pallets</summary>${tagList}</details>`:tagList;
-    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'this':'each of these'} contains item lines, but no GIN+BJ SSCC was found. ${body}`,'message');
+  const flatNoSscc=facts.pallets.filter(p=>p.items&&p.items.length>0&&!p.sscc);
+  const tagsFor=list=>list.map(p=>{
+    const cpsLabel=esc(p.cps||'?');
+    const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
+    return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
+  }).join('');
+  const bodyFor=list=>{
+    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${tagsFor(list)}</ul>`;
+    return list.length>20?`<details><summary>Show ${list.length} affected pallets</summary>${tagList}</details>`:tagList;
+  };
+  if(flatNoSscc.length){
+    const n=flatNoSscc.length;
+    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'this':'each of these'} contains item lines, but no GIN+BJ SSCC was found. ${bodyFor(flatNoSscc)}`,'message');
+  }
+  // A CPS group can wrap other CPS groups instead of carrying items
+  // directly (a genuine pallet, with its actual contents nested one level
+  // down as separate packages). If that top-level wrapper itself has no
+  // SSCC, the pallet has no usable SSCC AT ALL from bol's point of view —
+  // bol's system only ever reads the SSCC at pallet level, never one on a
+  // nested package — even when every single package nested underneath
+  // does carry its own. That's a materially different, easier-to-miss gap
+  // than the flat "no SSCC anywhere" case above (nothing in the message
+  // looks obviously broken — SSCCs ARE present, just one level too deep),
+  // so it gets its own distinct finding rather than folding into the one
+  // above. facts.pallets already excludes anything the earlier fold-up
+  // merged away, so this only ever sees genuine top-level wrappers.
+  const byCps=new Map(facts.pallets.map(p=>[p.cps,p]));
+  const byParentCps=new Map();
+  facts.pallets.forEach(p=>{if(p.parentCps){if(!byParentCps.has(p.parentCps))byParentCps.set(p.parentCps,[]);byParentCps.get(p.parentCps).push(p);}});
+  const hasItemsBeneath=(p,seen)=>{
+    if(p.items&&p.items.length)return true;
+    seen=seen||new Set();if(seen.has(p.cps))return false;seen.add(p.cps);
+    return (byParentCps.get(p.cps)||[]).some(c=>hasItemsBeneath(c,seen));
+  };
+  const hasNestedSscc=p=>(byParentCps.get(p.cps)||[]).some(c=>c.sscc);
+  const wrapperNoSscc=facts.pallets.filter(p=>
+    p.hasPac&&!palletIsNested(p,byCps)&&!p.sscc&&hasItemsBeneath(p)&&hasNestedSscc(p));
+  if(wrapperNoSscc.length){
+    const n=wrapperNoSscc.length;
+    add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'it wraps':'each wraps'} nested package(s) that do carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, not on nested packages beneath it, so this pallet effectively has no usable SSCC — worth confirming with whoever generates this feed that the top-level GIN+BJ isn't being dropped. ${bodyFor(wrapperNoSscc)}`,'message');
   }
   facts.pallets.forEach(p=>{
     if(p.palletGtin){
@@ -1849,12 +1900,9 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   const byCps=new Map(facts.pallets.map(p=>[p.cps,p]));
   const childrenOf=new Map();
   facts.pallets.forEach(p=>{
-    if(!p.parentCps)return;
-    const parent=byCps.get(p.parentCps);
-    if(parent&&parent.sscc){
-      if(!childrenOf.has(p.parentCps))childrenOf.set(p.parentCps,[]);
-      childrenOf.get(p.parentCps).push(p);
-    }
+    if(!p.parentCps||!palletIsNested(p,byCps))return;
+    if(!childrenOf.has(p.parentCps))childrenOf.set(p.parentCps,[]);
+    childrenOf.get(p.parentCps).push(p);
   });
   const nestedCount=[...childrenOf.values()].reduce((n,arr)=>n+arr.length,0);
   // docs/ui-conventions.md: large lists collapse past ~20 items, with a way
@@ -1959,8 +2007,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     else if(allNotes.length){summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;status='warn';}
     else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
     statuses.push(status);
-    const parent=p.parentCps?byCps.get(p.parentCps):null;
-    const nestedUnder=(parent&&parent.sscc)?parent:null;
+    const nestedUnder=palletIsNested(p,byCps)?byCps.get(p.parentCps):null;
     const nestedChildren=childrenOf.get(p.cps)||[];
     const hierarchyNote=nestedUnder
       ?`<span class="dim" title="This CPS group is nested under another CPS group that already carries its own SSCC — a two-level packing hierarchy (e.g. cartons each with their own SSCC, packed onto one pallet), not necessarily an issue.">↳ nested under <span class="clickable-val" onclick="${jumpCall(nestedUnder.sscc)}">${esc(nestedUnder.sscc)}</span></span>`
