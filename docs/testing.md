@@ -113,6 +113,12 @@ actual test fixtures, don't just keep this list as prose:
   a GTIN-12/13 leading-zero difference on that line, instead of showing up
   as two contradictory findings ("only on the supplier" and "only on bol"
   at once).
+- **INVOIC**: an illegal XML control character (e.g. `0x16`) in an `IMD`
+  item description is flagged as a Message check on the supplier side
+  (both Quick check and Compare), and when it's already inside an XML
+  file (e.g. bol's own generated invoice), ECHO strips it and shows a
+  loud banner explaining why delivery genuinely failed rather than
+  silently showing an empty result.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.

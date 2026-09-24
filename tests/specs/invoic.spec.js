@@ -248,3 +248,48 @@ test('a uniform percentage gap across multiple lines is grouped into one finding
   // Never a mapping question — must never reach "Copy for Transus" (cat 'diff').
   expect(buckets.diff.some(t => /consistently at about/i.test(t))).toBe(false);
 });
+
+// docs/formats-and-quirks.md: a raw ASCII control character (e.g. 0x16) in
+// an EDIFACT IMD item description is perfectly legal in EDIFACT but illegal
+// in XML — confirmed real cause of a "Couldn't parse XML content of the
+// file" delivery failure once it's carried through into bol's generated
+// UBL invoice. Two related mechanisms: (1) flagged as a Message check on
+// the supplier's own message, proactively, before it ever reaches XML; (2)
+// when a file that's already XML (bol's own output) contains one, ECHO
+// strips it so the comparison can still run, with a loud banner explaining
+// why the real delivery failed rather than silently showing an empty
+// "no invoice could be extracted" result.
+test('an illegal XML control character in an item description is flagged on the supplier side, and stripped with a loud banner on the XML side', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'illegal-xml-char.sup.edi'),
+    path.join(FIX, 'illegal-xml-char.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  // The bol-side banner: file recovered, but the underlying delivery
+  // genuinely failed and still needs an upstream fix.
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('This file contains 1 illegal control character');
+  expect(resultsText).toContain('0x16');
+  expect(resultsText).toContain('Couldn\'t parse XML content of the file');
+
+  // The supplier-side Message check, never sent to Transus.
+  const buckets = await invoiceFindingsByCategory(page);
+  const supFinding = buckets.message.filter(t => /illegal control character/i.test(t) && t.includes('Supplier —'));
+  expect(supFinding).toHaveLength(1);
+  expect(supFinding[0]).toContain('0x16');
+  expect(supFinding[0]).toContain('Affected: line 1');
+  expect(buckets.diff.some(t => /illegal control character/i.test(t))).toBe(false);
+});
+
+// Same fixture, supplier side read standalone in Quick check (CLAUDE.md's
+// parity rule) — the file-level banner has nothing to compare in Quick
+// check, but the per-description Message check still fires on its own.
+test('the illegal-control-character finding is also flagged standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'illegal-xml-char.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('illegal control character');
+  await expect(page.locator('#quickOverview')).toContainText('0x16');
+});

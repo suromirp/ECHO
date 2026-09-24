@@ -1464,6 +1464,19 @@ function taxIssueFindings(taxIssues){
     return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong> — EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one. Affected: ${g.refs.map(esc).join(', ')}.`;
   });
 }
+/* Groups {ref,code} entries from the IMD-description illegal-XML-character
+   check into one block — same one-explanation-many-refs shape as
+   taxIssueFindings above. Grouped by nothing more specific than "this
+   message" since these are typically one-off data-quality glitches, not a
+   pattern repeated identically across many lines the way a missing tax
+   rate is. */
+function illegalDescCharFindings(issues){
+  if(!issues||!issues.length)return [];
+  const n=issues.length;
+  const codes=[...new Set(issues.map(i=>'0x'+i.code.toString(16).toUpperCase().padStart(2,'0')))].join(', ');
+  const refs=issues.map(i=>i.ref).join(', ');
+  return [`<strong>${n} item description${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}) — perfectly valid in EDIFACT free text, but not inside XML: any XML parser (including the one converting this to an invoice document) refuses to parse the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file". Affected: ${esc(refs)}.`];
+}
 /* A message can state the VAT rate at the standard TAX-segment position on
    its line-level segments, but at a different position on its summary-level
    one, or vice versa (see the taxRateEncodingMismatch computation in
@@ -1512,6 +1525,21 @@ function concatenatedXmlBannerHtml(inv){
     <div>⚠ <strong>This file contains ${c.total} concatenated XML documents</strong> — not valid XML as a whole. This is very likely why delivery to Transus failed ("Couldn't parse XML content of the file"); it looks like a send/retry bug upstream, not a data issue on its own. ECHO used the last parseable document (#${c.usedIndex+1} of ${c.total}) for this comparison — the delivery itself still needs fixing.</div>
     <div style="margin-top:8px;font-weight:600;">What changed between the last two documents:</div>
     <ul style="margin:4px 0 0 18px;">${diffRows}</ul>
+  </div>`;
+}
+/* Same "recover, but flag loudly" shape as the concatenated-XML case above,
+   for a different real cause of the identical "Couldn't parse XML content
+   of the file" error: an illegal-for-XML control character (findIllegalXmlChar
+   above) baked into the file's raw text. A strict XML parser refuses the
+   WHOLE document over a single byte like this, so ECHO strips it before
+   parsing (see parseInvoices) to still show the comparison, while making
+   very clear the underlying delivery still genuinely failed. */
+function illegalXmlCharsBannerHtml(inv){
+  if(!inv||!inv.illegalXmlChars)return '';
+  const c=inv.illegalXmlChars;
+  const codeList=c.codes.map(code=>'0x'+code.toString(16).toUpperCase().padStart(2,'0')).join(', ');
+  return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    ⚠ <strong>This file contains ${c.count} illegal control character${c.count===1?'':'s'}</strong> (${codeList}) — not valid inside XML text content, even though the byte itself is a perfectly ordinary one in EDIFACT free text. This is very likely why delivery failed ("Couldn't parse XML content of the file") — usually traced back to a free-text field (e.g. an item description) in the original EDIFACT message carried straight through. ECHO stripped ${c.count===1?'it':'them'} to still show this comparison — the delivery itself still needs fixing upstream.
   </div>`;
 }
 /* classify action into accept/cancel/backorder buckets — limited to the
@@ -2447,9 +2475,38 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalDescChars:[],extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
+/* A raw ASCII control character (anything below 0x20 other than tab/LF/CR)
+   is illegal inside XML 1.0 text content — any XML parser, including
+   Transus's own, refuses to parse the WHOLE document because of it, not
+   just the one field it's in. EDIFACT itself has no such restriction, so
+   a supplier's raw byte-level data-quality issue in a free-text field
+   (confirmed real case: an IMD item description) can sit unnoticed in
+   their EDIFACT message and only surface once it's carried through into
+   an XML document downstream. */
+function findIllegalXmlChar(str){
+  if(!str)return null;
+  for(let i=0;i<str.length;i++){
+    const c=str.charCodeAt(i);
+    if(c<0x20&&c!==9&&c!==10&&c!==13)return c;
+  }
+  return null;
+}
+/* Same illegality rule as findIllegalXmlChar, applied to a whole XML file
+   rather than one already-extracted field — strips every offending byte
+   so ECHO can still parse and show the file (see parseInvoices), rather
+   than the strict XML parser refusing the entire document over one of
+   them the way it does in production. */
+function stripIllegalXmlChars(text){
+  const removed=[];
+  const clean=text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,(m,offset)=>{
+    removed.push({code:m.charCodeAt(0),index:offset});
+    return '';
+  });
+  return {clean,removed};
+}
 
 /* =====================================================================
    Scope-aware order/pakbon references (RFF+ON / RFF+DQ en hun XML-
@@ -2610,6 +2667,12 @@ function parseInvoicEdifact(raw){
         const c=comp(3);
         const txt=c.filter(Boolean).join(' ').trim();
         if(txt)curLine.desc=curLine.desc?curLine.desc+' '+txt:txt;
+        // Confirmed real cause of a "Couldn't parse XML content of the
+        // file" delivery failure: this byte is perfectly legal in EDIFACT
+        // free text but illegal in XML, so it breaks bol's generated UBL
+        // invoice the moment this description is carried through into it.
+        const illegalCode=findIllegalXmlChar(txt);
+        if(illegalCode!==null)cur.illegalDescChars.push({ref:`line ${curLine.lineNo||'?'}`,code:illegalCode});
         break;}
       case 'QTY':{
         const c=comp(1);
@@ -3283,7 +3346,23 @@ function diffXmlLeaves(a,b){
   });
   return diffs;
 }
+/* Stripping illegal XML control characters happens once here, up front,
+   rather than inside parseInvoicesInner — so it applies uniformly no
+   matter which dialect/branch below ends up handling the (now-clean)
+   text, and the concatenated-XML split above always sees clean text too. */
 function parseInvoices(raw){
+  if(isXmlText(raw)){
+    const stripped=stripIllegalXmlChars(raw);
+    if(stripped.removed.length){
+      const r=parseInvoicesInner(stripped.clean);
+      const codes=[...new Set(stripped.removed.map(x=>x.code))];
+      r.forEach(inv=>{inv.illegalXmlChars={count:stripped.removed.length,codes};});
+      return r;
+    }
+  }
+  return parseInvoicesInner(raw);
+}
+function parseInvoicesInner(raw){
   if(isXmlText(raw)){
     const docs=splitConcatenatedXmlDocs(raw);
     if(docs.length>1){
@@ -3299,7 +3378,7 @@ function parseInvoices(raw){
         // prominently regardless, since the underlying delivery to Transus
         // still failed either way and needs fixing upstream.
         const lastIdx=validIdx[validIdx.length-1];
-        const r=parseInvoices(docs[lastIdx]);
+        const r=parseInvoicesInner(docs[lastIdx]);
         if(r.length){
           const diffs=validIdx.length>=2?diffXmlLeaves(flattenXmlLeaves(parsedDocs[validIdx[validIdx.length-2]]),flattenXmlLeaves(parsedDocs[lastIdx])):[];
           r.forEach(inv=>{inv.concatenatedXml={total:docs.length,validCount:validIdx.length,usedIndex:lastIdx,diffs};});
@@ -3394,6 +3473,8 @@ function compareInvoice(sup,bol){
   taxIssueFindings(bol.taxIssues).forEach(t=>add('warn',`Bol — ${t}`,'message'));
   if(sup.taxRateEncodingMismatch)add('warn',`Supplier — ${taxRateEncodingMismatchText()}`,'message');
   if(bol.taxRateEncodingMismatch)add('warn',`Bol — ${taxRateEncodingMismatchText()}`,'message');
+  illegalDescCharFindings(sup.illegalDescChars).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
+  illegalDescCharFindings(bol.illegalDescChars).forEach(t=>add('warn',`Bol — ${t}`,'message'));
 
   /* ---- header ---- */
   const hdr=[];
@@ -3750,6 +3831,7 @@ function invoiceOverviewHtml(inv,opts={}){
   const jumpCall=opts.side?(val=>`jumpToInvSource(${jsQuote(opts.side)},${jsQuote(val)})`):(val=>`jumpToQuickSource(${jsQuote(val)})`);
   let h='';
   h+=concatenatedXmlBannerHtml(inv);
+  h+=illegalXmlCharsBannerHtml(inv);
   h+=`<div class="ov-head"><span class="ov-type${isCredit?' credit':''}">${isCredit?'CREDIT NOTE':'INVOICE'}</span>`;
   if(inv.number)h+=`<span class="ov-sub">no. <strong>${esc(inv.number)}</strong></span>`;
   if(inv.date)h+=`<span class="ov-sub">${esc(showDate(inv.date))}</span>`;
@@ -3790,6 +3872,9 @@ function invoiceOverviewHtml(inv,opts={}){
   if(inv.taxRateEncodingMismatch){
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${taxRateEncodingMismatchText()}</div>`;
   }
+  illegalDescCharFindings(inv.illegalDescChars).forEach(t=>{
+    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
+  });
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -5050,6 +5135,8 @@ function renderInvoiceCompare(res,notes){
   let h='';
   h+=concatenatedXmlBannerHtml(res.sup);
   h+=concatenatedXmlBannerHtml(res.bol);
+  h+=illegalXmlCharsBannerHtml(res.sup);
+  h+=illegalXmlCharsBannerHtml(res.bol);
   h+=`<div class="verdict ${res.verdict}"><div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(res.verdict,hasWC)}</div></div>`;
 
   /* statistics */
