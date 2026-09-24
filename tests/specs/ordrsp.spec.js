@@ -217,3 +217,79 @@ test('the no-price-anywhere finding is also flagged standalone in Quick check', 
   await runQuickFixture(page, path.join(FIX, 'no-price-anywhere.sup.edi'));
   await expect(page.locator('#quickOverview')).toContainText('none of the 3 accepted lines');
 });
+
+// docs/ui-conventions.md: large lists collapse past a threshold, with a way
+// to still see everything — Amendment details previously rendered every
+// backorder/amendment line unconditionally and grew as long as the full
+// Lines table on a message with many of them. Also covers the search box
+// (moved down to sit just above the tables it filters, not at the very
+// top of the results) now also filtering Amendment details, overriding
+// its collapsed state for a match — same "search wins" rule as the pallet
+// overview and line table already follow.
+test('Amendment details collapses past 5 lines behind a "Show all" button, and the search box also filters it, overriding the collapse', async ({ page }) => {
+  const fixture = path.join(FIX, 'amendment-details-collapse.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('Amendment details (8)');
+
+  // Search sits after the Actions grid, above Amendment details/Lines —
+  // not at the very top of the Quick check output.
+  const overviewHtml = await page.locator('#quickOverview').innerHTML();
+  const actionsIdx = overviewHtml.indexOf('amx-grid');
+  const searchIdx = overviewHtml.indexOf('id="quickSearchPanel"');
+  const amendIdx = overviewHtml.indexOf('Amendment details');
+  expect(actionsIdx).toBeGreaterThan(-1);
+  expect(searchIdx).toBeGreaterThan(actionsIdx);
+  expect(amendIdx).toBeGreaterThan(searchIdx);
+
+  const rows = page.locator('#quickAmendTable tr[data-search]');
+  const visibleRows = page.locator('#quickAmendTable tr[data-search]:not(.hidden)');
+  await expect(rows).toHaveCount(8);
+  await expect(visibleRows).toHaveCount(5);
+
+  const btn = page.locator('#quickAmendTableBtn');
+  await expect(btn).toHaveText('Show all 8 amendment lines');
+  await btn.click();
+  await expect(visibleRows).toHaveCount(8);
+  await expect(btn).toHaveText('Show fewer');
+  await btn.click();
+  await expect(visibleRows).toHaveCount(5);
+
+  // A search match past the collapsed 5 is still found.
+  await page.locator('#quickSearchInput').fill('ART008');
+  await expect(visibleRows).toHaveCount(1);
+  await expect(page.locator('#quickAmendTableNote')).toContainText('Showing 1 of 8 amendment lines matching "ART008"');
+
+  await page.locator('#quickSearchInput').fill('');
+  await expect(visibleRows).toHaveCount(5);
+});
+
+// Same fixture, Compare mode — the search box moved from the very top of
+// #results to just above the panels it filters (Amendment details, Line
+// comparison, pallet overview), and Amendment details there gets the same
+// collapse-plus-search treatment as Quick check.
+test('Amendment details collapses and is searchable in Compare too, with the search box positioned above it', async ({ page }) => {
+  const fixture = path.join(FIX, 'amendment-details-collapse.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+
+  const resultsHtml = await page.locator('#results').innerHTML();
+  const toggleIdx = resultsHtml.indexOf('id="togglePanel"');
+  const searchIdx = resultsHtml.indexOf('id="searchPanel"');
+  const backorderIdx = resultsHtml.indexOf('id="backorderPanel"');
+  expect(toggleIdx).toBeGreaterThan(-1);
+  expect(searchIdx).toBeGreaterThan(toggleIdx);
+  expect(backorderIdx).toBeGreaterThan(searchIdx);
+
+  const rows = page.locator('#compareAmendTable tr[data-search]');
+  const visibleRows = page.locator('#compareAmendTable tr[data-search]:not(.hidden)');
+  await expect(rows).toHaveCount(8);
+  await expect(visibleRows).toHaveCount(5);
+
+  await page.locator('#resultSearchInput').fill('ART008');
+  await expect(visibleRows).toHaveCount(1);
+
+  await page.locator('#resultSearchInput').fill('');
+  await expect(visibleRows).toHaveCount(5);
+});

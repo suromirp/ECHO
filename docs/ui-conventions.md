@@ -14,12 +14,20 @@
   order→trace). Never combine the two actions into one click target.
 - Large lists (pallets, lines) collapse/filter past roughly 20 items, with
   sensible defaults, but always with a way to still see everything.
-- One search box (Compare and Quick check each have their own) filters the
-  line table and the pallet/SSCC overview together, live, by EAN, order
-  number, SSCC or article code — not a separate box per table. A search
-  match always overrides the "only show differences"/"only show flagged"
-  filter, never gets hidden by it — the whole point of searching is to
-  find one specific thing regardless of its status.
+- One search box (Compare and Quick check each have their own) filters
+  Amendment details, the line table, and the pallet/SSCC overview
+  together, live, by EAN, order number, SSCC or article code — not a
+  separate box per table. A search match always overrides the "only show
+  differences"/"only show flagged" filter and any collapsed-list state
+  (e.g. Amendment details' "Show all" button), never gets hidden by
+  either — the whole point of searching is to find one specific thing
+  regardless of its status. The box sits just above the tables it
+  filters, not at the very top of the results, above summary content
+  (verdict, stats, action overview) it has nothing to do with.
+- Amendment details (backorder/amendment lines) collapses past 5 rows
+  behind a "Show all N amendment lines" button, the same treatment as the
+  pallet overview — it's meant as a quick highlight list, not a second
+  copy of the full Lines/Line-comparison table.
 - Status text is always specific ("No SSCC — can't match"), never vague
   ("Not applicable" used as a catch-all for anything unclear).
 - The legend block stays in sync with whatever terms are actually in use
