@@ -73,11 +73,16 @@ actual test fixtures, don't just keep this list as prose:
   "nested under" its parent pallet's SSCC, not shown as an independent
   pallet; a pallet overview past ~20 entries in Quick check defaults to
   "Only show flagged" with a toggle to see everything.
-- **ORDRSP/DESADV**: a single search box filters the line table and the
-  pallet/SSCC overview together, live, by EAN, order number, SSCC or
-  article code, in both Compare and Quick check — and a search match
-  overrides the "only show differences"/"only show flagged" filter rather
-  than being hidden by it.
+- **ORDRSP/DESADV**: a single search box, positioned just above the tables
+  it filters (not at the very top of the results), filters Amendment
+  details, the line table, and the pallet/SSCC overview together, live, by
+  EAN, order number, SSCC or article code, in both Compare and Quick check
+  — and a search match overrides the "only show differences"/"only show
+  flagged" filter and Amendment details' collapsed state, rather than
+  being hidden by either.
+- **ORDRSP/DESADV**: Amendment details (backorder/amendment lines)
+  collapses past 5 rows behind a "Show all N amendment lines" button, in
+  both Compare and Quick check.
 - **DESADV**: a pallet `CPS` group that wraps nested package `CPS` groups
   (instead of carrying items directly) but has no SSCC of its own is
   flagged, even though the packages nested inside it each carry their own

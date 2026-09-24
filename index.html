@@ -422,10 +422,6 @@
       <div class="status" id="quickStatus"></div>
     </div>
 
-    <div class="panel hidden" id="quickSearchPanel">
-      <input type="search" id="quickSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyQuickSearch()">
-      <div class="note-inline" id="quickSearchNote"></div>
-    </div>
     <div id="quickOverview"></div>
 
     <div class="panel">
@@ -479,10 +475,6 @@
 
     <div id="results" class="hidden">
       <div id="verdict"></div>
-      <div class="panel" id="searchPanel">
-        <input type="search" id="resultSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyResultSearch()">
-        <div class="note-inline" id="resultSearchNote"></div>
-      </div>
       <div class="strip" id="strip"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
@@ -497,6 +489,11 @@
         </div>
         <div class="action-matrix" id="actionMatrix"></div>
         <div class="actions"><button class="btn" id="copySummaryBtn" title="A short, high-level summary of accept/cancel/amendment — separate from the full findings report">Copy summary</button></div>
+      </div>
+
+      <div class="panel" id="searchPanel">
+        <input type="search" id="resultSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyResultSearch()">
+        <div class="note-inline" id="resultSearchNote"></div>
       </div>
 
       <div class="panel hidden" id="backorderPanel">
@@ -843,17 +840,6 @@ function quickFormat(){
   }
   ovBox.innerHTML=ovHtml;
   if(pendingEyeReaction)echoSignalReact(pendingEyeReaction);
-  // Search only makes sense where there's a Lines/pallet table to filter —
-  // ORDRSP/DESADV/ORDERS via factsOverviewHtml. INVOIC has no such table
-  // here, so the box would just sit there doing nothing.
-  const qSearchPanel=document.getElementById('quickSearchPanel');
-  if((msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS')&&ovHtml){
-    qSearchPanel.classList.remove('hidden');
-    document.getElementById('quickSearchInput').value='';
-    document.getElementById('quickSearchNote').innerHTML='';
-  }else{
-    qSearchPanel.classList.add('hidden');
-  }
 
   /* ---------- 2. original message ---------- */
   if(isXmlText(raw)){
@@ -917,9 +903,6 @@ document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickOverview').innerHTML='';
   document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
-  document.getElementById('quickSearchPanel').classList.add('hidden');
-  document.getElementById('quickSearchInput').value='';
-  document.getElementById('quickSearchNote').innerHTML='';
 });
 document.getElementById('quickCopyBtn').addEventListener('click',async()=>{
   if(!quickPlain){quickSetStatus('Nothing to copy yet.',true);return;}
@@ -4034,25 +4017,45 @@ function factsOverviewHtml(facts){
     h+=`<div class="actions"><button class="btn" onclick="copyTextToClipboard(lastActionSummaryText,this)" title="A short, high-level summary of accept/cancel/amendment">Copy summary</button></div>`;
   }
 
+  // Search box sits right above the tables it filters (Amendment details,
+  // Lines, pallet overview) — not at the very top of Quick check's output,
+  // above the stats/parties info it has nothing to do with. Embedded
+  // inline here (rather than as a static element outside quickOverview)
+  // since this whole panel is rebuilt from scratch on every run; wired via
+  // a plain oninput attribute for the same reason the pallet toggle is.
+  if(facts.lines.length||(facts.pallets&&facts.pallets.length)){
+    h+=`<div id="quickSearchPanel" style="margin:14px 0;"><input type="search" id="quickSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyQuickSearch()"><div class="note-inline" id="quickSearchNote"></div></div>`;
+  }
+
   // Backorder detail: which lines specifically, not just a count. Checks both
   // the action code and the QTY+83 backorder quantity, since these don't
   // always agree — seeing both side by side helps spot that. Skipped when it
   // would be every single line: that's just the Lines table below, repeated.
   const showArtGlobal=facts.lines.some(l=>l.art);
   const backorderLines=facts.lines.filter(l=>actionBucket(l.action)==='backorder'||(l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''&&Number(l.qty['83'])!==0));
+  const AMEND_COLLAPSE_THRESHOLD=5;
   if(backorderLines.length&&backorderLines.length<facts.lines.length){
-    h+=`<div class="sec-h">Amendment details (${backorderLines.length})</div><div class="inv-scroll"><table class="inv">
+    const n=backorderLines.length;
+    h+=`<div class="sec-h">Amendment details (${n})</div><div class="inv-scroll"><table class="inv" id="quickAmendTable">
       <tr><th>#</th><th>EAN</th>${showArtGlobal?'<th>Item</th>':''}<th>Confirmed</th><th>Backorder qty</th>${type==='ORDRSP'?'<th>Action</th>':''}</tr>`;
-    h+=backorderLines.map(l=>{
+    h+=backorderLines.map((l,i)=>{
       const eanCell=l.gtin?`<span class="clickable-val" onclick="${jumpCall(l.gtin)}">${esc(l.gtin)}</span>${summaLink(l.gtin)}`:'—';
       let row=`<td class="mono">${esc(l.lineNo||'')}</td><td class="mono">${eanCell}</td>`;
       if(showArtGlobal)row+=`<td class="mono">${esc(l.art||'—')}</td>`;
       row+=`<td class="num">${l.qty&&l.qty['12']!==undefined&&l.qty['12']!==''?esc(l.qty['12']):'—'}</td>`;
       row+=`<td class="num">${l.qty&&l.qty['83']!==undefined&&l.qty['83']!==''?esc(l.qty['83']):'—'}</td>`;
       if(type==='ORDRSP')row+=`<td>${actionPillHtml(l.action,{confirmed:l.qty?l.qty['12']:undefined,backorder:l.qty?l.qty['83']:undefined})}</td>`;
-      return `<tr>${row}</tr>`;
+      // Past the collapse threshold, everything beyond the first N rows
+      // starts hidden — see the matching Compare-mode comment above
+      // render()'s backorderRows for why. The search box overrides this.
+      const isExtra=n>AMEND_COLLAPSE_THRESHOLD&&i>=AMEND_COLLAPSE_THRESHOLD;
+      const searchAttr=esc([l.gtin,l.art,...(l.orders||[])].filter(Boolean).join(' ').toLowerCase());
+      return `<tr${isExtra?' class="amend-extra hidden"':''} data-search="${searchAttr}">${row}</tr>`;
     }).join('');
     h+=`</table></div>`;
+    if(n>AMEND_COLLAPSE_THRESHOLD){
+      h+=`<div class="actions"><button type="button" class="btn ghost" id="quickAmendTableBtn" onclick="toggleAmendDetails('quickAmendTable')">Show all ${n} amendment lines</button></div><div class="note-inline" id="quickAmendTableNote"></div>`;
+    }
   }else if(backorderLines.length&&backorderLines.length===facts.lines.length){
     h+=`<p class="panel-intro">Every line here involves a backorder or delivery-date change (action 6) — see the Lines table below for the full detail per line.</p>`;
   }
@@ -4341,11 +4344,12 @@ function render(result,bol,sup,notes){
   if(backorderRows.length){
     backorderPanel.classList.remove('hidden');
     const n=backorderRows.length;
+    const AMEND_COLLAPSE_THRESHOLD=5;
     let bh=`<p class="panel-intro">${n} line${n===1?'':'s'} involve${n===1?'s':''} a backorder or delivery-date change (action 6) — listed here on their own because they're worth a glance even when, as below, everything otherwise matched.</p>`;
-    bh+='<div style="overflow-x:auto;"><table class="inv"><tr><th>Item</th><th>EAN</th><th>Quantities (supplier → bol)</th>';
+    bh+=`<div style="overflow-x:auto;"><table class="inv" id="compareAmendTable"><tr><th>Item</th><th>EAN</th><th>Quantities (supplier → bol)</th>`;
     if(result.type==='ORDRSP')bh+='<th>Supplier action</th><th>bol action</th>';
     bh+='<th>Status</th></tr>';
-    bh+=backorderRows.map(r=>{
+    bh+=backorderRows.map((r,i)=>{
       const q83=r.qtys.find(x=>x.q==='83');
       const q12=r.qtys.find(x=>x.q==='12');
       const eanCell=r.gtin?`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}`:'—';
@@ -4367,9 +4371,20 @@ function render(result,bol,sup,notes){
       // fine?" without needing to cross-check it against Line comparison,
       // which by default hides exactly the matching rows shown here.
       row+=`<td>${r.status==='ok'?pillMatch():(r.status==='warn'?pillCheck():pillDiff())}</td>`;
-      return `<tr>${row}</tr>`;
+      // Past the collapse threshold, everything beyond the first N rows
+      // starts hidden — a message with dozens of backorders otherwise made
+      // this panel as long as the full Line comparison table below it,
+      // which is exactly the table this one exists to summarize instead
+      // of duplicate. The search box (below) overrides this: a match here
+      // is always shown regardless of the collapsed state.
+      const isExtra=n>AMEND_COLLAPSE_THRESHOLD&&i>=AMEND_COLLAPSE_THRESHOLD;
+      const searchAttr=esc([r.art,r.gtin,...(r.supOrders||[]),...(r.bolOrders||[])].filter(Boolean).join(' ').toLowerCase());
+      return `<tr${isExtra?' class="amend-extra hidden"':''} data-search="${searchAttr}">${row}</tr>`;
     }).join('');
     bh+='</table></div>';
+    if(n>AMEND_COLLAPSE_THRESHOLD){
+      bh+=`<div class="actions"><button type="button" class="btn ghost" id="compareAmendTableBtn" onclick="toggleAmendDetails('compareAmendTable')">Show all ${n} amendment lines</button></div><div class="note-inline" id="compareAmendTableNote"></div>`;
+    }
     document.getElementById('backorderBody').innerHTML=bh;
   }else{
     backorderPanel.classList.add('hidden');
@@ -4551,16 +4566,65 @@ function applyPalletBlockFilter(block,onlyFlagged){
   }
 }
 
+/* Amendment details (backorder/action-6 lines) collapses past
+   AMEND_COLLAPSE_THRESHOLD rows (set where each table is built — see
+   render()'s backorderRows and factsOverviewHtml's backorderLines) behind
+   a "Show all N amendment lines" button, the same treatment as the pallet
+   overview above. tableId is 'compareAmendTable' or 'quickAmendTable';
+   the matching search input/note ids are derived from it since the two
+   views are never visible at once but do share this one function. */
+function amendSearchInputId(tableId){return tableId==='quickAmendTable'?'quickSearchInput':'resultSearchInput';}
+function toggleAmendDetails(tableId){
+  const table=document.getElementById(tableId);
+  if(!table)return;
+  const expanded=table.dataset.expanded==='1';
+  table.dataset.expanded=expanded?'0':'1';
+  const btn=document.getElementById(tableId+'Btn');
+  if(btn){
+    if(expanded){
+      btn.textContent=btn.dataset.collapsedLabel;
+    }else{
+      btn.dataset.collapsedLabel=btn.textContent;
+      btn.textContent='Show fewer';
+    }
+  }
+  applyAmendFilter(tableId);
+}
+function applyAmendFilter(tableId){
+  const table=document.getElementById(tableId);
+  if(!table)return;
+  const expanded=table.dataset.expanded==='1';
+  const searchEl=document.getElementById(amendSearchInputId(tableId));
+  const q=searchEl?searchEl.value.trim().toLowerCase():'';
+  const rows=[...table.querySelectorAll('tr[data-search]')];
+  let hidden=0;
+  rows.forEach(r=>{
+    const isExtra=r.classList.contains('amend-extra');
+    const show=q?((r.dataset.search||'').includes(q)):(!isExtra||expanded);
+    r.classList.toggle('hidden',!show);
+    if(!show)hidden++;
+  });
+  const note=document.getElementById(tableId+'Note');
+  if(!note||!rows.length)return;
+  if(q&&hidden===rows.length)note.innerHTML=`No amendment lines match "${esc(searchEl.value.trim())}".`;
+  else if(q&&hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} amendment lines matching "${esc(searchEl.value.trim())}".`;
+  else note.innerHTML='';
+}
+
 /* The single search box (#resultSearchInput in Compare, #quickSearchInput
-   in Quick check) filters every relevant section live — line table and
-   pallet overview alike — by EAN, order number, SSCC or article code, per
-   CLAUDE.md's parity rule: one field, not a separate box per table. */
+   in Quick check) filters every relevant section live — Amendment
+   details, the line table, and the pallet overview alike — by EAN, order
+   number, SSCC or article code, per CLAUDE.md's parity rule: one field,
+   not a separate box per table. */
 function applyResultSearch(){
   renderLineTable();
   renderPalletFilter();
+  applyAmendFilter('compareAmendTable');
 }
 function applyQuickSearch(){
-  const q=document.getElementById('quickSearchInput').value.trim().toLowerCase();
+  const searchEl=document.getElementById('quickSearchInput');
+  if(!searchEl)return;
+  const q=searchEl.value.trim().toLowerCase();
   const rows=[...document.querySelectorAll('#quickLinesTable tr[data-search]')];
   let hidden=0;
   rows.forEach(r=>{
@@ -4569,15 +4633,16 @@ function applyQuickSearch(){
     if(!show)hidden++;
   });
   const note=document.getElementById('quickSearchNote');
-  if(rows.length){
-    if(q&&hidden===rows.length)note.innerHTML=`No lines match "${document.getElementById('quickSearchInput').value.trim()}".`;
-    else if(hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} lines matching "${document.getElementById('quickSearchInput').value.trim()}".`;
+  if(note&&rows.length){
+    if(q&&hidden===rows.length)note.innerHTML=`No lines match "${esc(searchEl.value.trim())}".`;
+    else if(hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} lines matching "${esc(searchEl.value.trim())}".`;
     else note.innerHTML='';
   }
   document.querySelectorAll('#quickOverview .pallet-block').forEach(block=>{
     const cb=block.querySelector('input[type=checkbox]');
     applyPalletBlockFilter(block,cb?cb.checked:false);
   });
+  applyAmendFilter('quickAmendTable');
 }
 
 /* =====================================================================
