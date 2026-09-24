@@ -183,6 +183,29 @@ Handling:
   failure tickets). Flagged as a Message check, grouped by (type,
   category) pair so a supplier tripping it on every line gets one note,
   not one per line.
+- **A raw ASCII control character (e.g. `0x16`) inside an `IMD` item
+  description** is a third, distinct confirmed cause of the exact same
+  "Couldn't parse XML content of the file" delivery failure — perfectly
+  legal in EDIFACT free text (EDIFACT places no restriction on which
+  bytes a free-text field can contain), but XML 1.0 forbids any control
+  character below `0x20` other than tab/LF/CR anywhere in text content.
+  A strict XML parser (including whatever converts this into bol's UBL
+  invoice) refuses to parse the *entire* document over a single such byte
+  in one field — confirmed against a real message where it broke a
+  perfectly normal, otherwise-correct invoice. Two related pieces:
+  (1) `findIllegalXmlChar` flags it proactively on the EDIFACT side, as a
+  Message check, before it ever reaches XML — the earliest point it can
+  be caught, and where reporting it back to the supplier does the most
+  good; (2) `stripIllegalXmlChars` runs unconditionally at the top of
+  `parseInvoices` on any *already-XML* file — including bol's own
+  generated output re-uploaded for inspection — stripping every such byte
+  so ECHO can still show the comparison (same "recover the file, but flag
+  loudly" approach as the pre-existing concatenated-XML-documents case),
+  rather than silently falling through to a bare "no invoice could be
+  extracted" with no explanation of why. Never claims which side is at
+  fault beyond stating where the byte originated (usually the supplier's
+  own export/PIM feed) — it's a data-quality issue in that field, not a
+  mapping question, so it's kept out of the Transus report either way.
 - **A `TAX` segment stating the VAT rate at a different position than the
   rest of the message's own `TAX` segments** is a separate, real, confirmed
   cause of Transus rejecting a message ("VAT percentage/amount is
