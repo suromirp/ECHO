@@ -1537,8 +1537,22 @@ function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
   });
   const CASCADE_MIN_RUN=3;
   const runs=[];
-  let run=[];
-  const flush=()=>{if(run.length>=CASCADE_MIN_RUN)runs.push(run);run=[];};
+  let items=[];
+  let runStart=null; // index into orderedKeys of the first shifted line in the current run
+  const flush=()=>{
+    if(items.length>=CASCADE_MIN_RUN){
+      const originKey=orderedKeys[runStart-1];
+      const originS=sPrice.get(originKey);
+      // Confirmed real-world link (Transus support ticket): a line closed
+      // early by a duplicate DTM qualifier (see checkDtmDuplicateQualifier)
+      // is a known trigger for exactly this shift on every line after it —
+      // surfaced here, not assumed, only when that line's own dtmConflicts
+      // actually fired.
+      const origin=originS?{label:originS.art||originS.gtin||originKey.split('|')[0],hasDtmConflict:!!originS.dtmConflict}:null;
+      runs.push({origin,items});
+    }
+    items=[];runStart=null;
+  };
   for(let i=1;i<orderedKeys.length;i++){
     const prevS=sPrice.get(orderedKeys[i-1]);
     const curB=bPrice.get(orderedKeys[i]);
@@ -1546,7 +1560,8 @@ function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
     const shifted=prevS&&prevS.price!==null&&curB&&curB.price!==null&&curS&&curS.price!==null
       &&amtEq(curB.price,prevS.price)&&!amtEq(curB.price,curS.price);
     if(shifted){
-      run.push({key:orderedKeys[i],label:curS.art||curS.gtin||orderedKeys[i].split('|')[0],sup:curS.price,bol:curB.price,jump:jumpValFor(curS,curB)});
+      if(runStart===null)runStart=i;
+      items.push({key:orderedKeys[i],label:curS.art||curS.gtin||orderedKeys[i].split('|')[0],sup:curS.price,bol:curB.price,jump:jumpValFor(curS,curB)});
     }else{
       flush();
     }
@@ -1556,11 +1571,14 @@ function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
 }
 function cascadePriceShiftFindings(runs){
   if(!runs||!runs.length)return [];
-  return runs.map(run=>{
-    const n=run.length;
-    const tags=run.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.label)}</span></li>`).join('');
-    const lastLoses=run[n-1];
-    return `<strong>${n} consecutive lines each show bol's net price exactly matching the supplier's own price for the line before it</strong> — reads as a single price shifted one line too far down the message, not ${n} independent price differences. The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  return runs.map(({origin,items})=>{
+    const n=items.length;
+    const tags=items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.label)}</span></li>`).join('');
+    const lastLoses=items[n-1];
+    const originNote=(origin&&origin.hasDtmConflict)
+      ?` This starts right after <code>${esc(origin.label)}</code>, which is flagged above for a duplicate DTM qualifier — a confirmed real cause (per Transus support) of exactly this kind of shift on every line after it.`
+      :'';
+    return `<strong>${n} consecutive lines each show bol's net price exactly matching the supplier's own price for the line before it</strong> — reads as a single price shifted one line too far down the message, not ${n} independent price differences.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
   });
 }
 
@@ -2427,9 +2445,10 @@ function compare(bol,sup){
       const m=new Map();
       facts.lines.forEach(l=>{
         const k=keyFn(l)+'|'+(l.action??'?');
-        if(!m.has(k))m.set(k,{price:null,art:l.art,gtin:l.gtin,action:l.action});
+        if(!m.has(k))m.set(k,{price:null,art:l.art,gtin:l.gtin,action:l.action,dtmConflict:false});
         const b=m.get(k);
         if(b.price===null&&l.netPrice!==null&&l.netPrice!==undefined)b.price=l.netPrice;
+        if(l.dtmConflicts&&l.dtmConflicts.length)b.dtmConflict=true;
       });
       return m;
     };
@@ -2441,7 +2460,7 @@ function compare(bol,sup){
     // reported once instead of once each. See findCascadingPriceShiftRuns.
     const cascadeRuns=findCascadingPriceShiftRuns(sup.lines,sPrice,bPrice,keyFn,
       (s,b)=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(s.gtin||b.gtin||s.art||b.art||'')})`);
-    const cascadeKeys=new Set(cascadeRuns.flatMap(run=>run.map(it=>it.key)));
+    const cascadeKeys=new Set(cascadeRuns.flatMap(run=>run.items.map(it=>it.key)));
     const priceKeys=[...new Set([...bPrice.keys(),...sPrice.keys()])];
     const priceDiffs=[],priceMissing=[];
     priceKeys.forEach(k=>{

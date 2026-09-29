@@ -56,7 +56,9 @@ actual test fixtures, don't just keep this list as prose:
   flagged as one grouped "price shift" finding, not N independent
   "net price differs" findings — the last line in the run explicitly
   called out as having lost its own price entirely. Compare-only (needs
-  both sides).
+  both sides). When the line right before the run also tripped the
+  duplicate-`DTM`-qualifier Message check, the finding names that line as
+  the likely trigger instead of leaving the two findings unlinked.
 - **ORDRSP (TRANSUSXML `<Article>` dialect)**: a cancelled quantity
   (`CancelledQuantity`, distinct from `RejectedQuantity` even when the
   latter is present as a literal `"0"`) is read correctly, correctly
