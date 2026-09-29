@@ -1509,6 +1509,60 @@ function priceMissingFindings(entries){
     return `<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
   });
 }
+/* Renders each detected run from findCascadingPriceShiftRuns (see compare())
+   as one finding — a run of consecutive lines where bol's price for line i
+   exactly equals the supplier's own price for line i-1 reads as a single
+   off-by-one shift, not N independent price differences. Confirmed against
+   a real 11-line cascade traced back to one earlier line closing early
+   (see checkDtmDuplicateQualifier) — every line after it inherited the
+   previous line's price instead of its own, and the last line in the
+   message lost its own price entirely with nothing left to shift it to.
+   Same one-explanation-many-tags shape as priceMissingFindings above. */
+/* Detects the run(s) of consecutive lines described by
+   cascadePriceShiftFindings above. Walks the item+action keys in the
+   supplier's own line order (not bol's — a corrupted bol sequence is
+   exactly the thing being detected, so it can't be trusted as the
+   reference order) and looks for bol's price on line i matching the
+   supplier's own price on line i-1 while genuinely differing from line
+   i's own supplier price. Requires at least 3 consecutive matches before
+   calling it a pattern — a 1- or 2-line coincidence (two different items
+   that happen to share a price, which does happen with round numbers)
+   isn't enough to call it a shift rather than an ordinary mismatch. */
+function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
+  const orderedKeys=[];
+  const seenKeys=new Set();
+  supLines.forEach(l=>{
+    const k=keyFn(l)+'|'+(l.action??'?');
+    if(!seenKeys.has(k)){seenKeys.add(k);orderedKeys.push(k);}
+  });
+  const CASCADE_MIN_RUN=3;
+  const runs=[];
+  let run=[];
+  const flush=()=>{if(run.length>=CASCADE_MIN_RUN)runs.push(run);run=[];};
+  for(let i=1;i<orderedKeys.length;i++){
+    const prevS=sPrice.get(orderedKeys[i-1]);
+    const curB=bPrice.get(orderedKeys[i]);
+    const curS=sPrice.get(orderedKeys[i]);
+    const shifted=prevS&&prevS.price!==null&&curB&&curB.price!==null&&curS&&curS.price!==null
+      &&amtEq(curB.price,prevS.price)&&!amtEq(curB.price,curS.price);
+    if(shifted){
+      run.push({key:orderedKeys[i],label:curS.art||curS.gtin||orderedKeys[i].split('|')[0],sup:curS.price,bol:curB.price,jump:jumpValFor(curS,curB)});
+    }else{
+      flush();
+    }
+  }
+  flush();
+  return runs;
+}
+function cascadePriceShiftFindings(runs){
+  if(!runs||!runs.length)return [];
+  return runs.map(run=>{
+    const n=run.length;
+    const tags=run.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.label)}</span></li>`).join('');
+    const lastLoses=run[n-1];
+    return `<strong>${n} consecutive lines each show bol's net price exactly matching the supplier's own price for the line before it</strong> — reads as a single price shifted one line too far down the message, not ${n} independent price differences. The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  });
+}
 
 /* Prominent, hard-to-miss banner for the "file was actually multiple
    concatenated XML documents" case — deliberately NOT folded quietly into
@@ -2380,6 +2434,14 @@ function compare(bol,sup){
       return m;
     };
     const bPrice=priceBuckets(bol),sPrice=priceBuckets(sup);
+    // A run of consecutive lines where bol's price exactly equals the
+    // supplier's price for the line before it is a single shift, not N
+    // independent mismatches — detected before the per-item loop below so
+    // those lines can be pulled out of the ordinary priceDiffs list and
+    // reported once instead of once each. See findCascadingPriceShiftRuns.
+    const cascadeRuns=findCascadingPriceShiftRuns(sup.lines,sPrice,bPrice,keyFn,
+      (s,b)=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(s.gtin||b.gtin||s.art||b.art||'')})`);
+    const cascadeKeys=new Set(cascadeRuns.flatMap(run=>run.map(it=>it.key)));
     const priceKeys=[...new Set([...bPrice.keys(),...sPrice.keys()])];
     const priceDiffs=[],priceMissing=[];
     priceKeys.forEach(k=>{
@@ -2395,11 +2457,12 @@ function compare(bol,sup){
         const missSide=b.price===null?'bol':'supplier';
         const jumpSide=missSide==='bol'?'bol':'sup';
         priceMissing.push({label:`${label} — action ${action||'?'}`,missSide,jump:`jumpToFactsSource(${jsQuote(jumpSide)},${jsQuote(jumpVal)})`});
-      }else if(!amtEq(b.price,s.price)){
+      }else if(!amtEq(b.price,s.price)&&!cascadeKeys.has(k)){
         priceDiffs.push({label,sup:s.price,bol:b.price});
       }
     });
     priceMissingFindings(priceMissing).forEach(t=>add('err',t,'diff'));
+    cascadePriceShiftFindings(cascadeRuns).forEach(t=>add('err',t,'diff'));
     addCapped('err',priceDiffs,
       ({label,sup,bol})=>`Item <code>${esc(label)}</code>: net price differs — supplier <span class="val-sup">${esc(sup.toFixed(2))}</span> vs bol <span class="val-bol">${esc(bol.toFixed(2))}</span>.`,
       rest=>`<strong>${rest} more item(s) also show a net price difference</strong> — see the Line comparison below for the full list.`);

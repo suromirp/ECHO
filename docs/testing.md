@@ -51,6 +51,12 @@ actual test fixtures, don't just keep this list as prose:
   is flagged as a Message check (never sent to Transus). Grouped by
   qualifier code; runs standalone in Quick check and per side in Compare
   for both message types.
+- **ORDRSP**: a run of ≥3 consecutive lines where bol's net price for
+  line *i* exactly matches the supplier's own price for line *i−1* is
+  flagged as one grouped "price shift" finding, not N independent
+  "net price differs" findings — the last line in the run explicitly
+  called out as having lost its own price entirely. Compare-only (needs
+  both sides).
 - **ORDRSP (TRANSUSXML `<Article>` dialect)**: a cancelled quantity
   (`CancelledQuantity`, distinct from `RejectedQuantity` even when the
   latter is present as a literal `"0"`) is read correctly, correctly

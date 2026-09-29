@@ -293,3 +293,54 @@ test('Amendment details collapses and is searchable in Compare too, with the sea
   await page.locator('#resultSearchInput').fill('');
   await expect(visibleRows).toHaveCount(5);
 });
+
+// docs/formats-and-quirks.md: one broken line (e.g. the duplicate-DTM case
+// above, closing its own line early before the price is set) can shift
+// every line after it in bol's output — each one ends up with the price
+// that belonged to the line before it, all the way to the end of the
+// message, with the very last line losing its own price entirely.
+// Confirmed against a real 11-line cascade traced back to exactly one
+// earlier broken line. Detected as one grouped finding (a run of ≥3
+// consecutive shifted lines) instead of N independent "price differs"
+// findings, the same grouping shape as groupUniformArithmeticGap for
+// INVOIC.
+test('a run of consecutive lines each showing the previous line\'s price is flagged as one shift, not N independent price differences', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'cascading-price-shift.sup.edi'),
+    path.join(FIX, 'cascading-price-shift.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+
+  // The origin line (its own price genuinely missing on bol) is still its
+  // own separate, existing finding — the cascade is about what happens
+  // to every line AFTER it, not the origin itself.
+  const missing = buckets.diff.filter(t => /Net price is missing/i.test(t));
+  expect(missing).toHaveLength(1);
+  expect(missing[0]).toContain('2222222222222');
+
+  const cascade = buckets.diff.filter(t => /consecutive lines each show/i.test(t));
+  expect(cascade).toHaveLength(1);
+  expect(cascade[0]).toContain('3 consecutive lines');
+  expect(cascade[0]).toContain('3333333333333');
+  expect(cascade[0]).toContain('4444444444444');
+  expect(cascade[0]).toContain('5555555555555');
+  // The last line in the run loses its own price outright — called out
+  // by name and value, since that's the most consequential part.
+  expect(cascade[0]).toContain('5555555555555) loses its own price');
+  expect(cascade[0]).toContain('40.00');
+
+  // None of the three shifted lines also appear as an ordinary
+  // "net price differs" finding — they're covered once, by the cascade
+  // finding, not twice.
+  const individual = buckets.diff.filter(t => /net price differs/i.test(t));
+  expect(individual).toHaveLength(0);
+
+  // Reaches "Copy for Transus" — this is exactly the kind of thing worth
+  // reporting to Transus as a mapping question, not a supplier-message
+  // quirk.
+  expect(buckets.message.some(t => /consecutive lines each show/i.test(t))).toBe(false);
+});
