@@ -321,6 +321,43 @@ Handling:
   DESADV, so this check runs for both, in both Quick check and Compare
   (per side), per CLAUDE.md's parity rule — confirmed to actually fire
   for DESADV too, not just assumed from the shared code path.
+- **One broken ORDRSP line (e.g. the duplicate-`DTM` case just above,
+  closing the line early before its price is set) can shift the net
+  price on every line after it in bol's output** — each subsequent line
+  ends up carrying the price that belonged to the line before it, all the
+  way to the end of the message, and the very last line loses its own
+  price entirely (there's no further line to shift it onto). Confirmed
+  against a real 11-line cascade, all traced back to exactly one earlier
+  line: Transus support's own support ticket confirmed the duplicate-`DTM`
+  line as the origin, but only addressed that one line's own missing
+  price — the ten lines after it, each silently carrying the wrong
+  (previous line's) price, went unmentioned until traced by hand against
+  the supplier's own per-line prices. Without this check, ECHO reported
+  these as ten unrelated "net price differs" findings, which reads as ten
+  separate mapping problems rather than one systemic one — exactly the
+  kind of wall of near-identical findings `docs/ui-conventions.md`'s
+  grouping rule exists to prevent, just not textually identical the way
+  the other grouped checks are. Detected by walking the item+action keys
+  in the *supplier's own* line order (never bol's — a corrupted bol
+  sequence can't be trusted as the reference order) and looking for a run
+  of at least 3 consecutive lines where bol's price for line *i* exactly
+  equals the supplier's own price for line *i−1*, while genuinely
+  differing from line *i*'s own supplier price
+  (`findCascadingPriceShiftRuns`). The 3-line minimum is deliberate: a
+  1- or 2-line match can be an honest coincidence (this exact message had
+  two unrelated articles independently priced at 18.00), and shouldn't be
+  read as a shift on that alone. Rendered as one finding per detected run
+  (`cascadePriceShiftFindings`) — every affected line still listed as its
+  own clickable tag, and the run's *last* line called out by name, since
+  losing its own price outright is the most consequential part. The
+  matching individual lines are excluded from the ordinary per-item "net
+  price differs" list so they're never reported twice. `cat:'diff'` (like
+  the ordinary price-differs findings it replaces) — reaches "Copy for
+  Transus", since this is exactly the kind of pattern worth reporting to
+  Transus as one systemic question rather than N separate ones. Compare-only:
+  genuinely needs both sides to detect (there's nothing to observe from
+  either message alone), so no Quick check parity applies here, unlike
+  most checks in this list.
 - **DESADV's `RFF+BM` (Bill of lading number), when present, is the
   leading/authoritative source for what ECHO shows as "Packing
   reference"** — confirmed against bol's own data sources, overriding an
