@@ -333,6 +333,14 @@ test('a run of consecutive lines each showing the previous line\'s price is flag
   expect(cascade[0]).toContain('5555555555555) loses its own price');
   expect(cascade[0]).toContain('40.00');
 
+  // The fixture's origin line (2222222222222) also has a duplicate DTM+67
+  // — a confirmed real trigger for this exact shift (per a real Transus
+  // support ticket) — so the cascade finding should name that connection
+  // explicitly instead of leaving the reader to notice it themselves.
+  expect(cascade[0]).toContain('This starts right after');
+  expect(cascade[0]).toContain('right after 2222222222222');
+  expect(cascade[0]).toContain('duplicate DTM qualifier');
+
   // None of the three shifted lines also appear as an ordinary
   // "net price differs" finding — they're covered once, by the cascade
   // finding, not twice.

@@ -357,7 +357,19 @@ Handling:
   Transus as one systemic question rather than N separate ones. Compare-only:
   genuinely needs both sides to detect (there's nothing to observe from
   either message alone), so no Quick check parity applies here, unlike
-  most checks in this list.
+  most checks in this list. When the line immediately before a detected
+  run also tripped the duplicate-`DTM`-qualifier Message check above, the
+  finding says so explicitly ("This starts right after `<article>`, which
+  is flagged above for a duplicate DTM qualifier...") instead of leaving
+  the reader to notice the two findings share an origin line themselves —
+  added after Transus support's own ticket reply independently confirmed
+  the duplicate `DTM` as the mechanism ("de dubbele DTM segmenten...
+  triggert... een incorrect en incomplete artikelregel"), so the link is
+  stated as their own diagnosis, not ECHO's inference. Still two separate
+  findings (one Message check, one Transformation difference) — this only
+  adds a cross-reference sentence, never merges them, since the
+  duplicate-DTM check is about the supplier's own message on its own
+  merits regardless of whether it happens to cascade.
 - **DESADV's `RFF+BM` (Bill of lading number), when present, is the
   leading/authoritative source for what ECHO shows as "Packing
   reference"** — confirmed against bol's own data sources, overriding an
