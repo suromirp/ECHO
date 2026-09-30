@@ -103,6 +103,45 @@ Exact-specific fields like `<SupplierTID>`.
   supplier," a misleading symptom of a parsing gap, not a real mapping
   issue.
 
+## A DESADV dialect that's neither XML nor EDIFACT segment syntax
+
+At least one real supplier (Stichd) sends DESADV as a flat, quoted-CSV
+record format instead — records like `"ENV",...`, `"HDR",...`, `"PAC",...`,
+`"LIN",...`, `"CNT",...`, one per line, comma-separated with double-quoted
+string fields. No `UNA`/`UNB`/`UNH` segments, no `'` terminators at all.
+
+- **Confirmed against a real message**: before this dialect was detected,
+  `splitSegments` found zero `'` characters anywhere in the file, so the
+  entire content became one unterminated "segment" that never matched any
+  known tag — `parseFactsEdifact` silently produced zero lines. The
+  Compare result showed every single item in bol's output as "missing from
+  the supplier message" (96 items, in the real case), which reads exactly
+  like a systemic mapping failure but was actually a parsing gap with
+  nothing wrong in either message — the same misleading symptom the Exact
+  Online / generic-Transus-XML routing trap above produces, just for a
+  format outside EDIFACT and XML entirely.
+- Detected before the generic EDIFACT parser by its distinctive first
+  record — the file's very first token is the literal quoted string
+  `"ENV"` — a signal specific enough it can't collide with EDIFACT (always
+  starts `UNA`/`UNB`/`UNH`) or any XML dialect (always starts with `<`).
+  Parsed by `parseFactsCsvDesadv`; field positions were reverse-engineered
+  from the one real message available, cross-checked field by field
+  against bol's own EDIFACT output for the same shipment (matching GLNs,
+  dates, order number, item lines, even the interchange reference) since
+  no published spec for this dialect exists.
+- Once parsed correctly, this real message showed no actual line/quantity
+  differences at all (52/52 matched) — but it did surface a genuine,
+  separate transformation difference that the parsing failure had been
+  hiding: the supplier's own file declares 9 separate pallets, each with
+  its own SSCC, while bol's EDIFACT output flattens everything into a
+  single `CPS` group with no SSCC at all. Worth raising with Transus as
+  its own question, distinct from the parsing gap.
+- Only DESADV has been seen in this dialect so far. If another message
+  type turns up in it, detect it before the generic `"ENV"` check with a
+  signal from the `HDR` record's own type field, per the same principle as
+  the invoice-dialect detection order above — the open question at the top
+  of `CLAUDE.md` about new dialect detection applies here too.
+
 ## `detectMsgType` bare-substring trap
 
 Matching on a literal tag-name substring without a tag-boundary anchor

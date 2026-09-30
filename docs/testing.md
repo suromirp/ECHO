@@ -98,6 +98,11 @@ actual test fixtures, don't just keep this list as prose:
   has no usable SSCC at all. A bare shipment-root `CPS` (no `PAC`/`GIN`,
   just grouping several independent pallets) is never itself flagged for
   this, even when real pallets are nested under it.
+- **DESADV**: a supplier's flat, quoted-CSV DESADV dialect (`"ENV"`,
+  `"HDR"`, `"PAC"`, `"LIN"`, `"CNT"` records, no EDIFACT segment syntax at
+  all) is read correctly — items, quantities, order number and pallets
+  with their SSCCs — rather than silently producing zero supplier lines
+  and showing every item as "missing," in both Compare and Quick check.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

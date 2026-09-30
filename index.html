@@ -842,9 +842,10 @@ function quickFormat(){
   if(pendingEyeReaction)echoSignalReact(pendingEyeReaction);
 
   /* ---------- 2. original message ---------- */
-  if(isXmlText(raw)){
+  const isCsvDesadv=/^"ENV"/.test(raw.replace(/^[\s﻿]+/,''));
+  if(isXmlText(raw)||isCsvDesadv){
     const n=renderQuickRawXml(raw);
-    lg.innerHTML='<span class="chip chip-strong">'+esc(msgType||'XML')+'</span><span class="chip">XML</span><span class="chip">'+n+' lines</span>';
+    lg.innerHTML='<span class="chip chip-strong">'+esc(msgType||(isCsvDesadv?'DESADV':'XML'))+'</span><span class="chip">'+(isCsvDesadv?'CSV':'XML')+'</span><span class="chip">'+n+' lines</span>';
     quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
     return;
   }
@@ -1098,6 +1099,94 @@ function parseFactsEdifact(raw){
   return f;
 }
 
+/* Splits one line of a quoted-CSV record into its fields, unquoting each
+   one. No embedded commas or escaped quotes have been seen in real
+   messages of this dialect, but handled anyway since it costs nothing. */
+function splitCsvRow(line){
+  const out=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){const ch=line[i];
+    if(inQ){
+      if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else inQ=false;}
+      else cur+=ch;
+    }else{
+      if(ch==='"')inQ=true;
+      else if(ch===','){out.push(cur);cur='';}
+      else cur+=ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+/* A DESADV dialect seen from at least one real supplier (Stichd): a flat,
+   quoted-CSV record format (ENV/HDR/PAC/LIN/CNT record types) rather than
+   EDIFACT segment syntax — confirmed against a real message where this
+   caused every one of 52 items to be misread as "missing from the
+   supplier", since splitSegments found no `'` terminators at all and
+   silently produced zero lines. Detected before the generic EDIFACT parser
+   by its distinctive first record ("ENV" as the very first quoted field),
+   a signal specific enough it can't collide with EDIFACT (always starts
+   UNA/UNB/UNH) or XML (always starts with `<`). Field positions below are
+   reverse-engineered from that one real message, cross-checked field by
+   field against bol's own EDIFACT output for the same shipment (matching
+   GLNs, dates, order number, item lines and even the interchange
+   reference) — not from a published spec, since none was available. Only
+   DESADV has been seen in this dialect so far; extend the "ENV" signal
+   check with the HDR record's own message-type field if another message
+   type in this dialect ever turns up.
+   Field layout confirmed against the real message:
+   ENV: [1]=sender GLN, [2]=receiver GLN, [3]=interchange reference
+   HDR: [2]=doc/despatch number, [3]=doc date, [5]=despatch date,
+        [13]=order number, [18/19]="EAN"+supplier GLN, [20/21]="EAN"+buyer
+        GLN, [22/23]="EAN"+delivery GLN, [24]=delivery party name
+   PAC "1": summary record (total pallet count) — not a real pallet
+   PAC "2": one real pallet, [5]=SSCC
+   LIN: [1]=line no, [2]=code qualifier, [3]=EAN/GTIN, [4]=quantity,
+        [11]=order number */
+function parseFactsCsvDesadv(raw){
+  const f={format:'Stichd CSV',msgType:'DESADV',bgmFunc:null,orderRefsHeader:new Set(),lines:[],ssccs:[],rawCsv:raw,
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0,billOfLadingRef:null};
+  const rows=raw.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(splitCsvRow);
+  let currentPallet=null;
+  const closePallet=()=>{if(currentPallet)f.pallets.push(currentPallet);currentPallet=null;};
+  rows.forEach(row=>{
+    const tag=row[0];
+    if(tag==='HDR'){
+      f.docNumber=row[2]||null;
+      if(row[3]){f.docDate=row[3];f.headerDtm['137']=row[3];}
+      if(row[5]){f.despatchDate=row[5];f.headerDtm['11']=row[5];}
+      if(row[13])f.orderRefsHeader.add(row[13]);
+      if(row[19])f.parties.SU={gln:row[19],name:null,vat:null};
+      if(row[21])f.parties.BY={gln:row[21],name:null,vat:null};
+      if(row[23])f.parties.DP={gln:row[23],name:row[24]||null,vat:null};
+    }else if(tag==='PAC'){
+      if(row[1]==='2'){
+        closePallet();
+        const sscc=row[5]||null;
+        currentPallet={cps:String(f.pallets.length+1),parentCps:null,palletGtin:null,sscc,items:[],weight:null,hasPac:true};
+        if(sscc)f.ssccs.push(sscc);
+      }
+      // PAC "1" is a summary record (total pallet count), not a real pallet.
+    }else if(tag==='LIN'){
+      const qty={};
+      if(row[4]!==undefined&&row[4]!=='')qty['12']=String(parseInt(row[4],10));
+      const orders=new Set();
+      if(row[11])orders.add(row[11]);
+      const gtinRaw=row[2]==='EAN'?(row[3]||''):'';
+      const line={lineNo:row[1]||'',action:null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,
+        qty,dtm:{},orders,art:row[2]==='EAN'?null:(row[3]||null),desc:null,__cpsRef:currentPallet};
+      f.lines.push(line);
+      if(currentPallet)currentPallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
+    }
+    // ENV and CNT carry nothing not already covered by HDR/PAC above.
+  });
+  closePallet();
+  if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
+  if(f.docDate)f.docDate=normDate(f.docDate);
+  if(f.despatchDate)f.despatchDate=normDate(f.despatchDate);
+  return f;
+}
+
 function parseFactsTransusXml(raw){
   const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
     docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0};
@@ -1230,6 +1319,7 @@ function parseFactsTransusXml(raw){
 function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return parseFactsTransusXml(raw);
+  if(/^"ENV"/.test(head)) return parseFactsCsvDesadv(raw);
   return parseFactsEdifact(raw);
 }
 
@@ -1259,6 +1349,7 @@ function splitEdifactMessages(raw){
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return [parseFactsTransusXml(raw)];
+  if(/^"ENV"/.test(head)) return [parseFactsCsvDesadv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
   return chunks.map(c=>parseFactsEdifact(c));
@@ -3268,6 +3359,7 @@ function looksLikeBolUbl(raw){
 /* welk berichttype zit hierin? */
 function detectMsgType(raw){
   if(!raw||!raw.trim())return null;
+  if(/^"ENV"/.test(raw.replace(/^[\s﻿]+/,'')))return 'DESADV';
   if(isXmlText(raw)){
     const head=raw.slice(0,6000);
     // A third XML invoice dialect (<Messages><Message>, MessageStandard=
@@ -4279,6 +4371,11 @@ function renderRawEdifact(facts,elId){
   const el=document.getElementById(elId);
   if(facts.format==='Transus XML'){
     const lines=(facts.rawXml||'').split(/\r?\n/);
+    el.innerHTML=lines.map((ln,i)=>'<div class="rl"><span class="g">'+(i+1)+'</span><span>'+esc(ln)+'</span></div>').join('');
+    return;
+  }
+  if(facts.format==='Stichd CSV'){
+    const lines=(facts.rawCsv||'').split(/\r?\n/);
     el.innerHTML=lines.map((ln,i)=>'<div class="rl"><span class="g">'+(i+1)+'</span><span>'+esc(ln)+'</span></div>').join('');
     return;
   }

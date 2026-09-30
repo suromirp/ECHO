@@ -331,3 +331,45 @@ test('the pallet-level SSCC gap is also flagged per side in Compare, as a Messag
   expect(wrapper.some(t => t.includes('Bol —'))).toBe(true);
   expect(buckets.diff.some(t => /No SSCC at pallet level/i.test(t))).toBe(false);
 });
+
+// A real supplier (seen in production) sends DESADV as a flat, quoted-CSV
+// record format (ENV/HDR/PAC/LIN/CNT) instead of EDIFACT segment syntax.
+// Before this dialect was recognized, splitSegments found no `'`
+// terminators at all and silently produced zero lines, so every item in
+// bol's output showed up as "missing from the supplier" — a wall of false
+// differences with nothing actually wrong. Confirmed against a real message
+// where quantities matched on all lines once the format was parsed.
+test('a flat quoted-CSV DESADV dialect is read, not silently treated as an empty supplier message', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'csv-dialect.sup.des'),
+    path.join(FIX, 'csv-dialect.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Stichd CSV');
+  expect(resultsText).toContain('3/3'); // supplier / bol lines — none missing
+  expect(resultsText).not.toMatch(/is present in the .* but .* missing/);
+
+  // The real, separate difference this dialect surfaces once it's actually
+  // parsed: the supplier's own pallets each carry an SSCC, but bol's output
+  // flattens everything into one CPS with none at all.
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /2 SSCC\(s\) only in the supplier message/.test(t))).toBe(true);
+  expect(buckets.message.some(t => /No SSCC found on 1 pallet group/.test(t))).toBe(true);
+});
+
+// Same fixture, Quick check on the supplier file alone — parity for format
+// detection: detectMsgType must recognize this dialect too, or Quick check
+// shows a blank overview instead of the business summary.
+test('the CSV DESADV dialect is also recognized in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'csv-dialect.sup.des'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('9000001'); // order number read from the CSV
+  expect(overviewText).toContain('3'); // 3 items
+});
