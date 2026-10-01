@@ -1187,6 +1187,68 @@ function parseFactsCsvDesadv(raw){
   return f;
 }
 
+/* Same quoted-CSV family as parseFactsCsvDesadv above (ENV/HDR/LIN/CNT
+   records), but the ORDRSP variant — confirmed against a real Stichd order
+   confirmation, cross-checked field by field against bol's own EDIFACT
+   output for the same message (GLNs, order number, confirmed quantities,
+   price, article code, delivery date all matched exactly). Routed here by
+   the HDR record's own document-type field (231, mirroring EDIFACT's
+   BGM+231 for ORDRSP) rather than by the "ENV" signal alone, since that
+   signal only says "this CSV family", not which message type — see
+   parseFactsCsv below.
+   HDR: [2]=doc number, [3]=BGM function code, [4]=document date,
+        [9]=order number, [12/13]="EAN"+supplier GLN, [14/15]="EAN"+buyer
+        GLN, [16/17]="EAN"+delivery GLN
+   LIN: [1]=line no, [2]=action code, [3]=code qualifier, [4]=EAN/GTIN,
+        [6]=net price, [11]=article code, [12]=confirmed delivery date,
+        [16]=description, [22]=confirmed quantity
+   The one real message available had no backorder or cancellation on any
+   line, so the field positions for QTY+83/QTY+182 couldn't be confirmed —
+   deliberately left unparsed here rather than guessed, to avoid silently
+   misreporting a real backorder as something else. Revisit once a message
+   with one actually turns up. */
+function parseFactsCsvOrdrsp(raw){
+  const f={format:'Stichd CSV',msgType:'ORDRSP',bgmFunc:null,lines:[],ssccs:[],rawCsv:raw,
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0};
+  const rows=raw.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(splitCsvRow);
+  rows.forEach(row=>{
+    const tag=row[0];
+    if(tag==='HDR'){
+      f.docNumber=row[2]||null;
+      f.bgmFunc=row[3]||null;
+      if(row[4]){f.docDate=row[4];f.headerDtm['137']=row[4];}
+      if(row[9])f.orderRefsHeader.add(row[9]);
+      if(row[13])f.parties.SU={gln:row[13],name:null,vat:null};
+      if(row[15])f.parties.BY={gln:row[15],name:null,vat:null};
+      if(row[17])f.parties.DP={gln:row[17],name:null,vat:null};
+    }else if(tag==='LIN'){
+      const qty={};
+      if(row[22]!==undefined&&row[22]!=='')qty['12']=String(parseInt(row[22],10));
+      const dtm={};
+      if(row[12])dtm['67']=row[12];
+      const orders=new Set();
+      const gtinRaw=row[3]==='EAN'?(row[4]||''):'';
+      f.lines.push({lineNo:row[1]||'',action:row[2]||null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,
+        qty,dtm,orders,art:row[11]||null,netPrice:num(row[6]),desc:row[16]||null});
+    }
+    // ENV and CNT carry nothing not already covered by HDR above.
+  });
+  if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
+  if(f.docDate)f.docDate=normDate(f.docDate);
+  return f;
+}
+
+/* Dispatches the "ENV"-prefixed CSV family to the right parser by peeking
+   at the HDR record's own document-type field — 351 (DESADV) vs 231
+   (ORDRSP), mirroring the codes EDIFACT's own BGM segment uses for the
+   same two message types. */
+function parseFactsCsv(raw){
+  const rows=raw.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(splitCsvRow);
+  const hdr=rows.find(r=>r[0]==='HDR');
+  if(hdr&&hdr[1]==='231')return parseFactsCsvOrdrsp(raw);
+  return parseFactsCsvDesadv(raw);
+}
+
 function parseFactsTransusXml(raw){
   const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
     docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0};
@@ -1319,7 +1381,7 @@ function parseFactsTransusXml(raw){
 function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return parseFactsTransusXml(raw);
-  if(/^"ENV"/.test(head)) return parseFactsCsvDesadv(raw);
+  if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
   return parseFactsEdifact(raw);
 }
 
@@ -1349,7 +1411,7 @@ function splitEdifactMessages(raw){
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return [parseFactsTransusXml(raw)];
-  if(/^"ENV"/.test(head)) return [parseFactsCsvDesadv(raw)];
+  if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
   return chunks.map(c=>parseFactsEdifact(c));
@@ -1461,7 +1523,7 @@ const ACTION_RULE_EXPLAIN={
   'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
   'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
   'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
-  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), but nothing is backordered or cancelled — the confirmed quantity already covers the full amount. Action 6 normally means a backorder, a cancelled quantity, or just a changed delivery date; with neither of the first two, this looks like the date-only kind. Worth confirming these weren't meant to be action 5 instead.",
+  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity already covering the full amount — reads as a delivery-date-only amendment, a recognized use of action 6.",
   'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder, a cancelled quantity, nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
   'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
   'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
@@ -3359,7 +3421,11 @@ function looksLikeBolUbl(raw){
 /* welk berichttype zit hierin? */
 function detectMsgType(raw){
   if(!raw||!raw.trim())return null;
-  if(/^"ENV"/.test(raw.replace(/^[\s﻿]+/,'')))return 'DESADV';
+  if(/^"ENV"/.test(raw.replace(/^[\s﻿]+/,''))){
+    const rows=raw.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(splitCsvRow);
+    const hdr=rows.find(r=>r[0]==='HDR');
+    return (hdr&&hdr[1]==='231')?'ORDRSP':'DESADV';
+  }
   if(isXmlText(raw)){
     const head=raw.slice(0,6000);
     // A third XML invoice dialect (<Messages><Message>, MessageStandard=

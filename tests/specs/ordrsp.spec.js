@@ -29,7 +29,7 @@ test('action-6-without-backorder findings are grouped, not repeated per line', a
 
   const findings = page.locator('#findings li');
   const texts = await findings.allInnerTexts();
-  const groupedLines = texts.filter(t => t.includes('nothing is backordered'));
+  const groupedLines = texts.filter(t => t.includes('delivery-date-only amendment'));
 
   // One grouped block per side (Supplier, Bol) — never one per affected line
   // (there are 3 lines per side, so a per-line implementation would produce 6).
@@ -351,4 +351,49 @@ test('a run of consecutive lines each showing the previous line\'s price is flag
   // reporting to Transus as a mapping question, not a supplier-message
   // quirk.
   expect(buckets.message.some(t => /consecutive lines each show/i.test(t))).toBe(false);
+});
+
+// Same quoted-CSV family as the DESADV dialect in desadv.spec.js, but the
+// ORDRSP variant — confirmed against a real Stichd order confirmation.
+// Before this was recognized, ECHO routed every "ENV"-prefixed file to the
+// DESADV parser regardless of actual type: the type badge showed "DESADV",
+// every action code read as "(none)", and the EAN column showed the
+// literal string "EAN" instead of the GTIN. Routed correctly now by the
+// HDR record's own document-type field (231 vs 351, mirroring EDIFACT's
+// own BGM codes for ORDRSP vs DESADV).
+test('a flat quoted-CSV ORDRSP dialect is read, not routed to the DESADV parser', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'csv-dialect.sup.ORD'),
+    path.join(FIX, 'csv-dialect.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('TYPE\nORDRSP');
+  expect(resultsText).toContain('Stichd CSV');
+  expect(resultsText).toContain('3/3'); // supplier / bol lines — all read
+  expect(resultsText).not.toContain('(none)');
+  expect(resultsText).toContain('4000000000011'); // the real GTIN, not the literal "EAN" qualifier string
+
+  // The real example this is based on showed every supplier line sent as
+  // action 6 (date-only amendment), remapped to action 5 in bol's own
+  // output — a genuine, expected action-code difference, correctly
+  // explained by the date-only Message check rather than read as an error.
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.some(t => /delivery-date-only amendment/.test(t))).toBe(true);
+});
+
+// Same fixture, Quick check on the supplier file alone — detectMsgType must
+// also route this dialect to ORDRSP, not DESADV, or Quick check shows the
+// wrong business overview entirely (or none at all).
+test('the CSV ORDRSP dialect is also recognized in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'csv-dialect.sup.ORD'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('ORDRSP');
+  expect(overviewText).toContain('9000002'); // order number read from the CSV
 });

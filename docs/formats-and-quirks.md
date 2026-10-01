@@ -103,12 +103,13 @@ Exact-specific fields like `<SupplierTID>`.
   supplier," a misleading symptom of a parsing gap, not a real mapping
   issue.
 
-## A DESADV dialect that's neither XML nor EDIFACT segment syntax
+## A flat quoted-CSV dialect, neither XML nor EDIFACT segment syntax
 
-At least one real supplier (Stichd) sends DESADV as a flat, quoted-CSV
-record format instead — records like `"ENV",...`, `"HDR",...`, `"PAC",...`,
-`"LIN",...`, `"CNT",...`, one per line, comma-separated with double-quoted
-string fields. No `UNA`/`UNB`/`UNH` segments, no `'` terminators at all.
+At least one real supplier (Stichd) sends ORDRSP and DESADV as a flat,
+quoted-CSV record format instead — records like `"ENV",...`, `"HDR",...`,
+`"PAC",...`, `"LIN",...`, `"CNT",...`, one per line, comma-separated with
+double-quoted string fields. No `UNA`/`UNB`/`UNH` segments, no `'`
+terminators at all.
 
 - **Confirmed against a real message**: before this dialect was detected,
   `splitSegments` found zero `'` characters anywhere in the file, so the
@@ -136,11 +137,35 @@ string fields. No `UNA`/`UNB`/`UNH` segments, no `'` terminators at all.
   its own SSCC, while bol's EDIFACT output flattens everything into a
   single `CPS` group with no SSCC at all. Worth raising with Transus as
   its own question, distinct from the parsing gap.
-- Only DESADV has been seen in this dialect so far. If another message
-  type turns up in it, detect it before the generic `"ENV"` check with a
-  signal from the `HDR` record's own type field, per the same principle as
-  the invoice-dialect detection order above — the open question at the top
-  of `CLAUDE.md` about new dialect detection applies here too.
+- **ORDRSP turned up in the same dialect too**, confirmed against a second
+  real message (also Stichd). Both message types share the `"ENV"` first
+  record, so that signal alone can't tell them apart — `parseFactsCsv`
+  peeks at the `HDR` record's own document-type field (`231` for ORDRSP,
+  `351` for DESADV, mirroring EDIFACT's own `BGM` codes for the same two
+  types) and dispatches to `parseFactsCsvOrdrsp` or `parseFactsCsvDesadv`
+  accordingly — `detectMsgType` does the same peek so Quick check and the
+  Compare type badge agree with the actual parser used. Before this, every
+  `"ENV"`-prefixed file was routed straight to the DESADV parser regardless
+  of its real type: on this ORDRSP message that meant the type badge showed
+  "DESADV", every action code read as the literal string `"(none)"`, and
+  the EAN column showed the qualifier string `"EAN"` instead of the GTIN —
+  the same "looks broken, isn't" symptom as the original DESADV gap above.
+  Field positions for the ORDRSP variant were reverse-engineered the same
+  way: cross-checked against bol's own EDIFACT output for the same message
+  (GLNs, order number, confirmed quantities, price, article code, delivery
+  date all matched exactly). The one real ORDRSP message available had no
+  backorder or cancellation on any line, so the field positions for
+  `QTY+83`/`QTY+182` couldn't be confirmed and are deliberately left
+  unparsed rather than guessed — revisit once a message with one turns up.
+  This same real message is also one of the two behind the "ORDRSP action
+  6 used purely to signal a changed delivery date" entry further below
+  (every line sent as action 6 with no backorder, remapped to action 5 in
+  bol's output).
+- If a third message type turns up in this dialect, detect it the same way
+  — a signal from the `HDR` record's own type field, checked before the
+  generic `"ENV"` routing — per the same principle as the invoice-dialect
+  detection order above. The open question at the top of `CLAUDE.md` about
+  new dialect detection applies here too.
 
 ## `detectMsgType` bare-substring trap
 
@@ -409,6 +434,36 @@ Handling:
   adds a cross-reference sentence, never merges them, since the
   duplicate-DTM check is about the supplier's own message on its own
   merits regardless of whether it happens to cascade.
+- **ORDRSP action 6 (accepted with amendment) used purely to signal a
+  changed delivery date, with no backorder or cancellation, is a
+  recognized pattern — not evidence the supplier meant action 5.**
+  Confirmed against two independent real messages (different suppliers):
+  one line sent as `LIN+1+6+...` with only `QTY+12` (fully confirmed) and
+  `DTM+67` (the new date) — no `QTY+83`, no `QTY+182`, no `DTM+506` — and
+  bol's own EDIFACT output simply added `QTY+83:0`, `DTM+506` (copied from
+  `DTM+67`) and `QTY+182:0`, with nothing lost. A second message went
+  further: every line on the order used action 6 the same way, under a
+  `BGM+29` header (which bol's own ORDRSP documentation says should only
+  ever pair with action 5) — and Transus's own mapping remapped every
+  line's action from 6 to 5 in the bol-facing output, keeping `BGM+29`
+  internally consistent. Both cases show Transus's mapping treating this
+  as a known, gracefully-handled pattern, not something it stumbles on.
+  bol's own documentation only partially reflects this: the "Betekenis"
+  column for action 6 already names two distinct sub-cases ("in backorder
+  geplaatst *of* voorzien van een nieuwe leverdatum"), but the "Verplichte
+  segmenten"/"Niet toegestaan" columns list `QTY+83 groter dan 0` and
+  `DTM+506` as required regardless of which sub-case applies — which only
+  actually fits the backorder sub-case. ECHO's own finding text used to
+  read "worth confirming these weren't meant to be action 5 instead",
+  which reads as an accusation for a pattern that's demonstrably fine in
+  practice; reworded to describe the pattern neutrally instead
+  (`action6-no-backorder-has-confirmed` in `ACTION_RULE_EXPLAIN`). Per
+  CLAUDE.md rule 7: a finding that reads as "you did something wrong"
+  needs either a generous tolerance or shouldn't exist — this is a case
+  where real evidence turned up proving the tolerance was warranted. Since
+  this was found via a real supplier integration question (not a visible
+  ECHO bug), there's no fixture-worthy "before" state to test against —
+  the test suite only asserts the current, corrected wording.
 - **DESADV's `RFF+BM` (Bill of lading number), when present, is the
   leading/authoritative source for what ECHO shows as "Packing
   reference"** — confirmed against bol's own data sources, overriding an

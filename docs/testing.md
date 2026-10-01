@@ -37,7 +37,8 @@ Each of these caught a real, otherwise-invisible bug. Recreate them as
 actual test fixtures, don't just keep this list as prose:
 
 - **ORDRSP**: action-6-without-backorder findings grouped into one block,
-  not repeated per line.
+  not repeated per line, and described neutrally as a recognized
+  delivery-date-only amendment rather than a suspected mistake.
 - **ORDRSP**: a message where none of its accepted lines carry a net price
   anywhere is flagged (both Quick check and per-side in Compare), rather
   than read as a clean match just because quantities and actions agree.
@@ -103,6 +104,11 @@ actual test fixtures, don't just keep this list as prose:
   all) is read correctly — items, quantities, order number and pallets
   with their SSCCs — rather than silently producing zero supplier lines
   and showing every item as "missing," in both Compare and Quick check.
+- **ORDRSP**: the same supplier's CSV dialect, ORDRSP variant, is routed to
+  its own parser (not the DESADV one) based on the `HDR` record's own
+  document-type field, in both Compare and Quick check — rather than
+  reading every action code as "(none)" and every item as the literal
+  string "EAN".
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable
