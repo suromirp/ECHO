@@ -373,3 +373,35 @@ test('the CSV DESADV dialect is also recognized in Quick check', async ({ page }
   expect(overviewText).toContain('9000001'); // order number read from the CSV
   expect(overviewText).toContain('3'); // 3 items
 });
+
+// A real DESADV failed delivery outright with "Packing List Reference must
+// not exceed 15 characters" — traced to an 18-character RFF+BM value, a
+// hard downstream limit bol's own DESADV documentation doesn't mention at
+// all (it only says the reference must be unique and visible on the
+// physical shipment, no length given).
+test('a Packing List Reference (RFF+BM) over 15 characters is flagged, per side', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'packing-reference-too-long.sup.edi'),
+    path.join(FIX, 'packing-reference-too-long.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+  const tooLong = buckets.message.filter(t => /Packing List Reference too long/.test(t));
+  expect(tooLong).toHaveLength(2); // one per side
+  expect(tooLong.some(t => t.includes('Supplier —'))).toBe(true);
+  expect(tooLong.some(t => t.includes('Bol —'))).toBe(true);
+  tooLong.forEach(t => expect(t).toContain('17 characters'));
+  // Never sent to Transus — it's a hard limit on the value itself, not a
+  // mapping question.
+  expect(buckets.diff.some(t => /Packing List Reference too long/.test(t))).toBe(false);
+});
+
+test('the Packing List Reference length check also fires standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'packing-reference-too-long.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('Packing List Reference too long');
+  await expect(page.locator('#quickOverview')).toContainText('17 characters');
+});

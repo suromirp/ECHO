@@ -57,6 +57,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | blank `LIN'` segments excluded from the line count | `desadv/blank-lin.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | `DTM` qualifier repeated with different dates within one line (same shared check as ORDRSP) | `desadv/dtm-duplicate-qualifier.edi` | `specs/desadv.spec.js` |
 | DESADV | `RFF+BM`, when present, shown as the packing reference instead of the BGM document number | `desadv/bill-of-lading-reference.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | a Packing List Reference (`RFF+BM`) over 15 characters is flagged, per side — a confirmed hard delivery limit, undocumented on bol's own DESADV page | `desadv/packing-reference-too-long.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | DESADV | nested CPS group with its own SSCC marked as nested, not an independent pallet; long Quick check pallet list collapses behind a toggle | `desadv/nested-sscc-hierarchy.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | one search box filters the line table and pallet overview together (EAN, order, SSCC, article code), overriding the diff/flagged-only filter, in both Compare and Quick check | `desadv/search-fields.edi` (same file both sides) | `specs/desadv.spec.js` |
