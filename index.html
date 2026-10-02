@@ -3306,6 +3306,21 @@ function parseInvoicBolXml(raw){
       });
       inv.lines.push(line);
     });
+    // LegalMonetaryTotal/LineExtensionAmount is sometimes left at 0 in bol's
+    // own UBL even though every InvoiceLine's own LineExtensionAmount is
+    // correctly populated and sums to exactly the taxable amount — confirmed
+    // against a real invoice (not a credit note; this isn't the sign-related
+    // credit-note quirk documented elsewhere) where every other total
+    // (taxable, VAT, payable) matched the supplier exactly and only this one
+    // header field read 0. Falls back to the line sum the same way the
+    // EDIFACT supplier-side parser already does for a genuinely missing
+    // value, extended to also catch "present but implausibly zero" — only
+    // overrides when the lines themselves sum to something non-zero, so a
+    // real (if unusual) zero total is never clobbered.
+    if((inv.totals.lineTotal===null||inv.totals.lineTotal===0)&&inv.lines.length){
+      const s=inv.lines.reduce((a,l)=>a+(l.lineAmount||0),0);
+      if(s)inv.totals.lineTotal=Math.round(s*100)/100;
+    }
     /* header-orderreferentie (indien aanwezig) + scope-aware afleiding per regel */
     const hdrOrder=valOf(root,['OrderReference','ID']);
     if(hdrOrder)uniqPush(inv.headerOrders,hdrOrder);

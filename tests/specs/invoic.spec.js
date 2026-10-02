@@ -293,3 +293,29 @@ test('the illegal-control-character finding is also flagged standalone in Quick 
   await expect(page.locator('#quickOverview')).toContainText('illegal control character');
   await expect(page.locator('#quickOverview')).toContainText('0x16');
 });
+
+// A real invoice (not a credit note) showed bol's own LegalMonetaryTotal/
+// LineExtensionAmount stuck at 0 even though every InvoiceLine's own
+// LineExtensionAmount was correctly populated and summed to exactly the
+// taxable amount — every other total (taxable, VAT, payable) matched the
+// supplier exactly, only this one header field read 0. Falls back to
+// summing the lines, the same way the EDIFACT parser already does for a
+// genuinely missing value, extended to also catch "present but
+// implausibly zero".
+test('a bol invoice with LegalMonetaryTotal/LineExtensionAmount stuck at 0 falls back to the line sum', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'ubl-line-total-zero.sup.edi'),
+    path.join(FIX, 'ubl-line-total-zero.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  // "Loud and clear" only renders when every compared value matches,
+  // including the Total line amounts row — so this alone confirms the
+  // fallback kicked in rather than leaving a false "0.00 EUR" difference.
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).toContain('Total line amounts');
+  expect(resultsText).toContain('450.00 EUR');
+});
