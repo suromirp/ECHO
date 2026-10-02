@@ -76,6 +76,9 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: `RFF+BM` (bill of lading number), when present, is shown as
   the "Packing reference" instead of the BGM document number — leading
   source, not a second field — in both Quick check and Compare.
+- **DESADV**: a Packing List Reference (`RFF+BM`) over 15 characters is
+  flagged, per side, in both Quick check and Compare — never sent to
+  Transus.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
   side with a collapsed tag list, not one finding per pallet.
 - **DESADV**: a nested `CPS` group that carries its own SSCC is marked as

@@ -1987,6 +1987,21 @@ function checkPalletStructure(facts,label,add,jumpCall){
   });
 }
 
+// bol's delivery pipeline rejects a DESADV outright when the Packing List
+// Reference (RFF+BM) is longer than 15 characters — confirmed against a
+// real "Packing List Reference must not exceed 15 characters" delivery
+// error, traced to an 18-character RFF+BM value. Not mentioned on bol's own
+// DESADV documentation at all (which only says the reference must be
+// "uniek en zichtbaar op de fysieke zending" — no length given), so this is
+// a hard, otherwise-undocumented downstream limit, not a mapping question —
+// kept as a Message check about the sending side's own value.
+function checkPackingReferenceLength(facts,label,add,jumpCall){
+  const ref=facts.billOfLadingRef;
+  if(!ref||ref.length<=15)return;
+  const jump=jumpCall?` onclick="${jumpCall(ref)}"`:'';
+  add('err',`${label} — <strong>Packing List Reference too long</strong>: <span class="clickable-val"${jump}>${esc(ref)}</span> is ${ref.length} characters (RFF+BM) — bol's delivery pipeline rejects anything over 15, and a message like this fails to deliver entirely.`,'message');
+}
+
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
    Pallet EAN (package-level GIN+SRV) is supplementary, informational context —
    the bol transformation is not expected to preserve it, so its absence never
@@ -2532,6 +2547,8 @@ function compare(bol,sup){
   if(type==='DESADV'){
     checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
@@ -4258,6 +4275,7 @@ function factsOverviewHtml(facts){
     // only the "Number of SSCCs: 0" stat for the reader to notice themselves.
     if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
     checkPalletStructure(facts,'This message',qcAdd,jumpCall);
+    checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
   }else if(type==='ORDRSP'){
     // Grouped by which rule fired: a supplier that sends action 6 on every
     // line gets ONE block explaining that pattern with every affected item

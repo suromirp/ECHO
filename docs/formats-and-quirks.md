@@ -495,6 +495,19 @@ Handling:
   bucket alongside every other unhandled RFF qualifier, with no dedicated
   label at all — that gap is what's fixed, not by adding a second field,
   but by making the existing one point at the right source.
+- **`RFF+BM` has a hard, otherwise-undocumented 15-character limit** —
+  confirmed by a second, different real delivery error ("Packing List
+  Reference must not exceed 15 characters"), traced to an 18-character
+  value. Bol's own DESADV documentation doesn't mention a length at all for
+  this field (only "uniek en zichtbaar op de fysieke zending"), so this
+  isn't something a supplier could reasonably know without hitting it.
+  Transus's own mapping doesn't truncate or reject it either — the value
+  passes through unchanged into bol's own EDIFACT output — it's bol's
+  downstream delivery pipeline that rejects the message outright, and
+  confirmed via `checkPackingReferenceLength`. A hard limit on the
+  supplier's own value, not a mapping question, so kept as a Message check
+  (`cat:'message'`), never sent to Transus — same parity treatment (both
+  Quick check and per-side in Compare) as every other check in this list.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what
