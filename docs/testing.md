@@ -138,6 +138,11 @@ actual test fixtures, don't just keep this list as prose:
   file (e.g. bol's own generated invoice), ECHO strips it and shows a
   loud banner explaining why delivery genuinely failed rather than
   silently showing an empty result.
+- **INVOIC**: when bol's own `LegalMonetaryTotal/LineExtensionAmount` is
+  stuck at 0 but every `InvoiceLine`'s own line amount is correctly
+  populated, the parser falls back to summing the lines instead of
+  reporting a false "Total line amounts differs" against a header field
+  bol's own downstream system doesn't rely on either.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.

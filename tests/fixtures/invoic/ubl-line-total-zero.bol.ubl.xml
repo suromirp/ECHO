@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV9001</cbc:ID>
+  <cbc:IssueDate>2026-01-15</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>1</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:TaxTotal>
+    <cbc:TaxAmount>94.50</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount>450.00</cbc:TaxableAmount>
+      <cbc:TaxAmount>94.50</cbc:TaxAmount>
+      <cac:TaxCategory><cbc:Percent>21</cbc:Percent></cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount>0</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount>450.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount>544.50</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount>544.50</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity>10</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>250.00</cbc:LineExtensionAmount>
+    <cac:OrderLineReference><cac:OrderReference><cbc:ID>5000001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
+    <cac:Item><cbc:Name>Item 1</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000021</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>25.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity>5</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>200.00</cbc:LineExtensionAmount>
+    <cac:OrderLineReference><cac:OrderReference><cbc:ID>5000001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
+    <cac:Item><cbc:Name>Item 2</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000022</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>40.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>

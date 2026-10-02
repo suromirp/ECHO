@@ -29,6 +29,19 @@ Always the "bol output" side for INVOIC. Confirmed traps:
   `OrderLineReference` instead — which was actually the *correct* value to
   compare against once traced through against the supplier's own
   reference fields.
+- **`LegalMonetaryTotal/LineExtensionAmount` is sometimes left at 0**, even
+  on a plain invoice (not a credit note — see the separate credit-note
+  sign-convention entry below, a different mechanism), while every
+  `InvoiceLine/LineExtensionAmount` is correctly populated and sums to
+  exactly the taxable amount. Confirmed against a real invoice where every
+  other total (taxable, VAT, payable) matched the supplier exactly and
+  only this one header field read 0 — reported by a user as "this is never
+  correct" and confirmed their own downstream INVOIC validation treats the
+  message as valid regardless, i.e. it doesn't rely on this field either.
+  `parseInvoicBolXml` now falls back to summing the lines when the header
+  value is `0` or missing, the same way the EDIFACT supplier-side parser
+  already did for a genuinely missing value — only overriding when the
+  line sum is non-zero, so a real zero total is never clobbered.
 
 ## Three distinct supplier-side XML dialects beyond bol's UBL and EDIFACT
 

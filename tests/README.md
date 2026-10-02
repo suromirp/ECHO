@@ -74,6 +74,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | line-level charge matches across sides despite a GTIN-12/13 leading-zero difference on that line | `invoic/line-charge-gtin-padding.sup.edi`, `invoic/line-charge-gtin-padding.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | VAT number shown per party in the Invoice details table, alongside GLN | `invoic/vat-number-shown.sup.edi`, `invoic/vat-number-shown.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | illegal XML control character in an item description flagged on the supplier side, and stripped with a loud banner when already inside an XML file | `invoic/illegal-xml-char.sup.edi`, `invoic/illegal-xml-char.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | bol's `LegalMonetaryTotal/LineExtensionAmount` stuck at 0 falls back to summing the invoice lines instead of a false "Total line amounts differs" | `invoic/ubl-line-total-zero.sup.edi`, `invoic/ubl-line-total-zero.bol.ubl.xml` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 
