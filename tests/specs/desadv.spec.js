@@ -405,3 +405,41 @@ test('the Packing List Reference length check also fires standalone in Quick che
   await expect(page.locator('#quickOverview')).toContainText('Packing List Reference too long');
   await expect(page.locator('#quickOverview')).toContainText('17 characters');
 });
+
+// Transus support's own ticket reply confirmed the mechanism: a CPS group
+// with an SSCC (GIN+BJ) but no PAC segment doesn't just lose that one
+// SSCC, it loses the packaging structure around it entirely — confirmed
+// against a real message where 9 such CPS groups on the supplier side
+// became one flat CPS with zero SSCCs on bol's side. A separate, lower-
+// confidence observation from the same real message: one SSCC was 20
+// characters (an Application Identifier "00" prefix bol's own
+// documentation says not to include), kept as an info-level note since
+// that alone hasn't been independently confirmed to cause a problem.
+test('an SSCC without a PAC segment is flagged as a confirmed cause of the SSCC not reaching bol', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'sscc-no-pac.sup.edi'),
+    path.join(FIX, 'sscc-no-pac.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const buckets = await findingsByCategory(page);
+  const noPac = buckets.message.filter(t => /SSCC present but no PAC segment/.test(t));
+  expect(noPac).toHaveLength(1); // supplier side only — bol's output has no SSCCs at all here
+  expect(noPac[0]).toContain('Supplier —');
+  expect(noPac[0]).toContain('3 pallet groups');
+  expect(buckets.diff.some(t => /SSCC present but no PAC segment/.test(t))).toBe(false);
+
+  const notEighteen = buckets.message.filter(t => /SSCC isn't 18 characters/.test(t));
+  expect(notEighteen).toHaveLength(1);
+  expect(notEighteen[0]).toContain('1 pallet group');
+  expect(notEighteen[0]).toContain('00000000000000000099');
+});
+
+test('both SSCC checks also fire standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'sscc-no-pac.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('SSCC present but no PAC segment');
+  await expect(page.locator('#quickOverview')).toContainText("SSCC isn't 18 characters");
+});

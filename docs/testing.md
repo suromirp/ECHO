@@ -79,6 +79,11 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: a Packing List Reference (`RFF+BM`) over 15 characters is
   flagged, per side, in both Quick check and Compare — never sent to
   Transus.
+- **DESADV**: a CPS group with an SSCC but no `PAC` segment is flagged as a
+  confirmed (per Transus support) cause of the SSCC not reaching bol, in
+  both Quick check and per-side in Compare. A 20-character SSCC (an
+  Application Identifier prefix bol's docs say not to send) is flagged too,
+  separately, at info level.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
   side with a collapsed tag list, not one finding per pallet.
 - **DESADV**: a nested `CPS` group that carries its own SSCC is marked as

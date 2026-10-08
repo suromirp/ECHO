@@ -508,6 +508,27 @@ Handling:
   supplier's own value, not a mapping question, so kept as a Message check
   (`cat:'message'`), never sent to Transus — same parity treatment (both
   Quick check and per-side in Compare) as every other check in this list.
+- **A CPS group with an SSCC (`GIN+BJ`) but no `PAC` segment loses more than
+  just the SSCC** — Transus support's own ticket reply confirmed the
+  mechanism: without `PAC`, the whole packaging unit isn't recognized, so
+  the SSCC (and the pallet structure around it) never reaches bol at all.
+  Confirmed against a real message: 9 `CPS` groups on the supplier side,
+  each with its own `GIN+BJ` but no `PAC` anywhere — bol's output collapsed
+  to one flat `CPS` with zero SSCCs, not 9 missing ones among others intact.
+  `checkMissingPacWithSscc` flags this as `cat:'message'` (the supplier's
+  own message construction, not a mapping question bol/Transus can fix on
+  their end) — `err` level, since this isn't a "might be worth a look"
+  observation, it's a confirmed cause of real data loss.
+- **The same real message also had a 20-character SSCC** (`GIN+BJ`'s value
+  started with `00`) where bol's own DESADV documentation specifies exactly
+  18 digits with no Application Identifier prefix. Flagged by
+  `checkSsccLength`, but deliberately kept at `info` rather than `warn`/`err`:
+  Transus's own diagnosis for this message named only the missing `PAC` as
+  the cause, and since that issue alone already blocks the SSCC from
+  arriving, there's no way to isolate whether the 20-character value would
+  independently cause a problem too. Worth surfacing as a documented
+  deviation from bol's own checklist, not worth alarming anyone about until
+  a message with this issue *and* a present `PAC` segment is seen.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what

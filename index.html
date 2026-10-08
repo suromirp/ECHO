@@ -2002,6 +2002,46 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
   add('err',`${label} — <strong>Packing List Reference too long</strong>: <span class="clickable-val"${jump}>${esc(ref)}</span> is ${ref.length} characters (RFF+BM) — bol's delivery pipeline rejects anything over 15, and a message like this fails to deliver entirely.`,'message');
 }
 
+// A CPS group that carries its own SSCC (GIN+BJ) but never declared itself
+// a packaging unit via PAC is a confirmed real problem, not a theoretical
+// one — Transus support's own ticket reply confirmed that without PAC, the
+// SSCC (and the pallet/package structure built around it) doesn't reach
+// bol at all, even though it's right there in the supplier's own message.
+// Confirmed against a real message: 9 CPS groups each with their own SSCC,
+// none with PAC — bol's output collapsed to one flat CPS with zero SSCCs
+// anywhere, not just the 9 missing ones. Same grouped-tag shape as
+// checkPalletStructure's other findings.
+function checkMissingPacWithSscc(facts,label,add,jumpCall){
+  if(!facts.pallets||!facts.pallets.length)return;
+  const affected=facts.pallets.filter(p=>p.sscc&&!p.hasPac);
+  if(!affected.length)return;
+  const n=affected.length;
+  const tags=affected.map(p=>{
+    const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)}</span></li>`;
+  }).join('');
+  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'} — confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+}
+
+// GIN+BJ is documented by bol as exactly 18 digits, with no Application
+// Identifier prefix (the "00" that marks it as an SSCC in a GS1-128
+// barcode). Informational only: the one real message seen with a
+// non-18-character SSCC also had the missing-PAC issue above, which
+// already blocks the SSCC from arriving on its own — so this alone hasn't
+// been independently confirmed to cause a downstream problem, only that it
+// contradicts bol's own documented checklist. Worth knowing, not alarming.
+function checkSsccLength(facts,label,add,jumpCall){
+  if(!facts.pallets||!facts.pallets.length)return;
+  const affected=facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18);
+  if(!affected.length)return;
+  const n=affected.length;
+  const tags=affected.map(p=>{
+    const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars)</span></li>`;
+  }).join('');
+  add('info',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'} — bol's own DESADV documentation specifies exactly 18 digits with no Application Identifier prefix. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+}
+
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
    Pallet EAN (package-level GIN+SRV) is supplementary, informational context —
    the bol transformation is not expected to preserve it, so its absence never
@@ -2549,6 +2589,10 @@ function compare(bol,sup){
     checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    checkMissingPacWithSscc(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkMissingPacWithSscc(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    checkSsccLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkSsccLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
@@ -4276,6 +4320,8 @@ function factsOverviewHtml(facts){
     if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
     checkPalletStructure(facts,'This message',qcAdd,jumpCall);
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
+    checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
+    checkSsccLength(facts,'This message',qcAdd,jumpCall);
   }else if(type==='ORDRSP'){
     // Grouped by which rule fired: a supplier that sends action 6 on every
     // line gets ONE block explaining that pattern with every affected item
