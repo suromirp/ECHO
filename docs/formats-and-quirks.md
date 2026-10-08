@@ -520,15 +520,19 @@ Handling:
   their end) — `err` level, since this isn't a "might be worth a look"
   observation, it's a confirmed cause of real data loss.
 - **The same real message also had a 20-character SSCC** (`GIN+BJ`'s value
-  started with `00`) where bol's own DESADV documentation specifies exactly
-  18 digits with no Application Identifier prefix. Flagged by
-  `checkSsccLength`, but deliberately kept at `info` rather than `warn`/`err`:
-  Transus's own diagnosis for this message named only the missing `PAC` as
-  the cause, and since that issue alone already blocks the SSCC from
-  arriving, there's no way to isolate whether the 20-character value would
-  independently cause a problem too. Worth surfacing as a documented
-  deviation from bol's own checklist, not worth alarming anyone about until
-  a message with this issue *and* a present `PAC` segment is seen.
+  started with `00`) where bol's own documentation specifies exactly 18
+  digits with no Application Identifier prefix. Flagged by
+  `checkSsccLength`. Started at `info`, since Transus's own diagnosis for
+  this message named only the missing `PAC` as the cause, and that issue
+  alone already blocks the SSCC from arriving — no way to isolate from this
+  one message whether the 20-character value independently causes a
+  problem too. Raised to `warn` once a second, dedicated bol page ("SSCC
+  voor EDI leveranciers") turned up stating the same rule explicitly and
+  firmly on its own ("SSCC-codes dienen zonder AI... De AI is geen
+  onderdeel van de SSCC-code") — not just a checklist bullet on a different
+  page about something else. Still not `err`: no message has confirmed a
+  downstream failure caused by the length alone, independent of the
+  missing-PAC issue.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what

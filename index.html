@@ -2025,11 +2025,14 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
 
 // GIN+BJ is documented by bol as exactly 18 digits, with no Application
 // Identifier prefix (the "00" that marks it as an SSCC in a GS1-128
-// barcode). Informational only: the one real message seen with a
-// non-18-character SSCC also had the missing-PAC issue above, which
-// already blocks the SSCC from arriving on its own — so this alone hasn't
-// been independently confirmed to cause a downstream problem, only that it
-// contradicts bol's own documented checklist. Worth knowing, not alarming.
+// barcode) — confirmed on two separate, dedicated bol pages, not just a
+// checklist bullet: the DESADV page's pre-send checklist, and "SSCC voor
+// EDI leveranciers"'s own explicit rule ("SSCC-codes dienen zonder AI... De
+// AI is geen onderdeel van de SSCC-code"). Still kept below err: the one
+// real message seen with a non-18-character SSCC also had the missing-PAC
+// issue above, which already blocks the SSCC from arriving on its own, so
+// this alone hasn't been independently confirmed to cause a downstream
+// problem — only that it violates a rule bol states firmly and repeatedly.
 function checkSsccLength(facts,label,add,jumpCall){
   if(!facts.pallets||!facts.pallets.length)return;
   const affected=facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18);
@@ -2039,7 +2042,7 @@ function checkSsccLength(facts,label,add,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars)</span></li>`;
   }).join('');
-  add('info',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'} — bol's own DESADV documentation specifies exactly 18 digits with no Application Identifier prefix. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'} — bol's own documentation (both the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits with no Application Identifier prefix. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
