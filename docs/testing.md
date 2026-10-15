@@ -117,6 +117,16 @@ actual test fixtures, don't just keep this list as prose:
   document-type field, in both Compare and Quick check — rather than
   reading every action code as "(none)" and every item as the literal
   string "EAN".
+- **DESADV (TRANSUSXML `<Messages>` dialect)**: a file with no `<?xml`
+  declaration is routed to the XML parser, not the EDIFACT one. Lines,
+  SSCCs and the `<DespatchUnitReference>` box link are read, no false
+  "no PAC segment" finding appears, and bol's order numbers shifted by one
+  line show up as per-item order-number differences. Covered in both Compare
+  and Quick check.
+- **ORDRSP/DESADV**: an all-zeros EAN is flagged. In Compare it is a
+  Transformation difference when only bol's output is zeroed, and that
+  line isn't repeated as a Bol message check. In Quick check it is a
+  standalone Message check.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

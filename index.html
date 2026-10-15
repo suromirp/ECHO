@@ -1036,7 +1036,7 @@ function parseFactsEdifact(raw){
     else if(tag==='LIN'){push();
       const gtin=splitEsc(el[3]!==undefined?el[3]:'',delims.comp,delims.rel)[0]||'';
       const action=(el[2]!==undefined&&el[2]!=='')?el[2]:null;
-      cur={lineNo:el[1]||'',action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty:{},dtm:{},orders:new Set(),art:null,desc:null,netPrice:null,__cpsRef:currentCps||null};}
+      cur={lineNo:el[1]||'',action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty:{},dtm:{},orders:new Set(),art:null,desc:null,netPrice:null,__cpsRef:currentCps||null};}
     else if(tag==='PIA'&&cur){const c=splitEsc(el[2]||'',delims.comp,delims.rel);if(c[1]==='SA')cur.art=c[0];}
     else if(tag==='PRI'&&cur){
       // PRI+AAA:28.1:CT — net price, ORDRSP's equivalent of INVOIC's own
@@ -1173,7 +1173,7 @@ function parseFactsCsvDesadv(raw){
       const orders=new Set();
       if(row[11])orders.add(row[11]);
       const gtinRaw=row[2]==='EAN'?(row[3]||''):'';
-      const line={lineNo:row[1]||'',action:null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,
+      const line={lineNo:row[1]||'',action:null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,gtinZeroed:!!(gtinRaw&&/^0+$/.test(gtinRaw)),
         qty,dtm:{},orders,art:row[2]==='EAN'?null:(row[3]||null),desc:null,__cpsRef:currentPallet};
       f.lines.push(line);
       if(currentPallet)currentPallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
@@ -1228,7 +1228,7 @@ function parseFactsCsvOrdrsp(raw){
       if(row[12])dtm['67']=row[12];
       const orders=new Set();
       const gtinRaw=row[3]==='EAN'?(row[4]||''):'';
-      f.lines.push({lineNo:row[1]||'',action:row[2]||null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,
+      f.lines.push({lineNo:row[1]||'',action:row[2]||null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,gtinZeroed:!!(gtinRaw&&/^0+$/.test(gtinRaw)),
         qty,dtm,orders,art:row[11]||null,netPrice:num(row[6]),desc:row[16]||null});
     }
     // ENV and CNT carry nothing not already covered by HDR above.
@@ -1251,7 +1251,7 @@ function parseFactsCsv(raw){
 
 function parseFactsTransusXml(raw){
   const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
-    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0};
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0,billOfLadingRef:null};
   let doc;
   try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return f;}
   if(doc.querySelector('parsererror'))return f;
@@ -1282,6 +1282,12 @@ function parseFactsTransusXml(raw){
     const name=g(node,'Name')||null;
     if(gln||name)f.parties[role]={gln,name,vat:g(node,'VATNumber')||null};
   });
+  // The <Messages><Message> (TRANSUSXML) dialect carries party GLNs as flat
+  // header fields (<SupplierGLN>, <BuyerGLN>, …) rather than nested nodes.
+  [['SupplierGLN','SU'],['BuyerGLN','BY'],['DeliveryPartyGLN','DP'],['InvoiceeGLN','IV']].forEach(([tagName,role])=>{
+    const v=gd(tagName);if(v&&!f.parties[role])f.parties[role]={gln:v,name:null,vat:null};
+  });
+  const psn=gd('PackingSlipNumber');if(psn)f.billOfLadingRef=psn;
   doc.querySelectorAll('SSCC').forEach(n=>{const v=n.textContent.trim();if(v)f.ssccs.push(v);});
   doc.querySelectorAll('OrderLine').forEach(el=>{
     const status=g(el,'Status');
@@ -1297,7 +1303,7 @@ function parseFactsTransusXml(raw){
     const c=toInt(cancelled); if(c!==null&&cancelled!=='')qty['182']=String(c);
     const action=STATUS_TO_ACTION[status]||null;
     const orders=new Set();const ol=headerOrder;if(ol)orders.add(ol);
-    f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,art,xmlStatus:status,desc:g(el,'Description')||null});
+    f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty,dtm:{},orders,art,xmlStatus:status,desc:g(el,'Description')||null});
   });
   /* DESADV variant: DespatchUnit = pallet/package (SSCC only, no package-level
      GTIN concept in this schema) and Article = item line, linked back to its
@@ -1306,8 +1312,13 @@ function parseFactsTransusXml(raw){
   if(f.msgType==='DESADV'){
     doc.querySelectorAll('DespatchUnit').forEach(du=>{
       const ln=g(du,'LineNumber');
-      const pallet={cps:ln||'',parentCps:null,palletGtin:null,sscc:g(du,'SSCC')||null,items:[]};
+      // hasPac: the PAC-segment check is EDIFACT-specific — an XML
+      // <DespatchUnit> is itself the packaging unit, never "missing" one.
+      const pallet={cps:ln||'',parentCps:null,palletGtin:null,sscc:g(du,'SSCC')||null,items:[],hasPac:true};
       if(ln)despatchUnits.set(ln,pallet);
+      // TRANSUSXML links <Article> to its unit by the unit's own
+      // <DespatchUnitReference> (e.g. "85871"), not its LineNumber.
+      const dur=g(du,'DespatchUnitReference');if(dur&&!despatchUnits.has(dur))despatchUnits.set(dur,pallet);
       f.pallets.push(pallet);
     });
     doc.querySelectorAll('Article').forEach(el=>{
@@ -1317,7 +1328,8 @@ function parseFactsTransusXml(raw){
       const qty={};
       const d=toInt(delivered);if(d!==null)qty['12']=String(d);
       const orders=new Set();const ob=g(el,'OrderNumberBuyer');if(ob)orders.add(ob);
-      const line={lineNo:g(el,'LineNumber'),action:null,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,art:null,desc:g(el,'Description')||null};
+      const line={lineNo:g(el,'LineNumber'),action:null,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty,dtm:{},orders,
+        art:g(el,'ArticleCodeSupplier')||null,desc:g(el,'ArticleDescription')||g(el,'Description')||null};
       const pallet=despatchUnits.get(g(el,'DespatchUnitReference'))||null;
       line.__cpsRef=pallet;
       if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
@@ -1370,7 +1382,7 @@ function parseFactsTransusXml(raw){
       // conversion needed here (unlike this dialect's ArticleNetPrice
       // usage for INVOIC, which divides by ArticleQuantityPerPriceUnit —
       // not present in this ORDRSP flavour).
-      f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,qty,dtm:{},orders,
+      f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty,dtm:{},orders,
         art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,netPrice:num(g(el,'ArticleNetPrice')),
         desc:g(el,'ArticleDescription')||g(el,'Description')||null});
     });
@@ -1380,7 +1392,10 @@ function parseFactsTransusXml(raw){
 
 function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
-  if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return parseFactsTransusXml(raw);
+  // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
+  // DESADV (<Messages><Message>, no <?xml declaration) used to fall through
+  // to the EDIFACT parser here and silently produce zero lines.
+  if(head.startsWith('<')) return parseFactsTransusXml(raw);
   if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
   return parseFactsEdifact(raw);
 }
@@ -1410,7 +1425,7 @@ function splitEdifactMessages(raw){
    as one message. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
-  if(head.startsWith('<?xml')||/<Orders?>/.test(head.slice(0,400))) return [parseFactsTransusXml(raw)];
+  if(head.startsWith('<')) return [parseFactsTransusXml(raw)];
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
@@ -1848,6 +1863,45 @@ function checkSplitItemPriceGap(facts,label,add){
     const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
     add('warn',`${label} — item <code>${esc(ref.art||ref.gtin||'?')}</code> appears on ${lines.length} lines in this message (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price (present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}) — worth checking whether the price should be there on every occurrence of this item.`,'message');
   });
+}
+
+/* An EAN made up entirely of zeros (e.g. LIN+1++0000000000000:EN) carries
+   no item identity at all. The parsers normalize it to '' so it never
+   becomes a phantom match key (docs/matching.md), and the identifier
+   cascade can still pair such lines via article code or SSCC — which made
+   a fully-zeroed message read as a clean "Match" with nothing said. A real
+   bol DESADV output had every LIN zeroed while the supplier's own message
+   carried valid EANs on every line. Single-message observation, so it runs
+   standalone in Quick check and per side in Compare (parity rule); in
+   Compare, zeros only in bol's output while the supplier sent a real EAN on
+   the same line number is a transformation question instead
+   (compareZeroGtin). */
+function checkZeroGtin(facts,label,add,jumpCall,skip){
+  const affected=facts.lines.filter(l=>l.gtinZeroed&&!(skip&&skip.has(l)));
+  if(!affected.length)return;
+  const n=affected.length;
+  const tags=affected.map(l=>{
+    const lbl='Line '+(l.lineNo||'?')+(l.art?' · '+l.art:'');
+    const jump=jumpCall?` onclick="${jumpCall('LIN+'+(l.lineNo||''))}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(lbl)}</span></li>`;
+  }).join('');
+  add('warn',`${label} — <strong>EAN is all zeros</strong> on ${n} line${n===1?'':'s'} — these lines carry no usable EAN, so the item can't be identified by EAN downstream. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+}
+function compareZeroGtin(sup,bol,add){
+  const supByLine=new Map();
+  sup.lines.forEach(l=>{if(l.lineNo&&!supByLine.has(l.lineNo))supByLine.set(l.lineNo,l);});
+  const pairs=[];
+  bol.lines.forEach(l=>{
+    if(!l.gtinZeroed)return;
+    const s=supByLine.get(l.lineNo);
+    if(s&&s.gtin)pairs.push([l,s]);
+  });
+  if(pairs.length){
+    const n=pairs.length;
+    const tags=pairs.map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo)} · ${esc(s.gtin)}</span></li>`).join('');
+    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'} — the supplier sent a real EAN on ${n===1?'this line':'these lines'}, but bol's output carries 0000000000000 instead. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'diff');
+  }
+  return new Set(pairs.map(p=>p[0]));
 }
 
 /* A DTM qualifier code (e.g. 67 delivery date, 69 despatch date) appearing
@@ -2644,6 +2698,9 @@ function compare(bol,sup){
   // shared by ORDRSP and DESADV (same underlying parser), so checked for
   // both, per side.
   if(type==='ORDRSP'||type==='DESADV'){
+    checkZeroGtin(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    const bolZeroExplained=compareZeroGtin(sup,bol,add);
+    checkZeroGtin(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,bolZeroExplained);
     checkDtmDuplicateQualifier(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkDtmDuplicateQualifier(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
   }
@@ -4344,6 +4401,7 @@ function factsOverviewHtml(facts){
     checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
   if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
+  if(type==='ORDRSP'||type==='DESADV')checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
   if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;

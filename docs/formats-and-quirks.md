@@ -102,6 +102,31 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     had mapped correctly look like it had a quantity difference, an
     action mismatch, *and* a missing price — three ECHO-side reading
     gaps stacked on one line, not three real mapping problems.
+- **This dialect's DESADV variant** (`MessageType` 6, `<DespatchUnit>`
+  boxes/pallets with an `<SSCC>`, `<Article>` lines) has its own confirmed
+  quirks:
+  - **No `<?xml` declaration** — the file starts straight at `<Messages>`.
+    `parseFacts`/`parseFactsList` used to route only `<?xml`/`<Order(s)>`
+    starts to the XML parser, so this went to the EDIFACT parser and
+    produced zero supplier lines (every item "missing from the supplier
+    message", every SSCC "only in bol's output"). Any leading `<` now means
+    XML.
+  - **`<Article>` links to its unit by the unit's own
+    `<DespatchUnitReference>`** (e.g. `85871`), not by the unit's
+    `<LineNumber>`. Both are indexed now.
+  - **Party GLNs are flat header fields** (`<SupplierGLN>`, `<BuyerGLN>`,
+    `<DeliveryPartyGLN>`), and `<PackingSlipNumber>` is the packing
+    reference (bol's `RFF+BM`).
+  - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
+    EDIFACT "SSCC present but no PAC segment" check must never fire on it.
+  - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after
+    `<DespatchUnitReference>`). In one real message, bol's EDIFACT output
+    carried each line's order number one line late (line *n* got line
+    *n−1*'s order) on every line where the order changed. The duplicate
+    element is the likely trigger in Transus's mapping, unconfirmed. Once
+    the dialect was parsed, ECHO's ordinary per-item order-number comparison
+    surfaced this; in the same message bol's output also put every `LIN`
+    under the last box and nested the other boxes under the first one.
 
 ### 3. Exact Online raw export
 
@@ -215,6 +240,15 @@ Handling:
   is often the fastest way to see what the retry actually changed.
 
 ## Confirmed EDIFACT / qualifier-code quirks (real production data)
+
+- **An all-zeros EAN (`LIN+1++0000000000000:EN`) in bol's DESADV output**
+  while the supplier sent a valid, check-digit-correct EAN on every line.
+  Confirmed in a real message where all 5 lines were zeroed. The cause is
+  still unknown (no Transus explanation yet). Because the identifier cascade
+  (`docs/matching.md`) still paired the lines via SSCC, ECHO used to show a
+  clean "Match" here. It's now flagged: as a Transformation difference when
+  only bol's output is zeroed (paired by line number), and as a per-side
+  Message check (both modes) otherwise.
 
 - **MOA qualifiers for "payable"**: `9` (Amount due) is common; `77`
   (Invoice amount) is a real, valid alternative some suppliers use for the
