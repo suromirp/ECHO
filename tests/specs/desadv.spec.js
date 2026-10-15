@@ -503,3 +503,44 @@ test('an all-zeros EAN is flagged standalone in Quick check', async ({ page }) =
   await expect(page.locator('#quickOverview')).toBeVisible();
   await expect(page.locator('body')).toContainText('EAN is all zeros');
 });
+
+// EANCOM's consignment level: a top-level CPS+1 with a summary PAC
+// ("2 pallets") followed by the pallets themselves, each with an SSCC.
+// Real Red Bull/Perfetti messages with exactly this shape were wrongly
+// flagged as "No SSCC at pallet level" on CPS 1.
+test('a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'consignment-summary-cps.edi'),
+    path.join(FIX, 'consignment-summary-cps.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.some(t => /No SSCC at pallet level/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'consignment-summary-cps.edi'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('No SSCC at pallet level');
+});
+
+// Real Perfetti DESADV: two lines on one pallet, both EANs replaced by zeros
+// in bol's output. The SSCC fallback can't tell two items on one pallet
+// apart, so this used to add "Item ?" / "K:?" knock-on differences next to
+// the real finding. Same-line-number pairing (unambiguous: same line
+// numbers, same SSCC) now matches them; the zeroing itself is still flagged.
+test('several zeroed EANs on one pallet are flagged once, without knock-on "Item ?" differences', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'zero-ean-shared-pallet.sup.edi'),
+    path.join(FIX, 'zero-ean-shared-pallet.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /EAN replaced by zeros in bol's output on 2 lines/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Item \?|K:\?|missing from the supplier message/.test(t))).toBe(false);
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).not.toMatch(/QUANTITIES\s*Difference/i);
+});

@@ -986,7 +986,7 @@ function parseFactsEdifact(raw){
         delete cur.__dtmSeen;
       }
       f.lines.push(cur);
-      if(cur.__cpsRef)cur.__cpsRef.items.push({lineNo:cur.lineNo,gtin:cur.gtin,art:cur.art,qty:cur.qty,action:cur.action});
+      if(cur.__cpsRef)cur.__cpsRef.items.push({lineNo:cur.lineNo,gtin:cur.gtin,art:cur.art,qty:cur.qty,action:cur.action,__line:cur});
     }
   };
   let lastParty=null;
@@ -1176,7 +1176,7 @@ function parseFactsCsvDesadv(raw){
       const line={lineNo:row[1]||'',action:null,gtin:(gtinRaw&&/^0+$/.test(gtinRaw))?'':gtinRaw,gtinZeroed:!!(gtinRaw&&/^0+$/.test(gtinRaw)),
         qty,dtm:{},orders,art:row[2]==='EAN'?null:(row[3]||null),desc:null,__cpsRef:currentPallet};
       f.lines.push(line);
-      if(currentPallet)currentPallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
+      if(currentPallet)currentPallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
     }
     // ENV and CNT carry nothing not already covered by HDR/PAC above.
   });
@@ -1332,7 +1332,7 @@ function parseFactsTransusXml(raw){
         art:g(el,'ArticleCodeSupplier')||null,desc:g(el,'ArticleDescription')||g(el,'Description')||null};
       const pallet=despatchUnits.get(g(el,'DespatchUnitReference'))||null;
       line.__cpsRef=pallet;
-      if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null});
+      if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
       f.lines.push(line);
     });
   }else if(f.msgType==='ORDRSP'&&!doc.querySelector('OrderLine')){
@@ -1484,9 +1484,35 @@ function buildKeyResolver(bol,sup){
       if(sp&&bp.items&&sp.items&&bp.items.length===1&&sp.items.length===1)ssccSingleItemMatch.add(sscc);
     });
   }
+  // A bol line whose EAN was replaced by zeros (and that has no article
+  // code) borrows the supplier's EAN from the line with the same line
+  // number — only when that pairing is unambiguous: the same number of
+  // lines on both sides, the same unique set of line numbers, and (when
+  // both lines sit on a pallet with an SSCC) the same SSCC. The zeroing
+  // itself is still reported (compareZeroGtin); this only stops it from
+  // also producing "Item ?" / "K:?" knock-on differences when several
+  // zeroed lines share one pallet, where the SSCC fallback can't help.
+  const zeroBorrow=new Map();
+  {
+    const nums=ls=>ls.map(l=>l.lineNo||'');
+    const bn=nums(bol.lines),sn=nums(sup.lines);
+    const uniq=a=>a.every(v=>v)&&new Set(a).size===a.length;
+    if(bn.length===sn.length&&uniq(bn)&&uniq(sn)&&bn.slice().sort().join('|')===sn.slice().sort().join('|')){
+      const supByLine=new Map(sup.lines.map(l=>[l.lineNo,l]));
+      bol.lines.forEach(l=>{
+        if(!l.gtinZeroed||l.art)return;
+        const s=supByLine.get(l.lineNo);
+        if(!s||!s.gtin)return;
+        const bs=l.__cpsRef&&l.__cpsRef.sscc,ss=s.__cpsRef&&s.__cpsRef.sscc;
+        if(bs&&ss&&bs!==ss)return;
+        zeroBorrow.set(l,s.gtin);
+      });
+    }
+  }
   return function key(l){
     const art=(l.art&&l.art.trim())?l.art:null;
-    const gtin=(l.gtin&&l.gtin.trim())?normalizeGtin(l.gtin):null;
+    const borrowed=zeroBorrow.get(l.__line||l);
+    const gtin=borrowed?normalizeGtin(borrowed):(l.gtin&&l.gtin.trim())?normalizeGtin(l.gtin):null;
     // When NEITHER identifier is reliable across the whole message, the
     // pallet fallback takes priority over even a real GTIN/article code on
     // THIS one line — otherwise the supplier's line (which may still carry
@@ -1999,8 +2025,14 @@ function checkPalletStructure(facts,label,add,jumpCall){
     return (byParentCps.get(p.cps)||[]).some(c=>hasItemsBeneath(c,seen));
   };
   const hasNestedSscc=p=>(byParentCps.get(p.cps)||[]).some(c=>c.sscc);
+  // A top-level CPS (no parent) is the consignment level in EANCOM, even
+  // when it carries a summary PAC (e.g. CPS+1 / PAC+5++201 = "5 pallets in
+  // this shipment", followed by CPS+2+1 … CPS+6+1 each with its own SSCC).
+  // Flagging that read a textbook structure as a missing pallet SSCC on
+  // real Red Bull and Perfetti messages; the confirmed real case this check
+  // exists for had its SSCC-less pallet one level down, under a bare root.
   const wrapperNoSscc=facts.pallets.filter(p=>
-    p.hasPac&&!palletIsNested(p,byCps)&&!p.sscc&&hasItemsBeneath(p)&&hasNestedSscc(p));
+    p.parentCps&&p.hasPac&&!palletIsNested(p,byCps)&&!p.sscc&&hasItemsBeneath(p)&&hasNestedSscc(p));
   if(wrapperNoSscc.length){
     const n=wrapperNoSscc.length;
     add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'it wraps':'each wraps'} nested package(s) that do carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, not on nested packages beneath it, so this pallet effectively has no usable SSCC — worth confirming with whoever generates this feed that the top-level GIN+BJ isn't being dropped. ${bodyFor(wrapperNoSscc)}`,'message');

@@ -248,7 +248,15 @@ Handling:
   (`docs/matching.md`) still paired the lines via SSCC, ECHO used to show a
   clean "Match" here. It's now flagged: as a Transformation difference when
   only bol's output is zeroed (paired by line number), and as a per-side
-  Message check (both modes) otherwise.
+  Message check (both modes) otherwise. Seen again on a Perfetti DESADV
+  (2 lines, same pallet). Both messages carried a batch number per line
+  (`GIN+BX` / `PIA+1+…:NB`); messages without one kept their EANs. That
+  is a pattern from two cases, not a confirmed cause.
+- **A top-level `CPS` with a summary `PAC`** (`CPS+1'PAC+5++201'` = "5
+  pallets in this shipment", then `CPS+2+1` … each pallet with its own
+  SSCC) is EANCOM's consignment level, not a pallet missing its SSCC. The
+  "No SSCC at pallet level" check used to fire on it (real Red Bull and
+  Perfetti messages); it now only considers a `CPS` that has a parent.
 
 - **MOA qualifiers for "payable"**: `9` (Amount due) is common; `77`
   (Invoice amount) is a real, valid alternative some suppliers use for the
