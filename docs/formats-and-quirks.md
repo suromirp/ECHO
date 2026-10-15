@@ -250,9 +250,12 @@ Handling:
   clean "Match" here. It's now flagged: as a Transformation difference when
   only bol's output is zeroed (paired by line number), and as a per-side
   Message check (both modes) otherwise. Seen again on a Supplier Alfa DESADV
-  (2 lines, same pallet). Both messages carried a batch number per line
-  (`GIN+BX` / `PIA+1+…:NB`); messages without one kept their EANs. That
-  is a pattern from two cases, not a confirmed cause.
+  (2 lines, same pallet), also confirmed and fixed by Transus in that
+  supplier's DESADV data source. The same fix corrected `DespatchDate` and
+  `RequestedDeliveryDate`: bol's `DTM+11`/`DTM+132` showed 8/9 Oct while the
+  supplier sent 12 Oct. ECHO doesn't compare those dates yet. Both
+  suppliers happened to send a batch number per line, but Transus traced
+  each case to a per-supplier setting, not to the batch number.
 - **A top-level `CPS` with a summary `PAC`** (`CPS+1'PAC+5++201'` = "5
   pallets in this shipment", then `CPS+2+1` … each pallet with its own
   SSCC) is EANCOM's consignment level, not a pallet missing its SSCC. The
