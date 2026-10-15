@@ -126,7 +126,11 @@ actual test fixtures, don't just keep this list as prose:
 - **ORDRSP/DESADV**: an all-zeros EAN is flagged. In Compare it is a
   Transformation difference when only bol's output is zeroed, and that
   line isn't repeated as a Bol message check. In Quick check it is a
-  standalone Message check.
+  standalone Message check. Several zeroed lines on one pallet are paired
+  by line number, so there is no knock-on "Item ?" difference.
+- **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
+  by pallets that each carry an SSCC) is never flagged as "No SSCC at
+  pallet level", in either mode.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable

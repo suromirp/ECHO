@@ -67,6 +67,8 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | ORDRSP | the same CSV dialect's ORDRSP variant is routed to its own parser (by the HDR record's doc-type field), not misread as DESADV | `ordrsp/csv-dialect.sup.ORD`, `ordrsp/csv-dialect.bol.edi` | `specs/ordrsp.spec.js` |
 | DESADV | a TRANSUSXML DESADV with no `<?xml` declaration is parsed as XML (not EDIFACT), linked to its boxes by `DespatchUnitReference`, and bol's one-line-late order numbers surface as order-number differences | `desadv/transusxml-messages.sup.xml`, `desadv/transusxml-messages.bol.edi` | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | an all-zeros EAN in bol's output, where the supplier sent a real one, is flagged as a Transformation difference; standalone Message check in Quick check | `desadv/sscc-single-item-fallback.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | several zeroed EANs on one pallet flagged once, paired by line number, with no "Item ?" knock-on differences | `desadv/zero-ean-shared-pallet.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |

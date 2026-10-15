@@ -34,6 +34,15 @@ GTIN," not as a valid key of its own — otherwise every blanked line in a
 message collapses into one phantom aggregate item (they'd all share the
 same normalized-to-a-numeral key).
 
+A bol line whose EAN was replaced by zeros (and that has no article code)
+borrows the supplier's EAN from the line with the same line number, but
+only when that pairing is unambiguous: same number of lines on both sides,
+same unique set of line numbers, and the same SSCC when both sit on one.
+This is positional pairing on an identical line-number set, not similarity
+matching. Without it, several zeroed lines on one pallet (where the SSCC
+fallback can't help) produced "Item ?" knock-on differences next to the
+real "EAN replaced by zeros" finding, which is still reported.
+
 ## Charge/line matching
 
 Match a line-level charge to its line by the line's **GTIN**, not by the
