@@ -243,8 +243,9 @@ Handling:
 
 - **An all-zeros EAN (`LIN+1++0000000000000:EN`) in bol's DESADV output**
   while the supplier sent a valid, check-digit-correct EAN on every line.
-  Confirmed in a real message where all 5 lines were zeroed. The cause is
-  still unknown (no Transus explanation yet). Because the identifier cascade
+  Confirmed in a real message where all 5 lines were zeroed; Transus
+  confirmed it was a setting error on their side for that supplier (Red
+  Bull), so a real Transformation difference, not structural. Because the identifier cascade
   (`docs/matching.md`) still paired the lines via SSCC, ECHO used to show a
   clean "Match" here. It's now flagged: as a Transformation difference when
   only bol's output is zeroed (paired by line number), and as a per-side
