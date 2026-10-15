@@ -443,3 +443,63 @@ test('both SSCC checks also fire standalone in Quick check', async ({ page }) =>
   await expect(page.locator('#quickOverview')).toContainText('SSCC present but no PAC segment');
   await expect(page.locator('#quickOverview')).toContainText("SSCC isn't 18 characters");
 });
+
+// A real TRANSUSXML DESADV (<Messages><Message>, no <?xml declaration) was
+// routed to the EDIFACT parser and showed 0 supplier lines, so every item
+// read as "missing from the supplier message". Once parsed, the real issue
+// underneath surfaced: bol's output carried each line's order number one
+// line late (line n got line n-1's order). Fixture reproduces both.
+test('a TRANSUSXML DESADV without an <?xml declaration is parsed, and shifted order numbers are flagged', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-messages.sup.xml'),
+    path.join(FIX, 'transusxml-messages.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Transus XML');
+  expect(resultsText).toContain('3/3');
+  expect(resultsText).not.toMatch(/is present in the .* but .* missing/);
+
+  const buckets = await findingsByCategory(page);
+  // An XML DespatchUnit has no PAC segment by design — never flagged for it.
+  expect(buckets.message.some(t => /no PAC segment/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /ART-B: order numbers differ/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /ART-C: order numbers differ/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /ART-A: order numbers differ/.test(t))).toBe(false);
+});
+
+test('a TRANSUSXML DESADV without an <?xml declaration is read in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'transusxml-messages.sup.xml'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('9100002');
+  expect(overviewText).toContain('387000000000000028');
+});
+
+// A real bol DESADV output had every LIN's EAN replaced by 0000000000000
+// while the supplier sent a valid EAN on every line. The SSCC fallback
+// still paired the lines, so ECHO showed a clean "Match" and said nothing.
+test('an EAN replaced by zeros in bol\'s output is flagged as a transformation difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'sscc-single-item-fallback.sup.edi'),
+    path.join(FIX, 'sscc-single-item-fallback.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /EAN replaced by zeros in bol's output/.test(t) && t.includes('9999999999999'))).toBe(true);
+  // Already explained by the diff finding — not repeated as a Bol message check.
+  expect(buckets.message.some(t => /Bol — EAN is all zeros/.test(t))).toBe(false);
+});
+
+test('an all-zeros EAN is flagged standalone in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'sscc-single-item-fallback.bol.edi'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('body')).toContainText('EAN is all zeros');
+});
