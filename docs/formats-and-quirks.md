@@ -254,8 +254,9 @@ Handling:
   supplier's DESADV data source. The same fix corrected `DespatchDate` and
   `RequestedDeliveryDate`: bol's `DTM+11`/`DTM+132` showed 8/9 Oct while the
   supplier sent 12 Oct. ECHO doesn't compare those dates yet. Both
-  suppliers happened to send a batch number per line, but Transus traced
-  each case to a per-supplier setting, not to the batch number.
+  suppliers happened to send a batch number per line. Transus fixed each
+  case in that supplier's own data source and didn't say whether the batch
+  number played a role.
 - **A top-level `CPS` with a summary `PAC`** (`CPS+1'PAC+5++201'` = "5
   pallets in this shipment", then `CPS+2+1` … each pallet with its own
   SSCC) is EANCOM's consignment level, not a pallet missing its SSCC. The
