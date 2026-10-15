@@ -1093,6 +1093,10 @@ function parseFactsEdifact(raw){
     });
   }
   if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
+  // DTM+132 is the expected arrival date per bol's own DESADV page, and
+  // the one bol's output always carries; 17/2 are older supplier-side
+  // equivalents. Prefer 132 when present so both sides compare like for like.
+  if(f.headerDtm['132'])f.arrivalDate=f.headerDtm['132'];
   if(f.docDate)f.docDate=normDate(f.docDate);
   if(f.arrivalDate)f.arrivalDate=normDate(f.arrivalDate);
   if(f.despatchDate)f.despatchDate=normDate(f.despatchDate);
@@ -1925,7 +1929,7 @@ function compareZeroGtin(sup,bol,add){
   if(pairs.length){
     const n=pairs.length;
     const tags=pairs.map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo)} · ${esc(s.gtin)}</span></li>`).join('');
-    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'} — the supplier sent a real EAN on ${n===1?'this line':'these lines'}, but bol's output carries 0000000000000 instead. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'diff');
+    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}: the supplier sent a valid EAN, but bol's output says 0000000000000, so bol can't tell which item ${n===1?'this is':'these are'}. Shown below as line · the supplier's EAN. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'diff');
   }
   return new Set(pairs.map(p=>p[0]));
 }
@@ -2107,6 +2111,20 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)}</span></li>`;
   }).join('');
   add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'} — confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+}
+
+/* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
+   across sides. A real Perfetti DESADV sent 12 Oct for both; bol's output
+   said 8 and 9 Oct. Transus confirmed a wrong mapping in that supplier's
+   data source and fixed it. Only compared when both sides state the date:
+   a date missing on one side is structural (formats differ in what they
+   carry), not a difference. */
+function compareDesadvDates(sup,bol,add){
+  [['despatchDate','Despatch date','DTM+11'],['arrivalDate','Expected delivery date','DTM+132']].forEach(([k,label,seg])=>{
+    const s=sup[k],b=bol[k];
+    if(!s||!b||s===b)return;
+    add('warn',`<strong>${label} changed</strong>: the supplier sent <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span>, but bol's output says <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span> (${seg}). Worth checking with Transus.`,'diff');
+  });
 }
 
 // GIN+BJ is documented by bol as exactly 18 digits, with no Application
@@ -2678,6 +2696,7 @@ function compare(bol,sup){
     checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    compareDesadvDates(sup,bol,add);
     checkMissingPacWithSscc(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkMissingPacWithSscc(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkSsccLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
