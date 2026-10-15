@@ -253,7 +253,10 @@ Handling:
   (2 lines, same pallet), also confirmed and fixed by Transus in that
   supplier's DESADV data source. The same fix corrected `DespatchDate` and
   `RequestedDeliveryDate`: bol's `DTM+11`/`DTM+132` showed 8/9 Oct while the
-  supplier sent 12 Oct. ECHO doesn't compare those dates yet. Both
+  supplier sent 12 Oct. ECHO now compares both (`compareDesadvDates`,
+  Compare-only since it needs two messages) when both sides state them. The
+  arrival date prefers `DTM+132` (bol's documented expected-arrival
+  qualifier) over `17`/`2`. Both
   suppliers happened to send a batch number per line. Transus fixed each
   case in that supplier's own data source and didn't say whether the batch
   number played a role.

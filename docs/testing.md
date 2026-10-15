@@ -128,6 +128,9 @@ actual test fixtures, don't just keep this list as prose:
   line isn't repeated as a Bol message check. In Quick check it is a
   standalone Message check. Several zeroed lines on one pallet are paired
   by line number, so there is no knock-on "Item ?" difference.
+- **DESADV**: a changed despatch date (`DTM+11`) or expected delivery date
+  (`DTM+132`) between supplier and bol is a Transformation difference.
+  Identical dates are never flagged. This check is Compare-only.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
   by pallets that each carry an SSCC) is never flagged as "No SSCC at
   pallet level", in either mode.

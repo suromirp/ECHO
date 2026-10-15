@@ -544,3 +544,30 @@ test('several zeroed EANs on one pallet are flagged once, without knock-on "Item
   const resultsText = await page.locator('#results').innerText();
   expect(resultsText).not.toMatch(/QUANTITIES\s*Difference/i);
 });
+
+// Real Supplier Alfa DESADV: the supplier sent 12 Jan-style dates for DTM+11 and
+// DTM+132, bol's output said 8 and 9 (Transus confirmed a wrong mapping).
+// ECHO didn't compare these dates at all; now a Transformation difference.
+test('a changed despatch date or expected delivery date is flagged as a transformation difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'date-shift.sup.edi'),
+    path.join(FIX, 'date-shift.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /Despatch date changed/.test(t) && /DTM\+11/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Expected delivery date changed/.test(t) && /DTM\+132/.test(t))).toBe(true);
+});
+
+test('identical dates on both sides are not flagged', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'date-shift.bol.edi'),
+    path.join(FIX, 'date-shift.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#findings')).not.toContainText('date changed');
+});
