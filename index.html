@@ -1674,6 +1674,43 @@ function taxIssueFindings(taxIssues){
     return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong>: ${g.refs.map(esc).join(', ')}.`+moreInfo(`EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one.`);
   });
 }
+/* GS1 check digit (mod 10, weights 3/1 from the right) for GTIN-8/12/13/14
+   and SSCC-18. A real Red Bull DESADV carried SSCC 287142544291779407,
+   whose last digit doesn't match its check digit; ECHO said nothing. Only
+   numeric codes of a GS1 length are checked: other lengths have their own
+   findings (SSCC length) or aren't GS1 codes at all. All-zero GTINs are
+   reported separately (checkZeroGtin). Single-message observation, so both
+   modes and every message type (parity rule). */
+function gs1CheckDigitOk(code){
+  const d=String(code).split('').map(Number);
+  let s=0;for(let i=d.length-2,w=3;i>=0;i--,w=w===3?1:3)s+=d[i]*w;
+  return (10-s%10)%10===d[d.length-1];
+}
+function gs1CheckDigitIssues(gtins,ssccs){
+  const bad=[];const seen=new Set();
+  (gtins||[]).forEach(g=>{
+    if(!g||!/^\d+$/.test(g)||![8,12,13,14].includes(g.length)||/^0+$/.test(g)||seen.has(g))return;
+    seen.add(g);if(!gs1CheckDigitOk(g))bad.push({kind:'EAN',code:g});
+  });
+  (ssccs||[]).forEach(s=>{
+    if(!s||!/^\d{18}$/.test(s)||seen.has(s))return;
+    seen.add(s);if(!gs1CheckDigitOk(s))bad.push({kind:'SSCC',code:s});
+  });
+  return bad;
+}
+function gs1CheckDigitFinding(bad,jumpCall){
+  if(!bad.length)return null;
+  const n=bad.length;
+  const tags=bad.map(b=>{
+    const jump=jumpCall?` onclick="${jumpCall(b.code)}"`:'';
+    return `<li><span class="clickable-val"${jump}>${b.kind} ${esc(b.code)}</span></li>`;
+  }).join('');
+  return `<strong>Check digit doesn't match</strong> on ${n} code${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Under the GS1 standard the last digit of an EAN/GTIN and of an SSCC is a check digit calculated from the other digits. For ${n===1?'this code':'these codes'} it doesn't match, which usually means a typo or a digit dropped or swapped somewhere upstream. A scanner or receiving system can reject such a code or match it to nothing.`);
+}
+function factsGs1Finding(facts,jumpCall){
+  return gs1CheckDigitFinding(gs1CheckDigitIssues(facts.lines.map(l=>l.gtin),(facts.pallets||[]).map(p=>p.sscc).concat(facts.ssccs||[])),jumpCall);
+}
+
 /* Groups {ref,code} entries from the IMD-description illegal-XML-character
    check into one block — same one-explanation-many-refs shape as
    taxIssueFindings above. Grouped by nothing more specific than "this
@@ -2489,7 +2526,9 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     filterUI=`${toggleHtml}<div class="note-inline pallet-block-note">${noteTxt}</div>`;
   }
   const hierarchyIntro=nestedCount?`<p class="panel-intro" style="margin-top:-4px">${total} entries here — ${total-nestedCount} top-level pallet${total-nestedCount===1?'':'s'}, ${nestedCount} nested unit${nestedCount===1?'':'s'} that carry their own SSCC (marked "nested under" below), not ${total} independent pallets.</p>`:'';
-  return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${total})</div>${hierarchyIntro}<div class="pallet-block">${filterUI}<div class="pallet-list">${blocks}</div></div>`;
+  const distinctSscc=new Set(relevant.map(p=>p.sscc).filter(Boolean)).size;
+  const countTxt=distinctSscc&&distinctSscc<total?`${total} groups, ${distinctSscc} SSCC${distinctSscc===1?'':'s'}`:`${total}`;
+  return `<div class="sec-h">${esc(label)} — pallet / SSCC overview (${countTxt})</div>${hierarchyIntro}<div class="pallet-block">${filterUI}<div class="pallet-list">${blocks}</div></div>`;
 }
 
 /* =====================================================================
@@ -2808,6 +2847,8 @@ function compare(bol,sup){
   // both, per side.
   if(type==='ORDRSP'||type==='DESADV'){
     checkZeroGtin(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    {const fs=factsGs1Finding(sup,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);if(fs)add('warn','Supplier — '+fs,'message');
+     const fb=factsGs1Finding(bol,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);if(fb)add('warn','Bol — '+fb,'message');}
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     checkZeroGtin(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,bolZeroExplained);
     checkDtmDuplicateQualifier(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
@@ -2883,7 +2924,7 @@ function compare(bol,sup){
   if(!findings.some(f=>f.level==='err'||f.level==='warn'))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,
-    stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:bol.ssccs.length,ssccSup:sup.ssccs.length,
+    stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
       qtyMatch:!anyQtyDiff&&!anyMissing,actionMatch:type==='ORDRSP'?(!anyActionDiff&&!anyMissing):null},
     fmtBol:bol.format,fmtSup:sup.format};
 }
@@ -3960,6 +4001,8 @@ function compareInvoice(sup,bol){
   if(bol.taxRateEncodingMismatch)add('warn',`Bol — ${taxRateEncodingMismatchText()}`,'message');
   illegalDescCharFindings(sup.illegalDescChars).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
   illegalDescCharFindings(bol.illegalDescChars).forEach(t=>add('warn',`Bol — ${t}`,'message'));
+  {const fs=gs1CheckDigitFinding(gs1CheckDigitIssues(sup.lines.map(l=>l.gtin),[]));if(fs)add('warn','Supplier — '+fs,'message');
+   const fb=gs1CheckDigitFinding(gs1CheckDigitIssues(bol.lines.map(l=>l.gtin),[]));if(fb)add('warn','Bol — '+fb,'message');}
 
   /* ---- header ---- */
   const hdr=[];
@@ -4360,6 +4403,7 @@ function invoiceOverviewHtml(inv,opts={}){
   illegalDescCharFindings(inv.illegalDescChars).forEach(t=>{
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
   });
+  {const f=gs1CheckDigitFinding(gs1CheckDigitIssues(inv.lines.map(l=>l.gtin),[]));if(f)h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${f}</div>`;}
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -4512,6 +4556,7 @@ function factsOverviewHtml(facts){
   }
   if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkZeroGtin(facts,'This message',qcAdd,jumpCall);
+  if(type==='ORDRSP'||type==='DESADV'){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
   if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;
@@ -4571,7 +4616,9 @@ function factsOverviewHtml(facts){
     else if(!facts.docNumber&&!facts.billOfLadingRef)f.push(fieldHtml('Packing reference(s)','Not found in this message',null,false));
   }
   f.push(fieldHtml('Number of lines',facts.lines.length||null));
-  if(facts.ssccs&&facts.ssccs.length)f.push(fieldHtml("Number of SSCCs",facts.ssccs.length));
+  // Distinct SSCCs: a message can repeat one SSCC across several CPS groups
+  // (one group per article), which is still one pallet.
+  if(facts.ssccs&&facts.ssccs.length)f.push(fieldHtml("Number of SSCCs",new Set(facts.ssccs).size));
   const fh=f.filter(Boolean).join('');
   if(fh)h+=`<div class="fields">${fh}</div>`;
 
@@ -4673,7 +4720,7 @@ function factsOverviewHtml(facts){
   if(facts.pallets&&facts.pallets.length){
     h+=palletOverviewHtml('This message',facts,null);
   }else if(facts.ssccs&&facts.ssccs.length){
-    h+=`<div class="sec-h">SSCCs / packages (${facts.ssccs.length})</div>`;
+    h+=`<div class="sec-h">SSCCs / packages (${new Set(facts.ssccs).size})</div>`;
     h+=`<div class="inv-scroll"><table class="inv"><tr><th>#</th><th>SSCC</th></tr>`;
     h+=facts.ssccs.map((s,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span></td></tr>`).join('');
     h+=`</table></div>`;
@@ -5099,8 +5146,8 @@ function renderPalletFilter(){
     note.innerHTML=q?`No pallets match "${searchEl.value.trim()}".`:`All ${totalDets} pallets match — nothing to review here. Toggle off to see them all.`;
   }else if(totalHidden>0){
     note.innerHTML=q
-      ?`Showing ${totalDets-totalHidden} of ${totalDets} pallets matching "${searchEl.value.trim()}".`
-      :`Showing ${totalDets-totalHidden} of ${totalDets} pallets (${totalHidden} matching pallet${totalHidden===1?'':'s'} hidden).`;
+      ?`Showing ${totalDets-totalHidden} of ${totalDets} groups matching "${searchEl.value.trim()}".`
+      :`Showing ${totalDets-totalHidden} of ${totalDets} groups (${totalHidden} matching group${totalHidden===1?'':'s'} hidden).`;
   }else{
     note.innerHTML='';
   }

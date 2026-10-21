@@ -135,6 +135,12 @@ actual test fixtures, don't just keep this list as prose:
   one pallet (no false "Pallet mapping differs"). A packing reference that
   almost matches the despatch advice number (only a suffix of up to 3 characters differs, or only the case)
   is a Message check in both modes.
+- **ORDRSP/DESADV/INVOIC**: an EAN/GTIN (8/12/13/14 digits) or SSCC (18
+  digits) whose GS1 check digit doesn't match is a Message check, per side,
+  in both modes. Synthetic fixtures must use valid check digits, or this
+  check adds findings that unrelated tests then count.
+- **DESADV**: the SSCC stat and overview count distinct SSCCs, not CPS
+  groups ("117 groups, 8 SSCCs").
 - **UI**: long explanations sit behind a collapsed "More info" toggle, and
   "Copy for Transus" contains only the headline.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed

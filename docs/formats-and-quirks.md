@@ -276,6 +276,10 @@ Handling:
   suppliers happened to send a batch number per line. Transus fixed each
   case in that supplier's own data source and didn't say whether the batch
   number played a role.
+- **GS1 check digits**: a real Red Bull DESADV carried SSCC
+  `287142544291779407`, whose check digit doesn't match. ECHO now checks
+  the GS1 mod-10 check digit on every EAN/GTIN (8/12/13/14 digits) and SSCC
+  (18 digits) as a Message check (`gs1CheckDigitIssues`).
 - **A top-level `CPS` with a summary `PAC`** (`CPS+1'PAC+5++201'` = "5
   pallets in this shipment", then `CPS+2+1` … each pallet with its own
   SSCC) is EANCOM's consignment level, not a pallet missing its SSCC. The
