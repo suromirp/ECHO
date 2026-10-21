@@ -86,6 +86,21 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | VAT number shown per party in the Invoice details table, alongside GLN | `invoic/vat-number-shown.sup.edi`, `invoic/vat-number-shown.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | illegal XML control character in an item description flagged on the supplier side, and stripped with a loud banner when already inside an XML file | `invoic/illegal-xml-char.sup.edi`, `invoic/illegal-xml-char.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | bol's `LegalMonetaryTotal/LineExtensionAmount` stuck at 0 falls back to summing the invoice lines instead of a false "Total line amounts differs" | `invoic/ubl-line-total-zero.sup.edi`, `invoic/ubl-line-total-zero.bol.ubl.xml` | `specs/invoic.spec.js` |
+| DESADV | XML header vs line fields: a header-only order number applies to every Article, a line `<DeliveryDate>` isn't read as the header date, a unit keeps its own `<LineNumber>` | `desadv/transusxml-header-scope.sup.xml`, `desadv/transusxml-header-scope.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | several `<Message>` elements in one XML file split and paired by document number (Compare), shown one at a time with a picker (Quick check) | `desadv/transusxml-two-messages.sup.xml`, `desadv/transusxml-two-messages.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | a multi-UNH EDIFACT interchange gets the same Quick check picker and keeps its message type per split message in Compare | `desadv/two-messages.edi`, `desadv/transusxml-two-messages.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | a UTF-16 XML without a BOM is decoded from its bytes and compared normally, not read as an empty message | `desadv/utf16-no-bom.sup.xml`, `desadv/utf16-no-bom.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | windows-1252 characters (É, Ø, È) survive in Quick check instead of becoming U+FFFD | `desadv/windows-1252.sup.xml` | `specs/desadv.spec.js` |
+| ZIP | a UTF-16 XML (with BOM) inside a ZIP is decoded from its bytes, not as UTF-8 | `zip/utf16-pair.zip` | `specs/zip.spec.js` |
+| DESADV | whitespace before `<?xml` doesn't make the XML parse as nothing | `desadv/leading-whitespace.sup.xml`, `desadv/leading-whitespace.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | text before the XML declaration skipped, with a banner | `desadv/text-before-declaration.sup.xml` | `specs/desadv.spec.js` |
+| DESADV | illegal control character in a DESADV XML stripped with a banner, not read as an empty file | `desadv/illegal-xml-char.sup.xml`, `desadv/illegal-xml-char.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | malformed XML stops Compare with a plain-language banner (line/column) instead of an empty comparison; same banner in Quick check | `desadv/malformed.sup.xml`, `desadv/malformed.bol.edi` | `specs/desadv.spec.js` |
+| INVOIC | bol UBL invoice starting with a blank line is still read | `invoic/multi-vat.sup.transusxml.xml`, `invoic/leading-whitespace.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | truncated XML invoice shows a banner with the reader position, in Compare and Quick check | `invoic/multi-vat.sup.transusxml.xml`, `invoic/truncated.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | TRANSUSXML date with a time part (12 digits) normalized, no false "Invoice date differs" | `invoic/transusxml-datetime.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | TRANSUSXML invoice labelled `<MessageFormat>` detected and read as INVOIC (not DESADV), Compare and Quick check | `invoic/transusxml-messageformat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | an `<?xml-stylesheet?>` instruction isn't mistaken for a concatenated second document | `invoic/multi-vat.sup.transusxml.xml`, `invoic/xml-stylesheet.bol.ubl.xml` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 

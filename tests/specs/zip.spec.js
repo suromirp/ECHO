@@ -24,3 +24,16 @@ test('a ZIP with only one usable file switches to Quick check with a clear expla
   await expect(banner).toBeVisible();
   await expect(banner).toContainText('lonely-message.edi');
 });
+
+// JSZip's 'string' output always assumes UTF-8 and ignores a BOM, so a
+// UTF-16 XML inside a ZIP was read as garbage (and even routed to the
+// EDIFACT parser). Entries are now decoded from their bytes.
+test('a UTF-16 XML file inside a ZIP is decoded and compared normally', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#zipInput').setInputFiles(path.join(__dirname, '..', 'fixtures', 'zip', 'utf16-pair.zip'));
+  await expect(page.locator('#results')).toBeVisible({ timeout: 5000 });
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Transus XML');
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+});

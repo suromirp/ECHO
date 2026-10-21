@@ -319,3 +319,95 @@ test('a bol invoice with LegalMonetaryTotal/LineExtensionAmount stuck at 0 falls
   expect(resultsText).toContain('Total line amounts');
   expect(resultsText).toContain('450.00 EUR');
 });
+
+// Whitespace before "<?xml" is a hard DOMParser error ("XML declaration
+// allowed only at the start of the document") — a bol UBL file starting
+// with a blank line used to end in a bare "Couldn't read an invoice".
+test('a bol UBL invoice starting with a blank line is still read', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'leading-whitespace.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).toContain('Loud and clear');
+});
+
+// Unreadable XML used to give only a quiet status line ("Couldn't read an
+// invoice from the bol output") with no reason.
+test('a truncated XML invoice shows a plain-language banner with the reader position', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'truncated.bol.ubl.xml'),
+  );
+  const banner = page.locator('#compareBanner .xml-error-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("Bol's file couldn't be read as XML");
+  await expect(banner).toContainText(/line \d+, column \d+/);
+  await expect(page.locator('#invoiceResults')).toBeHidden();
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'truncated.bol.ubl.xml'));
+  await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
+  await expect(page.locator('#quickStatus')).toContainText('read as XML');
+});
+
+// The TRANSUSXML invoice parser only converted an exact 8-digit date; the
+// dialect's 12-digit date+time (202601151200) stayed a raw string and read
+// as "Invoice date differs" against bol's ISO date.
+test('a TRANSUSXML invoice date with a time part is normalized, not reported as a date difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-datetime.sup.transusxml.xml'),
+    path.join(FIX, 'multi-vat.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const findings = await invoiceFindingTexts(page);
+  expect(findings.some(t => /Invoice date differs/.test(t))).toBe(false);
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).not.toContain('202601151200');
+});
+
+// The TRANSUSXML self-label also appears as <MessageFormat>. Detection and
+// the dialect parser only knew <MessageStandard>, so this invoice was typed
+// DESADV (Quick check showed a despatch advice) and Compare couldn't read it.
+test('a TRANSUSXML invoice labelled with <MessageFormat> is detected and read as an invoice', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-messageformat.sup.transusxml.xml'),
+    path.join(FIX, 'multi-vat.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('TRANSUSXML');
+  expect(resultsText).toContain('2/2');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'transusxml-messageformat.sup.transusxml.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('INV1001');
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+});
+
+// The concatenated-documents check counted every "<?xml", including an
+// ordinary <?xml-stylesheet?> instruction, so a readable UBL invoice got a
+// false "concatenated XML documents / delivery failed" banner.
+test('an <?xml-stylesheet?> instruction is not mistaken for a second concatenated document', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'xml-stylesheet.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).not.toContain('concatenated XML documents');
+  expect(resultsText).toContain('Loud and clear');
+});

@@ -15,7 +15,7 @@
     </InvoiceTotals>
     <Article>
       <LineNumber>1</LineNumber>
-      <GTIN>1234567890123</GTIN>
+      <GTIN>1234567890128</GTIN>
       <ArticleCodeSupplier>ART1</ArticleCodeSupplier>
       <ArticleDescription>Widget</ArticleDescription>
       <ArticleQuantityPerPriceUnit>1</ArticleQuantityPerPriceUnit>

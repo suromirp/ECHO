@@ -479,8 +479,10 @@
       </div>
       <div class="status" id="compareStatus">Two messages. One question: did the important stuff make it through? Add both below to find out.</div>
     </div>
+    <div id="compareBanner"></div>
 
     <div id="results" class="hidden">
+      <div id="factsBanners"></div>
       <div id="verdict"></div>
       <div class="strip" id="strip"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
@@ -790,6 +792,41 @@ function showEyeToast(msg){
 
 
 
+/* ================= file decoding ================= */
+/* Files are decoded from their raw bytes rather than with File.text(),
+   which always assumes UTF-8. A real supplier XML declares
+   encoding="utf-16": with a BOM Chromium's File.text() happens to cope,
+   but without one every character came out with a NUL next to it (so the
+   file parsed as nothing at all), and JSZip's 'string' never looks at a
+   BOM, so the same file inside a ZIP broke even with one. Windows-1252 /
+   latin-1 bytes (EDIFACT UNOC is latin-1; "BOUCLÉ", "Ø") turned into
+   U+FFFD replacement characters. Order: BOM, then a NUL-byte pattern for
+   BOM-less UTF-16, then strict UTF-8, then the XML declaration's own
+   encoding, then windows-1252 as the last resort. */
+function decodeFileBytes(input){
+  const b=input instanceof Uint8Array?input:new Uint8Array(input);
+  const dec=(enc,bytes,fatal)=>new TextDecoder(enc,{fatal:!!fatal,ignoreBOM:true}).decode(bytes);
+  if(b.length>=3&&b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF)return dec('utf-8',b.subarray(3));
+  if(b.length>=2&&b[0]===0xFF&&b[1]===0xFE)return dec('utf-16le',b.subarray(2));
+  if(b.length>=2&&b[0]===0xFE&&b[1]===0xFF)return dec('utf-16be',b.subarray(2));
+  // No BOM: ASCII-range text in UTF-16 has a NUL on every other byte —
+  // odd positions for little-endian, even positions for big-endian.
+  const n=Math.min(b.length,1024)&~1;
+  if(n>=4){
+    let even=0,odd=0;
+    for(let i=0;i<n;i++)if(b[i]===0){if(i%2)odd++;else even++;}
+    const half=n/2;
+    if(odd>=half*0.3&&even<=half*0.05)return dec('utf-16le',b);
+    if(even>=half*0.3&&odd<=half*0.05)return dec('utf-16be',b);
+  }
+  try{return dec('utf-8',b,true);}catch(e){}
+  const head=dec('windows-1252',b.subarray(0,200));
+  const m=head.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([\w.:-]+)["']/i);
+  if(m&&!/^utf-?(8|16)/i.test(m[1])){try{return dec(m[1],b);}catch(e){}}
+  return dec('windows-1252',b);
+}
+function readFileText(file){return file.arrayBuffer().then(decodeFileBytes);}
+
 /* ================= QUICK VIEW ================= */
 let quickPlain='';
 function quickColorizeSegment(seg,delims){
@@ -813,6 +850,25 @@ function renderQuickRawXml(raw){
   quickPlain=raw;
   return lines.length;
 }
+/* A file holding several ORDRSP/DESADV messages (multi-UNH EDIFACT, or a
+   <Messages> XML with several <Message>) used to be shown as ONE merged
+   message in Quick check: every line pooled, the last message's number on
+   top. Each message is now its own overview, one at a time (the overview's
+   search box and tables have fixed IDs), with a picker to switch. */
+let quickFactsList=[];
+function quickFactsPanelHtml(i){
+  const list=quickFactsList,facts=list[i];
+  let picker='';
+  if(list.length>1){
+    const btns=list.map((f,j)=>`<button type="button" class="btn ${j===i?'primary':'ghost'}" onclick="quickShowFactsDoc(${j})">${esc((f.msgType||'Message')+' '+(f.docNumber||('#'+(j+1))))}</button>`).join(' ');
+    picker=`<div class="note-inline quick-doc-picker" style="margin-bottom:12px;">This file contains <strong>${list.length} separate messages</strong>, each read on its own rather than merged. Showing message ${i+1} of ${list.length}:<div class="actions" style="margin-top:6px;">${btns}</div></div>`;
+  }
+  return `<div class="panel"><h2>Overview</h2>${picker}${xmlFileBannersHtml(facts,'This file')}${factsOverviewHtml(facts)}</div>`;
+}
+function quickShowFactsDoc(i){
+  if(!quickFactsList[i])return;
+  document.getElementById('quickOverview').innerHTML=quickFactsPanelHtml(i);
+}
 function quickFormat(){
   const raw=document.getElementById('quickInput').value;
   if(!raw.trim()){quickSetStatus('Paste a message first, or import a file.',true);return;}
@@ -821,7 +877,8 @@ function quickFormat(){
   const msgType=detectMsgType(raw);
 
   /* ---------- 1. business overview ---------- */
-  let ovHtml='',ovNote='';
+  let ovHtml='',ovNote='',xmlErr=null;
+  const xmlErrPanel=err=>`<div class="panel"><h2>Overview</h2>${xmlParseErrorBannerHtml(err,'This file')}</div>`;
   pendingEyeReaction=null;
   try{
     if(msgType==='INVOIC'){
@@ -833,10 +890,20 @@ function quickFormat(){
           return `<details class="inv-det"${i===0?' open':''}><summary>Invoice ${esc(inv.number||('#'+(i+1)))} — ${inv.docType==='credit'?'credit note':'invoice'}${inv.date?' · '+esc(showDate(inv.date)):''}</summary><div class="panel">${body}</div></details>`;
         }).join('');
         if(invs.length>1)ovNote=`${invs.length} invoices found in this file.`;
-      }else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
+      }else if(invs.xmlError){xmlErr=invs.xmlError;ovHtml=xmlErrPanel(xmlErr);}
+      else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
     }else if(msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS'){
-      const facts=parseFacts(raw);
-      ovHtml=`<div class="panel"><h2>Overview</h2>${factsOverviewHtml(facts)}</div>`;
+      const list=parseFactsList(raw);
+      if(list[0].xmlError){xmlErr=list[0].xmlError;ovHtml=xmlErrPanel(xmlErr);}
+      else{
+        quickFactsList=list;
+        ovHtml=quickFactsPanelHtml(0);
+        if(list.length>1)ovNote=`${list.length} messages found in this file.`;
+      }
+    }else if(isXmlText(raw)&&(xmlErr=parseXmlDoc(prepareXmlText(raw).text).error)){
+      // Not even recognizable as a message type — still say why, when it's
+      // because the XML itself can't be read.
+      ovHtml=xmlErrPanel(xmlErr);
     }else if(msgType){
       ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Message type <strong>${esc(msgType)}</strong> isn't supported as a business overview yet. The original message is shown below.</div></div>`;
     }else{
@@ -853,7 +920,8 @@ function quickFormat(){
   if(isXmlText(raw)||isCsvDesadv){
     const n=renderQuickRawXml(raw);
     lg.innerHTML='<span class="chip chip-strong">'+esc(msgType||(isCsvDesadv?'DESADV':'XML'))+'</span><span class="chip">'+(isCsvDesadv?'CSV':'XML')+'</span><span class="chip">'+n+' lines</span>';
-    quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
+    if(xmlErr)quickSetStatus('This file couldn’t be read as XML — see the note above. The original text is shown below.',true);
+    else quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
     return;
   }
   const mode=document.getElementById('quickMode').value;
@@ -899,10 +967,11 @@ document.getElementById('quickFormatBtn').addEventListener('click',quickFormat);
 document.getElementById('quickInput').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')quickFormat();});
 document.getElementById('quickFileInput').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
-  f.text().then(t=>{
+  readFileText(f).then(t=>{
     document.getElementById('quickInput').value=t;
     quickFormat();
-    quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
+    // Keep quickFormat's own error status (e.g. unreadable XML) visible.
+    if(!document.getElementById('quickStatus').classList.contains('error'))quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
   });
   e.target.value='';
 });
@@ -1260,26 +1329,77 @@ function parseFactsCsv(raw){
   return parseFactsCsvDesadv(raw);
 }
 
-function parseFactsTransusXml(raw){
-  const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
+function emptyXmlFacts(raw){
+  return {format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
     docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0,billOfLadingRef:null};
-  let doc;
-  try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return f;}
-  if(doc.querySelector('parsererror'))return f;
-  const orderEl=doc.querySelector('Order');
+}
+/* ORDRSP/DESADV XML gets the same reading safeguards as INVOIC XML
+   (parseInvoices): text before the declaration skipped, illegal control
+   characters stripped, concatenated documents reduced to the last
+   parseable one — each flagged with a banner — and, when the XML still
+   can't be read, facts.xmlError instead of a silently empty message (which
+   used to show every bol line as "missing from the supplier message"). */
+function parseFactsTransusXml(raw){return parseFactsTransusXmlList(raw)[0];}
+/* One facts object per <Message> in a <Messages> envelope. All messages
+   used to be read as ONE: every Article pooled under the first message's
+   header, and a DespatchUnitReference reused by a later message linked
+   its Articles to the first message's unit (wrong SSCC). Now split the
+   same way a multi-UNH EDIFACT interchange is (splitEdifactMessages), so
+   Compare pairs them by document number and Quick check shows each. */
+function parseFactsTransusXmlList(raw){
+  const prep=prepareXmlText(raw);
+  let parsed=null,concatenatedXml=null;
+  const pieces=splitConcatenatedXmlDocs(prep.text);
+  if(pieces.length>1){
+    const docs=pieces.map(parseXmlDoc);
+    const valid=[];docs.forEach((d,i)=>{if(d.doc)valid.push(i);});
+    if(valid.length){
+      const last=valid[valid.length-1];
+      const diffs=valid.length>=2?diffXmlLeaves(flattenXmlLeaves(docs[valid[valid.length-2]].doc),flattenXmlLeaves(docs[last].doc)):[];
+      concatenatedXml={total:pieces.length,validCount:valid.length,usedIndex:last,diffs};
+      parsed=docs[last];
+    }
+  }
+  if(!parsed)parsed=parseXmlDoc(prep.text);
+  const withNotes=f=>{
+    if(prep.leadingJunk)f.leadingJunk=prep.leadingJunk;
+    if(prep.illegalXmlChars)f.illegalXmlChars=prep.illegalXmlChars;
+    if(concatenatedXml)f.concatenatedXml=concatenatedXml;
+    return f;
+  };
+  if(!parsed.doc)return [withNotes(Object.assign(emptyXmlFacts(raw),{xmlError:parsed.error}))];
+  const root=parsed.doc.documentElement;
+  const msgs=localName(root)==='Messages'?childrenByName(root,'Message'):[];
+  if(msgs.length<=1)return [withNotes(factsFromXmlDoc(parsed.doc,raw))];
+  return msgs.map(m=>withNotes(factsFromXmlDoc(parsed.doc,raw,m)));
+}
+function factsFromXmlDoc(doc,raw,scope){
+  const f=emptyXmlFacts(raw);
+  scope=scope||doc.documentElement;
+  // Header vs line: a field only belongs to an element when no OTHER line
+  // element sits in between. A plain querySelector returned the first
+  // descendant anywhere, so a line's own <DeliveryDate>/<OrderNumberBuyer>
+  // stood in for a header field the message didn't have (and the first
+  // Article's order number became the whole message's), and a
+  // <DespatchUnit>'s LineNumber/SSCC could come from an <Article> or unit
+  // nested inside it. Direct child first, then a descendant outside any
+  // nested line element.
+  const LINE_TAGS=new Set(['Article','OrderLine','DespatchLine','DespatchUnit']);
+  const insideLine=(n,top)=>{for(let p=n.parentElement;p&&p!==top;p=p.parentElement)if(LINE_TAGS.has(localName(p)))return true;return false;};
+  const own=(el,tag)=>{const c=childByName(el,tag);if(c)return c;for(const n of el.querySelectorAll(tag))if(!insideLine(n,el))return n;return null;};
+  const g=(el,tag)=>{const n=own(el,tag);return n?n.textContent.trim():'';};
+  const gd=tag=>{const n=own(scope,tag);return n?n.textContent.trim():null;};
+  const orderEl=localName(scope)==='Order'?scope:own(scope,'Order');
   // message type: presence of OrderLines/Status => ORDRSP; DespatchLine/Article/DespatchUnit => DESADV.
   // OrderResponseNumber is checked first because some suppliers' ORDRSP
   // Transus XML uses <Article> as its line element too (see below) — without
   // this, such a message would fall through to the DESADV branch below.
-  if(doc.querySelector('OrderLine')||doc.querySelector('OrderLines')||doc.querySelector('OrderResponseNumber'))f.msgType='ORDRSP';
-  else if(doc.querySelector('DespatchLine')||doc.querySelector('Despatch')||doc.querySelector('Article')||doc.querySelector('DespatchUnit'))f.msgType='DESADV';
+  if(scope.querySelector('OrderLine')||scope.querySelector('OrderLines')||scope.querySelector('OrderResponseNumber'))f.msgType='ORDRSP';
+  else if(scope.querySelector('DespatchLine')||scope.querySelector('Despatch')||scope.querySelector('Article')||scope.querySelector('DespatchUnit'))f.msgType='DESADV';
   // header status (HeaderStatus) -> bgmFunc-ish (4=change, 29 accept, 27 not accepted). Transus uses 4/9 etc.
-  const hs=orderEl&&orderEl.querySelector('HeaderStatus');
+  const hs=orderEl&&own(orderEl,'HeaderStatus');
   if(hs)f.bgmFunc=hs.textContent.trim();
-  const headerOrder=(orderEl&&orderEl.querySelector('OrderNumberBuyer'))?orderEl.querySelector('OrderNumberBuyer').textContent.trim()
-    :(doc.querySelector('OrderNumberBuyer')?doc.querySelector('OrderNumberBuyer').textContent.trim():null);
-  const g=(el,tag)=>{const n=el.querySelector(tag);return n?n.textContent.trim():'';};
-  const gd=tag=>{const n=doc.querySelector(tag);return n?n.textContent.trim():null;};
+  const headerOrder=(orderEl&&g(orderEl,'OrderNumberBuyer'))||gd('OrderNumberBuyer')||null;
   f.docNumber=gd('DespatchAdviceNumber')||gd('OrderResponseNumber')||gd('DocumentNumber')||null;
   f.docDate=normDate(gd('DocumentDate')||gd('DespatchAdviceDate')||gd('OrderResponseDate'));
   f.arrivalDate=normDate(gd('ArrivalDate')||gd('DeliveryDate'));
@@ -1287,7 +1407,7 @@ function parseFactsTransusXml(raw){
   if(headerOrder)f.orderRefsHeader.add(headerOrder);
   const dn=gd('DeliveryNoteNumber');if(dn)f.deliveryNoteRefs.push(dn);
   [['Supplier','SU'],['Buyer','BY'],['DeliveryParty','DP'],['Invoicee','IV']].forEach(([tagName,role])=>{
-    const node=doc.querySelector(tagName);
+    const node=own(scope,tagName);
     if(!node)return;
     const gln=g(node,'GLN')||g(node,'ID')||null;
     const name=g(node,'Name')||null;
@@ -1299,8 +1419,8 @@ function parseFactsTransusXml(raw){
     const v=gd(tagName);if(v&&!f.parties[role])f.parties[role]={gln:v,name:null,vat:null};
   });
   const psn=gd('PackingSlipNumber');if(psn)f.billOfLadingRef=psn;
-  doc.querySelectorAll('SSCC').forEach(n=>{const v=n.textContent.trim();if(v)f.ssccs.push(v);});
-  doc.querySelectorAll('OrderLine').forEach(el=>{
+  scope.querySelectorAll('SSCC').forEach(n=>{const v=n.textContent.trim();if(v)f.ssccs.push(v);});
+  scope.querySelectorAll('OrderLine').forEach(el=>{
     const status=g(el,'Status');
     const delivered=g(el,'DeliveredQuantity');
     const backorder=g(el,'BackOrderQuantity');
@@ -1322,7 +1442,7 @@ function parseFactsTransusXml(raw){
   const despatchUnits=new Map();
   if(f.msgType==='DESADV'){
     const unitOfEl=new Map();
-    doc.querySelectorAll('DespatchUnit').forEach(du=>{
+    scope.querySelectorAll('DespatchUnit').forEach(du=>{
       const ln=g(du,'LineNumber');
       // hasPac: the PAC-segment check is EDIFACT-specific — an XML
       // <DespatchUnit> is itself the packaging unit, never "missing" one.
@@ -1334,7 +1454,7 @@ function parseFactsTransusXml(raw){
       unitOfEl.set(du,pallet);
       f.pallets.push(pallet);
     });
-    doc.querySelectorAll('Article').forEach(el=>{
+    scope.querySelectorAll('Article').forEach(el=>{
       const gtin=g(el,'GTIN');
       const delivered=g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity');
       const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
@@ -1345,13 +1465,20 @@ function parseFactsTransusXml(raw){
         art:g(el,'ArticleCodeSupplier')||null,desc:g(el,'ArticleDescription')||g(el,'Description')||null};
       // An <Article> nested inside its own <DespatchUnit> belongs to that
       // unit, even when several units share one DespatchUnitReference.
-      const parentUnit=el.parentElement&&el.parentElement.localName==='DespatchUnit'?unitOfEl.get(el.parentElement):null;
+      const unitEl=el.parentElement&&el.parentElement.closest('DespatchUnit');
+      const parentUnit=unitEl?unitOfEl.get(unitEl):null;
       const pallet=parentUnit||despatchUnits.get(g(el,'DespatchUnitReference'))||null;
       line.__cpsRef=pallet;
       if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
       f.lines.push(line);
     });
-  }else if(f.msgType==='ORDRSP'&&!doc.querySelector('OrderLine')){
+    // A header-level <OrderNumberBuyer> applies to every Article that has
+    // none of its own — the same inheritance parseFactsEdifact applies to a
+    // header RFF+ON. Without it, every such line read "supplier [—] vs bol
+    // [<order>]" against bol's EDIFACT (which repeats RFF+ON per LIN): a
+    // false Transformation difference on every line.
+    if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
+  }else if(f.msgType==='ORDRSP'&&!scope.querySelector('OrderLine')){
     // Some suppliers' ORDRSP-flavoured Transus XML uses <Article> as the line
     // element too (the same tag DESADV uses above), distinguishable only by
     // header fields like <OrderResponseNumber>. Its action isn't a numeric
@@ -1360,7 +1487,7 @@ function parseFactsTransusXml(raw){
     // action is derived from the actual quantities instead of guessing every
     // string that might appear, the same way STATUS_TO_ACTION derives it
     // from a known numeric code.
-    doc.querySelectorAll('Article').forEach(el=>{
+    scope.querySelectorAll('Article').forEach(el=>{
       const gtin=g(el,'GTIN');
       const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
       const delivered=toInt(g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity'));
@@ -1406,12 +1533,15 @@ function parseFactsTransusXml(raw){
   return f;
 }
 
+/* Single-message reading (first <Message> only for XML, whole interchange
+   merged for EDIFACT) \u2014 Compare and Quick check use parseFactsList. */
 function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
   // DESADV (<Messages><Message>, no <?xml declaration) used to fall through
-  // to the EDIFACT parser here and silently produce zero lines.
-  if(head.startsWith('<')) return parseFactsTransusXml(raw);
+  // to the EDIFACT parser here and silently produce zero lines. isXmlText
+  // also accepts a <?xml declaration after leading whitespace/text.
+  if(isXmlText(raw)) return parseFactsTransusXml(raw);
   if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
   return parseFactsEdifact(raw);
 }
@@ -1423,7 +1553,11 @@ function parseFacts(raw){
    single-message parser, exactly as parseInvoices already does for INVOIC. */
 function splitEdifactMessages(raw){
   const {segs,delims}=splitSegments(raw);
-  const unaMatch=raw.replace(/^[\s\uFEFF]+/,'').match(/^UNA......./);
+  // UNA is exactly 9 characters ("UNA" + 6 service characters). This used
+  // to take 10, swallowing the next segment's first letter whenever no
+  // newline followed the UNA \u2014 so every split message started "UUNH",
+  // lost its message type, and Compare skipped all DESADV/ORDRSP checks.
+  const unaMatch=raw.replace(/^[\s\uFEFF]+/,'').match(/^UNA....../);
   const unaPrefix=unaMatch?unaMatch[0]:'';
   const chunks=[];let cur=null;
   segs.forEach(seg=>{
@@ -1436,12 +1570,11 @@ function splitEdifactMessages(raw){
 }
 
 /* Returns an array of facts objects: one per message for a multi-message
-   EDIFACT interchange, or a single-element array otherwise. XML input isn't
-   known to bundle multiple DESADV/ORDRSP documents, so it's always treated
-   as one message. */
+   EDIFACT interchange or a <Messages> XML file with several <Message>
+   elements, or a single-element array otherwise. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
-  if(head.startsWith('<')) return [parseFactsTransusXml(raw)];
+  if(isXmlText(raw)) return parseFactsTransusXmlList(raw);
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
@@ -1860,6 +1993,30 @@ function illegalXmlCharsBannerHtml(inv){
   return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
     ⚠ <strong>This file contains ${c.count} illegal control character${c.count===1?'':'s'}</strong> (${codeList}) — not valid inside XML text content, even though the byte itself is a perfectly ordinary one in EDIFACT free text. This is very likely why delivery failed ("Couldn't parse XML content of the file") — usually traced back to a free-text field (e.g. an item description) in the original EDIFACT message carried straight through. ECHO stripped ${c.count===1?'it':'them'} to still show this comparison — the delivery itself still needs fixing upstream.
   </div>`;
+}
+/* The XML itself couldn't be read (parseXmlDoc's error). Shown INSTEAD of a
+   result — an empty message compared against a full one only produces a
+   wall of "missing" findings that point at the wrong problem. */
+function xmlParseErrorBannerHtml(err,who){
+  if(!err)return '';
+  const where=err.line?` at line ${err.line}, column ${err.col}`:'';
+  return `<div class="note-inline xml-error-banner" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    ⚠ <strong>${esc(who)} couldn't be read as XML</strong> — the XML reader stopped${where}: <code>${esc(err.msg||'unknown error')}</code>. Nothing from this file can be shown or compared until that spot is looked at. Common causes are a file that was cut off, edited by hand, or exported with a character XML doesn't allow; a strict XML reader on the receiving side would most likely stop at the same place.
+  </div>`;
+}
+/* Text before the <?xml declaration (prepareXmlText skips it). Warn-level,
+   not err: no delivery failure has been traced to this yet, but XML allows
+   nothing before the declaration, so a strict reader would refuse it. */
+function leadingJunkBannerHtml(x,who){
+  if(!x||!x.leadingJunk)return '';
+  const s=x.leadingJunk,shown=s.length>80?s.slice(0,80)+'…':s;
+  return `<div class="note-inline" style="color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    ⚠ <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
+  </div>`;
+}
+/* Every "read, but with a caveat" banner for one XML file, in one place. */
+function xmlFileBannersHtml(x,who){
+  return leadingJunkBannerHtml(x,who)+concatenatedXmlBannerHtml(x)+illegalXmlCharsBannerHtml(x);
 }
 /* classify action into accept/cancel/backorder buckets — limited to the
    codes bol/Transus actually maps (confirmed against bol's own ORDRSP
@@ -2965,8 +3122,11 @@ function normDate(v,fmt){
   if(fmt==='203'&&/^\d{12}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{8}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{12}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+  /* CCYYMMDDHHMMSS (EDIFACT 204, ook in XML-exports) — bleef anders als ruwe
+     string staan en gaf een vals "datum verschilt" tegen een ISO-datum */
+  if(/^\d{14}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
-  const m=s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})/); /* DD-MM-YYYY, komt voor in bol XML */
+  const m=s.match(/^(\d{2})[-\/.](\d{2})[-\/.](\d{4})/); /* DD-MM-YYYY / DD.MM.YYYY, komt voor in bol XML */
   if(m)return m[3]+'-'+m[2]+'-'+m[1];
   return s;
 }
@@ -3339,7 +3499,8 @@ function parseInvoicExactOnlineXml(raw){
   const toIso=v=>{
     if(!v)return null;
     const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})/);
-    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
+    // anything else (e.g. ISO with a time part) through the shared normDate
+    return m?`${m[1]}-${m[2]}-${m[3]}`:normDate(v);
   };
   const inv=emptyInvoice('Exact Online export');
   const invAmt=num(gDeep('InvoiceTotals','InvoiceAmountDC'));
@@ -3394,9 +3555,10 @@ function parseInvoicExactOnlineXml(raw){
    BEFORE ArticleCharge is added on top (matching NetLineAmount), and the
    header VATBaseAmount/VATAmount reflect only ONE VAT-rate group — the
    full taxable base is the SUM across every <InvoiceVATTotals> block. */
+const TRANSUSXML_LABEL=/<Message(Standard|Format)>\s*TRANSUSXML/i;
 function looksLikeTransusMessageXml(raw){
   const head=raw.slice(0,2000);
-  return /<Messages[\s>]/.test(head)&&/<MessageStandard>\s*TRANSUSXML/i.test(head);
+  return /<Messages[\s>]/.test(head)&&TRANSUSXML_LABEL.test(head);
 }
 function pickDirect(el,parentTag,childTag){
   const parent=childByName(el,parentTag);
@@ -3410,11 +3572,10 @@ function parseInvoicTransusMessageXml(raw){
   if(!doc||doc.querySelector('parsererror'))return [];
   const messages=doc.documentElement?[...doc.documentElement.children].filter(c=>localName(c)==='Message'):[];
   if(!messages.length)return [];
-  const toIso=v=>{
-    if(!v)return null;
-    const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})$/);
-    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
-  };
+  // Was an exact-8-digit-only conversion: this dialect's 12-digit
+  // date+time form (202601151200, also seen in its DESADV variant) stayed a
+  // raw string and read as "Invoice date differs" against bol's ISO date.
+  const toIso=normDate;
   return messages.map(msg=>{
     const g=name=>{const c=childByName(msg,name);const t=c?textOf(c):null;return t||null;};
     const inv=emptyInvoice('TRANSUSXML');
@@ -3697,9 +3858,50 @@ function parseInvoicTransusXml(raw){
 }
 
 /* ---------- detectie + centrale ingang ---------- */
-function isXmlText(raw){
-  const h=raw.replace(/^[\s\uFEFF]+/,'');
-  return h.startsWith('<?xml')||h.startsWith('<');
+/* Where the XML actually starts, or -1 if this isn't XML. Whitespace before
+   "<?xml" is a hard error for DOMParser ("XML declaration allowed only at
+   the start of the document"), so a file starting with a blank line used
+   to parse as nothing at all \u2014 zero lines, or "no invoice could be
+   extracted". Non-whitespace text before the declaration (a stray log
+   line, like the one between concatenated documents below) is skipped
+   too, but only when nothing before it looks like an EDIFACT envelope. */
+function xmlStartIndex(raw){
+  const m=raw.match(/^[\s\uFEFF]*</);
+  if(m)return m[0].length-1;
+  const i=raw.search(/<\?xml\s/);
+  if(i>0&&i<2000&&!/UN[ABH][+:]/.test(raw.slice(0,i)))return i;
+  return -1;
+}
+function isXmlText(raw){return xmlStartIndex(raw)!==-1;}
+/* XML text ready for DOMParser, plus what had to be skipped or stripped to
+   get there (text before the declaration, illegal control characters) \u2014
+   kept so the UI can say so, rather than silently reading around it. */
+function prepareXmlText(raw){
+  const start=xmlStartIndex(raw);
+  const text=start>0?raw.slice(start):raw;
+  const junk=start>0?raw.slice(0,start).replace(/^[\s\uFEFF]+|\s+$/g,''):'';
+  const stripped=stripIllegalXmlChars(text);
+  const codes=[...new Set(stripped.removed.map(x=>x.code))];
+  return {text:stripped.clean,leadingJunk:junk||null,
+    illegalXmlChars:stripped.removed.length?{count:stripped.removed.length,codes}:null};
+}
+/* DOMParser never throws on malformed XML \u2014 it returns a document holding a
+   <parsererror> element instead, which every parser here used to turn into
+   an empty result without a word. Returns {doc,error}; error carries the
+   reader's own line/column/message, for xmlParseErrorBannerHtml. */
+function parseXmlDoc(text){
+  let doc;
+  try{doc=new DOMParser().parseFromString(text,'application/xml');}
+  catch(e){return {doc:null,error:{line:null,col:null,msg:String(e.message||e)}};}
+  const pe=doc&&doc.querySelector('parsererror');
+  if(!pe)return {doc,error:null};
+  const t=pe.textContent||'';
+  // Chromium: "error on line 3 at column 7: \u2026"; Firefox: "\u2026 Line Number 3, Column 7:"
+  let m=t.match(/error on line (\d+) at column (\d+):\s*([^\n]*)/);
+  if(m)return {doc:null,error:{line:+m[1],col:+m[2],msg:m[3].trim()}};
+  m=t.match(/Line Number (\d+), Column (\d+)/);
+  const first=t.split('\n').map(s=>s.trim()).filter(Boolean)[0]||'';
+  return {doc:null,error:{line:m?+m[1]:null,col:m?+m[2]:null,msg:first.replace(/^XML Parsing Error:\s*/,'').slice(0,200)}};
 }
 function looksLikeBolUbl(raw){
   return /CommonAggregateComponents|nl-inv:|UBLVersionID|LegalMonetaryTotal/.test(raw.slice(0,4000));
@@ -3719,7 +3921,10 @@ function detectMsgType(raw){
     // that would otherwise trip the DESADV substring check below — checked
     // first, since its own signal (MessageStandard + an invoice field) is
     // unambiguous regardless of what else the message happens to contain.
-    if(/<MessageStandard>\s*TRANSUSXML/i.test(head)&&/<InvoiceNumber[\s>]|<InvoiceTotals[\s>]/i.test(head))return 'INVOIC';
+    // The self-label comes as <MessageStandard> or <MessageFormat> (both seen
+    // in this dialect); with <MessageFormat> an invoice used to fall through
+    // to the bare DespatchAdviceNumber check below and be read as a DESADV.
+    if(TRANSUSXML_LABEL.test(head)&&/<InvoiceNumber[\s>]|<InvoiceTotals[\s>]/i.test(head))return 'INVOIC';
     // Check the most specific, unambiguous fields first. Some suppliers'
     // ORDRSP-flavoured Transus XML uses <Article> as its line element — the
     // same tag DESADV uses for despatch lines — and even includes a
@@ -3752,9 +3957,13 @@ function detectMsgType(raw){
    Splitting on that (rather than on the specific stray text) means this
    also catches the pattern if the text in between ever differs. */
 function splitConcatenatedXmlDocs(raw){
+  // "<?xml" + whitespace only: a plain indexOf('<?xml') also matched an
+  // ordinary <?xml-stylesheet …?> instruction, so a UBL invoice carrying one
+  // got the "concatenated XML documents" banner — a false delivery-failure
+  // claim on a perfectly readable file.
   const idxs=[];
-  let i=raw.indexOf('<?xml');
-  while(i!==-1){idxs.push(i);i=raw.indexOf('<?xml',i+1);}
+  const re=/<\?xml\s/g;let mm;
+  while((mm=re.exec(raw))!==null)idxs.push(mm.index);
   if(idxs.length<=1)return [raw];
   return idxs.map((start,n)=>trimToWellFormedXml(raw.slice(start,n+1<idxs.length?idxs[n+1]:raw.length)));
 }
@@ -3878,13 +4087,18 @@ function diffXmlLeaves(a,b){
    text, and the concatenated-XML split above always sees clean text too. */
 function parseInvoices(raw){
   if(isXmlText(raw)){
-    const stripped=stripIllegalXmlChars(raw);
-    if(stripped.removed.length){
-      const r=parseInvoicesInner(stripped.clean);
-      const codes=[...new Set(stripped.removed.map(x=>x.code))];
-      r.forEach(inv=>{inv.illegalXmlChars={count:stripped.removed.length,codes};});
-      return r;
-    }
+    // Same preparation for every XML path (see prepareXmlText): text before
+    // the declaration skipped, illegal control characters stripped.
+    const prep=prepareXmlText(raw);
+    const r=parseInvoicesInner(prep.text);
+    r.forEach(inv=>{
+      if(prep.illegalXmlChars)inv.illegalXmlChars=prep.illegalXmlChars;
+      if(prep.leadingJunk)inv.leadingJunk=prep.leadingJunk;
+    });
+    // Nothing extracted: say WHY when it's the XML itself that can't be
+    // read, instead of the bare "couldn't read an invoice".
+    if(!r.length){const pe=parseXmlDoc(prep.text).error;if(pe)r.xmlError=pe;}
+    return r;
   }
   return parseInvoicesInner(raw);
 }
@@ -4358,6 +4572,7 @@ function invoiceOverviewHtml(inv,opts={}){
   const isCredit=inv.docType==='credit';
   const jumpCall=opts.side?(val=>`jumpToInvSource(${jsQuote(opts.side)},${jsQuote(val)})`):(val=>`jumpToQuickSource(${jsQuote(val)})`);
   let h='';
+  h+=leadingJunkBannerHtml(inv);
   h+=concatenatedXmlBannerHtml(inv);
   h+=illegalXmlCharsBannerHtml(inv);
   h+=`<div class="ov-head"><span class="ov-type${isCredit?' credit':''}">${isCredit?'CREDIT NOTE':'INVOICE'}</span>`;
@@ -4851,6 +5066,7 @@ function renderActionMatrix(){
 
 function render(result,bol,sup,notes){
   document.getElementById('results').classList.remove('hidden');
+  document.getElementById('factsBanners').innerHTML=xmlFileBannersHtml(sup,'The supplier file')+xmlFileBannersHtml(bol,"Bol's file");
   const notesPanel=document.getElementById('factsNotesPanel');
   if(notes&&notes.length){notesPanel.classList.remove('hidden');document.getElementById('factsNotes').innerHTML=notes.map(esc).join('<br>');}
   else{notesPanel.classList.add('hidden');document.getElementById('factsNotes').innerHTML='';}
@@ -5680,6 +5896,8 @@ function renderInvoiceCompare(res,notes){
   const eanText=buildEanListText(res.rows.map(r=>r.gtin));
 
   let h='';
+  h+=leadingJunkBannerHtml(res.sup,'The supplier file');
+  h+=leadingJunkBannerHtml(res.bol,"Bol's file");
   h+=concatenatedXmlBannerHtml(res.sup);
   h+=concatenatedXmlBannerHtml(res.bol);
   h+=illegalXmlCharsBannerHtml(res.sup);
@@ -5847,6 +6065,7 @@ function cSetSide(side,name,text){
   if(changed){
     document.getElementById('results').classList.add('hidden');
     document.getElementById('invoiceResults').classList.add('hidden');
+    document.getElementById('compareBanner').innerHTML='';
   }
   const drop=document.getElementById(side==='bol'?'dropBol':'dropSup');
   document.getElementById(side==='bol'?'fnameBol':'fnameSup').textContent=name;
@@ -5863,8 +6082,8 @@ function cClearSide(side){cstate[side]=null;const drop=document.getElementById(s
   drop.addEventListener('click',e=>{if(e.target.classList.contains('clear'))return;input.click();});
   drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
   drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
-  drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;f.text().then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});});
-  input.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});e.target.value='';});
+  drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;readFileText(f).then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});});
+  input.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileText(f).then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});e.target.value='';});
 });
 document.getElementById('clearBol').addEventListener('click',()=>cClearSide('bol'));
 document.getElementById('clearSup').addEventListener('click',()=>cClearSide('sup'));
@@ -5889,7 +6108,7 @@ async function handleZip(file){
     // hard-to-miss banner in Quick check itself, not just status text.
     if(entries.length===1){
       const only=entries[0];
-      const text=await only.entry.async('string');
+      const text=decodeFileBytes(await only.entry.async('uint8array'));
       const name=only.path.split('/').pop();
       cSetStatus(`This ZIP only contains one message ("${name}") — no supplier/bol pair to compare. Opening it in Quick check instead…`);
       await new Promise(r=>setTimeout(r,1100));
@@ -5909,7 +6128,7 @@ async function handleZip(file){
     for(const it of entries){const top=it.path.toLowerCase().split('/')[0];if(/bol/.test(top))bolE=it;else supE=it;}
     if(!bolE||!supE){if(entries.length>=2){supE=supE||entries[0];bolE=bolE||entries.find(e=>e!==supE)||entries[1];}}
     if(!bolE||!supE){cSetStatus('Couldn\u2019t distinguish two separate messages in the ZIP.',true);return;}
-    const bolText=await bolE.entry.async('string');const supText=await supE.entry.async('string');
+    const bolText=decodeFileBytes(await bolE.entry.async('uint8array'));const supText=decodeFileBytes(await supE.entry.async('uint8array'));
     cSetSide('bol',bolE.path.split('/').pop(),bolText);cSetSide('sup',supE.path.split('/').pop(),supText);
     cSetStatus('ZIP loaded. Bol ↔ supplier assigned automatically.');
     runCompare();
@@ -5922,8 +6141,22 @@ zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
 zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');const f=e.dataTransfer.files[0];if(f)handleZip(f);});
 zipInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)handleZip(f);e.target.value='';});
 
+/* An XML file that can't be read at all stops the comparison with a banner
+   per affected side — comparing an empty message against a full one only
+   produces "missing" findings that point at the wrong problem. */
+function showXmlReadErrors(errs){
+  const box=document.getElementById('compareBanner');
+  const hit=errs.filter(e=>e.err);
+  if(!hit.length)return false;
+  box.innerHTML=hit.map(e=>xmlParseErrorBannerHtml(e.err,e.who)).join('');
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('invoiceResults').classList.add('hidden');
+  cSetStatus(`${hit.length===2?'Neither file could':hit[0].who+' couldn’t'} be read as XML — see the note below.`,true);
+  return true;
+}
 function runCompare(){
   if(!cstate.bol||!cstate.sup){cSetStatus('Load both messages first.',true);return;}
+  document.getElementById('compareBanner').innerHTML='';
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
   if(tSup==='ORDERS'||tBol==='ORDERS'){
     cSetStatus(pickOrdersBlockMsg(),true);
@@ -5935,6 +6168,7 @@ function runCompare(){
     try{
       const supList=parseInvoices(cstate.sup.text);
       const bolList=parseInvoices(cstate.bol.text);
+      if(showXmlReadErrors([{who:'The supplier file',err:supList.xmlError},{who:"Bol's file",err:bolList.xmlError}]))return;
       if(!supList.length){cSetStatus('Couldn\u2019t read an invoice from the supplier file.',true);return;}
       if(!bolList.length){cSetStatus('Couldn\u2019t read an invoice from the bol output.',true);return;}
       const {pairs,notes}=matchInvoicePair(supList,bolList);
@@ -5960,6 +6194,8 @@ function runCompare(){
   try{
     const supList=parseFactsList(cstate.sup.text);
     const bolList=parseFactsList(cstate.bol.text);
+    const firstErr=list=>(list.find(f=>f.xmlError)||{}).xmlError;
+    if(showXmlReadErrors([{who:'The supplier file',err:firstErr(supList)},{who:"Bol's file",err:firstErr(bolList)}]))return;
     if(supList.length<=1&&bolList.length<=1){
       const bol=bolList[0],sup=supList[0];
       const result=compare(bol,sup);render(result,bol,sup);cSetStatus('Comparison ready.');
@@ -5983,6 +6219,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
+document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';});
 document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>

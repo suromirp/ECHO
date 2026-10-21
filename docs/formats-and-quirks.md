@@ -66,6 +66,18 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
 - Header `VATBaseAmount`/`VATAmount` reflect only **one** VAT-rate group;
   the full taxable base is the sum across every `<InvoiceVATTotals>`
   block.
+- **The self-label is `<MessageStandard>` or `<MessageFormat>`** (the
+  ORDRSP variant below uses `<MessageFormat>`). Detection and
+  `looksLikeTransusMessageXml` only knew `<MessageStandard>`: an invoice
+  labelled with `<MessageFormat>` fell through to `detectMsgType`'s bare
+  `DespatchAdviceNumber` check and was typed DESADV (Quick check showed a
+  despatch advice), and Compare couldn't read it. Both labels are accepted
+  now (`TRANSUSXML_LABEL`).
+- **Dates can carry a time** (`202601151200`, 12 digits — the DESADV
+  variant's `DespatchDate` has it too). The invoice parser only converted an
+  exact 8-digit date, so the raw string read as "Invoice date differs"
+  against bol's ISO date. It uses the shared `normDate` now, which also
+  accepts 14 digits (`CCYYMMDDHHMMSS`) and `DD.MM.YYYY`.
 - **This dialect's ORDRSP variant** (same `<Messages><Message><Article>`
   shape, distinguished from the INVOIC one by `<OrderResponseNumber>`
   and the absence of `<OrderLine>`) has its own confirmed quirks:
@@ -133,6 +145,34 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     portal showed the correct packing slip number (it displays the document
     number), so judged from the Transus portal alone the case looked solved.
     bol's own system, reading `RFF+BM`, is what counts.
+  - **Header vs line fields must be told apart by position, not by name.**
+    The same tag names occur at both levels (`<OrderNumberBuyer>`,
+    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and `parseFactsTransusXml`
+    used `querySelector`, which returns the first match anywhere. Three
+    effects: a header-only `<OrderNumberBuyer>` wasn't applied to Articles
+    without their own (and the first Article's order became the "header"
+    order when the header had none), so every line read "supplier [—] vs bol
+    [order]" against bol's per-`LIN` `RFF+ON`, a false Transformation
+    difference; an Article's own `<DeliveryDate>` stood in for a missing
+    header date, giving a false "Expected delivery date changed"; and a
+    `<DespatchUnit>` took its nested Article's `<LineNumber>` (or a nested
+    unit's `<SSCC>`) when its own came later or was absent. Lookups now
+    take the direct child first, then a descendant that isn't inside another
+    line element, and a header order applies to every Article without one
+    (the same inheritance as EDIFACT's header `RFF+ON`).
+  - **Several `<Message>` elements in one `<Messages>` file** were read as
+    one message: every Article pooled under the first message's header, and
+    because `DespatchUnitReference` values are only unique within a message,
+    a later message's Article linked to the first message's unit (wrong
+    SSCC). `parseFactsTransusXmlList` now returns one facts object per
+    `<Message>`, so Compare pairs them by document number exactly like a
+    multi-`UNH` EDIFACT interchange, and Quick check shows one message at a
+    time with a picker. Quick check used to merge a multi-`UNH` EDIFACT
+    interchange too; same picker now. While fixing this,
+    `splitEdifactMessages` turned out to copy a 10-character `UNA` prefix
+    (it's 9), swallowing the next segment's first letter whenever no newline
+    followed: every split message started `UUNH`, lost its message type, and
+    Compare silently skipped all DESADV/ORDRSP-specific checks.
   - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
     EDIFACT "SSCC present but no PAC segment" check must never fire on it.
   - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after
@@ -243,7 +283,10 @@ attempt with it blank and a later one with it correctly filled in).
 
 Handling:
 - Detected generically (more than one `<?xml` declaration in one file),
-  not by matching the specific stray text.
+  not by matching the specific stray text. Only `<?xml` followed by
+  whitespace counts: a plain substring match also hit an ordinary
+  `<?xml-stylesheet …?>` instruction and put the "concatenated documents /
+  delivery failed" banner on a perfectly readable invoice.
 - Each fragment is trimmed back to its own well-formed closing tag before
   parsing — otherwise the *earlier* fragment also fails to parse, since
   the stray text sits inside its own slice, right after its real content
@@ -254,6 +297,52 @@ Handling:
   and that needs a real fix upstream, not just a smoother read here. The
   banner also shows a field-level diff between the two documents, which
   is often the fastest way to see what the retry actually changed.
+
+## Reading XML safely (every dialect)
+
+All XML paths, ORDRSP/DESADV (`parseFactsTransusXml`) as well as INVOIC
+(`parseInvoices`), go through the same preparation (`prepareXmlText`)
+before `DOMParser` sees the text:
+
+- **Whitespace before `<?xml`** is a hard parse error ("XML declaration
+  allowed only at the start of the document"). A file starting with a blank
+  line used to parse as nothing: zero DESADV/ORDRSP lines (every bol line
+  "missing from the supplier message"), or "Couldn't read an invoice". It
+  is now skipped silently. Many strict readers (.NET, Xerces) refuse it
+  too, but it's also what a paste into Quick check produces, so no banner.
+- **Text before the declaration** (a stray log line, like the one in the
+  concatenated-documents case below) is skipped when nothing before it looks
+  like an EDIFACT envelope, with a warn-level banner. It's not a confirmed
+  delivery failure yet, but XML allows nothing there.
+- **Illegal control characters and concatenated documents** (both below)
+  used to be recovered for INVOIC only. In a DESADV/ORDRSP XML the same
+  byte made the whole file parse as nothing. Same recovery and banners now.
+- **Malformed XML** (cut off, a missing closing tag): `DOMParser` doesn't
+  throw, it returns a `<parsererror>` document, which every parser turned
+  into an empty result without a word. `parseXmlDoc` returns the reader's
+  line/column/message instead. Compare stops with a banner per unreadable
+  side (`#compareBanner`) rather than comparing an empty message, and Quick
+  check shows the same banner above the raw text.
+
+## File encoding
+
+Files are decoded from their raw bytes (`decodeFileBytes`), never with
+`File.text()` or JSZip's `'string'` output, which both assume UTF-8.
+
+- **A real supplier XML declares `encoding="utf-16"`.** Chromium's
+  `File.text()` happens to honour a UTF-16 BOM, but without one every
+  character came out with a NUL next to it: the file parsed as nothing, and
+  every bol line showed as "missing from the supplier message". JSZip's
+  `'string'` ignores the BOM entirely, so the same file inside a ZIP broke
+  even with one (and was routed to the EDIFACT parser).
+- **Windows-1252 / latin-1 bytes** (EDIFACT `UNOC` is latin-1; descriptions
+  like "BOUCLÉ", "Ø") became U+FFFD replacement characters.
+- Detection order: BOM (UTF-8, UTF-16LE/BE), then the NUL-byte pattern of
+  BOM-less UTF-16, then strict UTF-8, then the XML declaration's own
+  `encoding`, then windows-1252. The declaration is never trusted over the
+  bytes: a file that says `utf-16` but is really UTF-8 (common after a
+  re-save) decodes as UTF-8, and `DOMParser` ignores the declaration once
+  the text is a string.
 
 ## Confirmed EDIFACT / qualifier-code quirks (real production data)
 
