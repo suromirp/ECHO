@@ -587,12 +587,14 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /Pallet mapping differs|pallet mapping difference/.test(t))).toBe(false);
-  const near = buckets.message.filter(t => /Packing reference and despatch advice number almost match/.test(t));
-  expect(near).toHaveLength(2);
+  // Same values on both sides: reported once, about the supplier's message.
+  const near = buckets.message.filter(t => /Packing slip number may be wrong/.test(t));
+  expect(near).toHaveLength(1);
+  expect(near[0]).toContain('passed on unchanged');
   expect(near[0]).toContain('PKB1000A');
 
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'repeated-sscc-units.sup.xml'));
   await expect(page.locator('#quickOverview')).toBeVisible();
-  await expect(page.locator('body')).toContainText('almost match');
+  await expect(page.locator('body')).toContainText('Packing slip number may be wrong');
 });
