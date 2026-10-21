@@ -135,6 +135,8 @@ actual test fixtures, don't just keep this list as prose:
   one pallet (no false "Pallet mapping differs"). A packing reference that
   almost matches the despatch advice number (only a suffix of up to 3 characters differs, or only the case)
   is a Message check in both modes.
+- **UI**: long explanations sit behind a collapsed "More info" toggle, and
+  "Copy for Transus" contains only the headline.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
   by pallets that each carry an SSCC) is never flagged as "No SSCC at
   pallet level", in either mode.

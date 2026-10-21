@@ -70,6 +70,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | several zeroed EANs on one pallet flagged once, paired by line number, with no "Item ?" knock-on differences | `desadv/zero-ean-shared-pallet.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a changed despatch date (DTM+11) or expected delivery date (DTM+132) flagged as a Transformation difference; identical dates not flagged | `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | several groups sharing one SSCC compared as one pallet; a near-miss packing reference vs despatch advice number flagged in both modes | `desadv/repeated-sscc-units.sup.xml`, `desadv/repeated-sscc-units.bol.edi` | `specs/desadv.spec.js` |
+| UI | long explanations behind a collapsed "More info" toggle; Copy for Transus sends only the headline | `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
