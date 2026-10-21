@@ -850,6 +850,25 @@ function renderQuickRawXml(raw){
   quickPlain=raw;
   return lines.length;
 }
+/* A file holding several ORDRSP/DESADV messages (multi-UNH EDIFACT, or a
+   <Messages> XML with several <Message>) used to be shown as ONE merged
+   message in Quick check: every line pooled, the last message's number on
+   top. Each message is now its own overview, one at a time (the overview's
+   search box and tables have fixed IDs), with a picker to switch. */
+let quickFactsList=[];
+function quickFactsPanelHtml(i){
+  const list=quickFactsList,facts=list[i];
+  let picker='';
+  if(list.length>1){
+    const btns=list.map((f,j)=>`<button type="button" class="btn ${j===i?'primary':'ghost'}" onclick="quickShowFactsDoc(${j})">${esc((f.msgType||'Message')+' '+(f.docNumber||('#'+(j+1))))}</button>`).join(' ');
+    picker=`<div class="note-inline quick-doc-picker" style="margin-bottom:12px;">This file contains <strong>${list.length} separate messages</strong>, each read on its own rather than merged. Showing message ${i+1} of ${list.length}:<div class="actions" style="margin-top:6px;">${btns}</div></div>`;
+  }
+  return `<div class="panel"><h2>Overview</h2>${picker}${xmlFileBannersHtml(facts,'This file')}${factsOverviewHtml(facts)}</div>`;
+}
+function quickShowFactsDoc(i){
+  if(!quickFactsList[i])return;
+  document.getElementById('quickOverview').innerHTML=quickFactsPanelHtml(i);
+}
 function quickFormat(){
   const raw=document.getElementById('quickInput').value;
   if(!raw.trim()){quickSetStatus('Paste a message first, or import a file.',true);return;}
@@ -874,9 +893,13 @@ function quickFormat(){
       }else if(invs.xmlError){xmlErr=invs.xmlError;ovHtml=xmlErrPanel(xmlErr);}
       else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
     }else if(msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS'){
-      const facts=parseFacts(raw);
-      if(facts.xmlError){xmlErr=facts.xmlError;ovHtml=xmlErrPanel(xmlErr);}
-      else ovHtml=`<div class="panel"><h2>Overview</h2>${xmlFileBannersHtml(facts,'This file')}${factsOverviewHtml(facts)}</div>`;
+      const list=parseFactsList(raw);
+      if(list[0].xmlError){xmlErr=list[0].xmlError;ovHtml=xmlErrPanel(xmlErr);}
+      else{
+        quickFactsList=list;
+        ovHtml=quickFactsPanelHtml(0);
+        if(list.length>1)ovNote=`${list.length} messages found in this file.`;
+      }
     }else if(isXmlText(raw)&&(xmlErr=parseXmlDoc(prepareXmlText(raw).text).error)){
       // Not even recognizable as a message type — still say why, when it's
       // because the XML itself can't be read.
@@ -1316,7 +1339,14 @@ function emptyXmlFacts(raw){
    parseable one — each flagged with a banner — and, when the XML still
    can't be read, facts.xmlError instead of a silently empty message (which
    used to show every bol line as "missing from the supplier message"). */
-function parseFactsTransusXml(raw){
+function parseFactsTransusXml(raw){return parseFactsTransusXmlList(raw)[0];}
+/* One facts object per <Message> in a <Messages> envelope. All messages
+   used to be read as ONE: every Article pooled under the first message's
+   header, and a DespatchUnitReference reused by a later message linked
+   its Articles to the first message's unit (wrong SSCC). Now split the
+   same way a multi-UNH EDIFACT interchange is (splitEdifactMessages), so
+   Compare pairs them by document number and Quick check shows each. */
+function parseFactsTransusXmlList(raw){
   const prep=prepareXmlText(raw);
   let parsed=null,concatenatedXml=null;
   const pieces=splitConcatenatedXmlDocs(prep.text);
@@ -1331,11 +1361,17 @@ function parseFactsTransusXml(raw){
     }
   }
   if(!parsed)parsed=parseXmlDoc(prep.text);
-  const f=parsed.doc?factsFromXmlDoc(parsed.doc,raw):Object.assign(emptyXmlFacts(raw),{xmlError:parsed.error});
-  if(prep.leadingJunk)f.leadingJunk=prep.leadingJunk;
-  if(prep.illegalXmlChars)f.illegalXmlChars=prep.illegalXmlChars;
-  if(concatenatedXml)f.concatenatedXml=concatenatedXml;
-  return f;
+  const withNotes=f=>{
+    if(prep.leadingJunk)f.leadingJunk=prep.leadingJunk;
+    if(prep.illegalXmlChars)f.illegalXmlChars=prep.illegalXmlChars;
+    if(concatenatedXml)f.concatenatedXml=concatenatedXml;
+    return f;
+  };
+  if(!parsed.doc)return [withNotes(Object.assign(emptyXmlFacts(raw),{xmlError:parsed.error}))];
+  const root=parsed.doc.documentElement;
+  const msgs=localName(root)==='Messages'?childrenByName(root,'Message'):[];
+  if(msgs.length<=1)return [withNotes(factsFromXmlDoc(parsed.doc,raw))];
+  return msgs.map(m=>withNotes(factsFromXmlDoc(parsed.doc,raw,m)));
 }
 function factsFromXmlDoc(doc,raw,scope){
   const f=emptyXmlFacts(raw);
@@ -1497,6 +1533,8 @@ function factsFromXmlDoc(doc,raw,scope){
   return f;
 }
 
+/* Single-message reading (first <Message> only for XML, whole interchange
+   merged for EDIFACT) \u2014 Compare and Quick check use parseFactsList. */
 function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
@@ -1515,7 +1553,11 @@ function parseFacts(raw){
    single-message parser, exactly as parseInvoices already does for INVOIC. */
 function splitEdifactMessages(raw){
   const {segs,delims}=splitSegments(raw);
-  const unaMatch=raw.replace(/^[\s\uFEFF]+/,'').match(/^UNA......./);
+  // UNA is exactly 9 characters ("UNA" + 6 service characters). This used
+  // to take 10, swallowing the next segment's first letter whenever no
+  // newline followed the UNA \u2014 so every split message started "UUNH",
+  // lost its message type, and Compare skipped all DESADV/ORDRSP checks.
+  const unaMatch=raw.replace(/^[\s\uFEFF]+/,'').match(/^UNA....../);
   const unaPrefix=unaMatch?unaMatch[0]:'';
   const chunks=[];let cur=null;
   segs.forEach(seg=>{
@@ -1528,12 +1570,11 @@ function splitEdifactMessages(raw){
 }
 
 /* Returns an array of facts objects: one per message for a multi-message
-   EDIFACT interchange, or a single-element array otherwise. XML input isn't
-   known to bundle multiple DESADV/ORDRSP documents, so it's always treated
-   as one message. */
+   EDIFACT interchange or a <Messages> XML file with several <Message>
+   elements, or a single-element array otherwise. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
-  if(isXmlText(raw)) return [parseFactsTransusXml(raw)];
+  if(isXmlText(raw)) return parseFactsTransusXmlList(raw);
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
