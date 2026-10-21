@@ -1580,7 +1580,7 @@ const ACTION_RULE_EXPLAIN={
   'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
   'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
   'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
-  'action6-no-backorder-has-confirmed':"Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity already covering the full amount — reads as a delivery-date-only amendment, a recognized use of action 6.",
+  'action6-no-backorder-has-confirmed':"<strong>Action 6 used as a delivery-date-only amendment</strong>"+moreInfo("Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity already covering the full amount — reads as a delivery-date-only amendment, a recognized use of action 6."),
   'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder, a cancelled quantity, nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
   'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
   'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
@@ -1671,7 +1671,7 @@ function taxIssueFindings(taxIssues){
   return order.map(key=>{
     const g=groups.get(key);
     const n=g.refs.length;
-    return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong> — EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one. Affected: ${g.refs.map(esc).join(', ')}.`;
+    return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong>: ${g.refs.map(esc).join(', ')}.`+moreInfo(`EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one.`);
   });
 }
 /* Groups {ref,code} entries from the IMD-description illegal-XML-character
@@ -1685,7 +1685,7 @@ function illegalDescCharFindings(issues){
   const n=issues.length;
   const codes=[...new Set(issues.map(i=>'0x'+i.code.toString(16).toUpperCase().padStart(2,'0')))].join(', ');
   const refs=issues.map(i=>i.ref).join(', ');
-  return [`<strong>${n} item description${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}) — perfectly valid in EDIFACT free text, but not inside XML: any XML parser (including the one converting this to an invoice document) refuses to parse the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file". Affected: ${esc(refs)}.`];
+  return [`<strong>${n} item description${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}): ${esc(refs)}.`+moreInfo(`Perfectly valid in EDIFACT free text, but not inside XML: any XML parser (including the one converting this to an invoice document) refuses to parse the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file".`)];
 }
 /* A message can state the VAT rate at the standard TAX-segment position on
    its line-level segments, but at a different position on its summary-level
@@ -1697,7 +1697,7 @@ function illegalDescCharFindings(issues){
    it's a question about how the supplier's own message is built, not a
    mapping question. */
 function taxRateEncodingMismatchText(){
-  return "This message's summary-level TAX segment states the VAT rate in a different position than its own line-level TAX segments — ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message as a result. The rate belongs in the 4th sub-component of the C243 composite, e.g. <code>TAX+7+VAT+++:::21+S'</code> rather than <code>TAX+7+VAT+++21:S'</code>.";
+  return "<strong>VAT rate in a non-standard position</strong> in the summary TAX segment"+moreInfo("The summary-level TAX segment states the VAT rate in a different position than the line-level TAX segments. ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message. The rate belongs in the 4th sub-component of the C243 composite, e.g. <code>TAX+7+VAT+++:::21+S'</code> rather than <code>TAX+7+VAT+++21:S'</code>.");
 }
 /* Groups {label,missSide,jump} entries from the ORDRSP price comparison
    into one block per side missing the price — every affected line/action
@@ -1788,7 +1788,7 @@ function cascadePriceShiftFindings(runs){
     const originNote=(origin&&origin.hasDtmConflict)
       ?` This starts right after <code>${esc(origin.label)}</code>, which is flagged above for a duplicate DTM qualifier — a confirmed real cause (per Transus support) of exactly this kind of shift on every line after it.`
       :'';
-    return `<strong>${n} consecutive lines each show bol's net price exactly matching the supplier's own price for the line before it</strong> — reads as a single price shifted one line too far down the message, not ${n} independent price differences.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+    return `<strong>Prices shifted one line down</strong> on ${n} consecutive lines: one shift, not ${n} separate differences. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`On each of these lines bol's net price equals the supplier's price for the line before it, so this reads as a single price shifted one line too far down the message.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones.`);
   });
 }
 
@@ -1890,7 +1890,7 @@ function checkNoPriceAnywhere(facts,label,add){
   const accepted=facts.lines.filter(l=>l.action==='5');
   if(accepted.length<2)return; // one line alone isn't enough to call it a pattern
   if(accepted.some(l=>l.netPrice!==null&&l.netPrice!==undefined))return; // at least one has a price — not a total gap
-  add('warn',`${label} — <strong>none of the ${accepted.length} accepted lines in this message carry a net price (PRI+AAA)</strong> — worth checking whether that's expected. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) will reject the message outright rather than accept it without one. Worth reporting to whoever generates this feed.`,'message');
+  add('warn',`${label} — <strong>none of the ${accepted.length} accepted lines carry a net price</strong>`+moreInfo(`No PRI+AAA on any accepted line. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) rejects the message outright rather than accepting it without one. Worth reporting to whoever generates this feed.`),'message');
 }
 /* A single message's own internal consistency (ORDRSP): the same item
    split across multiple lines with different actions — e.g. one line
@@ -1917,7 +1917,7 @@ function checkSplitItemPriceGap(facts,label,add){
     const ref=lines[0];
     const actionsPresent=[...new Set(withPrice.map(l=>l.action||'?'))].join(', ');
     const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
-    add('warn',`${label} — item <code>${esc(ref.art||ref.gtin||'?')}</code> appears on ${lines.length} lines in this message (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price (present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}) — worth checking whether the price should be there on every occurrence of this item.`,'message');
+    add('warn',`${label} — <strong>net price missing on part of item</strong> <code>${esc(ref.art||ref.gtin||'?')}</code>: present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}`+moreInfo(`This item appears on ${lines.length} lines (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price. Worth checking whether the price should be there on every occurrence of this item.`),'message');
   });
 }
 
@@ -1991,7 +1991,7 @@ function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
     const g=groups.get(qual);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
-    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'} — some EDI processors only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Some EDI processors only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed.`),'message');
   });
 }
 
@@ -2299,7 +2299,7 @@ function comparePalletMapping(bol,sup,add,keyFn){
   const collapse=detectPalletCollapse(mismatches,bMap,sMap);
   if(collapse){
     const sideLabel=collapse.side==='bol'?'bol':'supplier';
-    add('err',`<strong>${collapse.affectedCount} pallets show the same structural pattern</strong> on the ${sideLabel} side, rather than ${collapse.affectedCount} separate problems: nearly all of them contain just one item, while pallet SSCC <code>${esc(collapse.collapsedSscc)}</code> alone holds ${collapse.collapsedCount} items. This points to a single mapping issue in how items were grouped under pallets on the ${sideLabel} side — the overall item quantities across the message still match (see "Quantities" above). See the Pallet / SSCC overview below for the full, per-pallet breakdown.`,'diff');
+    add('err',`<strong>Items grouped under pallets differently</strong> on the ${sideLabel} side: SSCC <code>${esc(collapse.collapsedSscc)}</code> holds ${collapse.collapsedCount} items, ${collapse.affectedCount} other pallets hold about one each.`+moreInfo(`One structural pattern, not ${collapse.affectedCount} separate problems: this points to a single mapping issue in how items were grouped under pallets on the ${sideLabel} side. The overall item quantities across the message still match (see "Quantities" above). The Pallet / SSCC overview below has the per-pallet breakdown.`),'diff');
   }else{
     // A handful of mismatched pallets get full detail. Many at once (when the
     // pattern above doesn't apply) would otherwise produce an unreadable wall
@@ -2314,10 +2314,10 @@ function comparePalletMapping(bol,sup,add,keyFn){
     });
     if(mismatches.length>DETAIL_CAP){
       const rest=mismatches.length-DETAIL_CAP;
-      add('err',`<strong>${rest} more SSCC(s) also show a pallet mapping difference</strong> — see the Pallet / SSCC overview below for each one. This many at once usually points to a structural mismatch (e.g. items not distributed across pallets the same way on both sides) rather than ${rest} separate individual issues.`,'diff');
+      add('err',`<strong>${rest} more SSCC(s) also show a pallet mapping difference</strong>, see the Pallet / SSCC overview.`+moreInfo(`This many at once usually points to one structural mismatch (e.g. items not distributed across pallets the same way on both sides) rather than ${rest} separate issues.`),'diff');
     }
   }
-  if(palletGtinUnmapped)add('info','<strong>Supplier sends pallet-level EAN</strong>. The supplier includes a pallet-level EAN in addition to the SSCC. This is uncommon in our DESADV flow, but it is not mapped to the bol output and no impact was detected on the SSCC, item or quantity mapping.','info');
+  if(palletGtinUnmapped)add('info','<strong>Supplier sends pallet-level EAN</strong>, not passed on to bol (expected).'+moreInfo('The supplier includes a pallet-level EAN in addition to the SSCC. This is uncommon in our DESADV flow, but it is not mapped to the bol output and no impact was detected on the SSCC, item or quantity mapping.'),'info');
 }
 
 /* one side's pallet/SSCC breakdown, with:
@@ -2720,8 +2720,8 @@ function compare(bol,sup){
   // data — a real supplier complaint traced this to a stray empty "LIN'"
   // Transus inserted right before every genuine LIN in a test order,
   // which the receiving system then reads as a blank item line.
-  if(sup.blankLinCount)add('warn',`Supplier — ${sup.blankLinCount} blank LIN segment${sup.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines.`,'message');
-  if(bol.blankLinCount)add('warn',`Bol — ${bol.blankLinCount} blank LIN segment${bol.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines.`,'message');
+  if(sup.blankLinCount)add('warn',`Supplier — ${sup.blankLinCount} blank LIN segment${sup.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`)+``,'message');
+  if(bol.blankLinCount)add('warn',`Bol — ${bol.blankLinCount} blank LIN segment${bol.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`)+``,'message');
 
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
@@ -3752,7 +3752,7 @@ function lineArithmeticFindingText(label,qty,netPrice,r,cur){
   const explain=r.withinRounding
     ?"within what rounding the net price to 2 decimals could explain"
     :"larger than ordinary price rounding alone would explain — worth a second look";
-  return `Item <code>${esc(label)}</code>: quantity × net price (${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}) doesn't exactly match the stated line amount (${esc(fmtAmt(r.expected+r.diff,cur))}) — a difference of ${esc(fmtAmt(Math.abs(r.diff),cur))}, ${explain}.`;
+  return `Item <code>${esc(label)}</code>: <strong>line amount ${esc(fmtAmt(r.expected+r.diff,cur))}</strong>, quantity × net price gives ${esc(fmtAmt(r.expected,cur))} (difference ${esc(fmtAmt(Math.abs(r.diff),cur))})`+moreInfo(`${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}, while the stated line amount is ${esc(fmtAmt(r.expected+r.diff,cur))}. The difference is ${explain}.`);
 }
 /* When several/most flagged lines share almost exactly the same ratio
    between the stated line amount and quantity × net price, that isn't N
@@ -3797,7 +3797,7 @@ function uniformArithmeticGapText(g){
   const n=g.items.length;
   const pctTxt=g.pct.toFixed(1)+'%';
   const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
-  return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong> — not ${n} separate arithmetic mistakes, but one uniform pattern (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix — worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance reference rather than folding it silently into the line amount. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong>: one pattern, not ${n} separate gaps. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Looks like one uniform arrangement (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix. Worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance rather than folding it into the line amount.`);
 }
 /* Flattens an XML document into {tagPath: text} for its leaf elements, so
    two versions of "the same" document can be diffed field-by-field without
@@ -4156,7 +4156,7 @@ function compareInvoice(sup,bol){
         add('err',`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`);
       });
       r.cells.filter(c=>c.ambiguous).forEach(c=>{
-        add('warn',`EAN <code>${esc(label)}</code>: the <strong>${c.label}</strong> reference is ambiguous — the message contains multiple message-level references and it can't be reliably determined which one belongs to this line. No automatic match was made.`);
+        add('warn',`EAN <code>${esc(label)}</code>: the <strong>${c.label} reference is ambiguous</strong>, no automatic match made.`+moreInfo(`The message contains multiple message-level references and it can't be reliably determined which one belongs to this line.`));
       });
     }
   });
@@ -4471,7 +4471,7 @@ function factsOverviewHtml(facts){
   // here too. Not the SSCC/packing-reference checks below, though — those
   // are DESADV-specific there (ORDRSP has no pallet/despatch concept), so
   // scoped the same way here for genuine parity rather than just similarity.
-  if(facts.blankLinCount)qcAdd('warn',`${facts.blankLinCount} blank LIN segment${facts.blankLinCount===1?'':'s'} found (no EAN, action or line number at all) — these carry no data and were skipped here, but a receiving system may read them as blank item lines. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`);
+  if(facts.blankLinCount)qcAdd('warn',`${facts.blankLinCount} blank LIN segment${facts.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`));
   // ORDERS is the order itself — BGM's own document number already serves
   // as its reference, so unlike ORDRSP/DESADV (which point back at a
   // separate bol PO via RFF+ON) there's nothing extra to expect here.
