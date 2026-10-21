@@ -283,7 +283,10 @@ attempt with it blank and a later one with it correctly filled in).
 
 Handling:
 - Detected generically (more than one `<?xml` declaration in one file),
-  not by matching the specific stray text.
+  not by matching the specific stray text. Only `<?xml` followed by
+  whitespace counts: a plain substring match also hit an ordinary
+  `<?xml-stylesheet …?>` instruction and put the "concatenated documents /
+  delivery failed" banner on a perfectly readable invoice.
 - Each fragment is trimmed back to its own well-formed closing tag before
   parsing — otherwise the *earlier* fragment also fails to parse, since
   the stray text sits inside its own slice, right after its real content
