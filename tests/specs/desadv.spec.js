@@ -617,3 +617,33 @@ test('long explanations sit behind a collapsed More info toggle and stay out of 
   expect(transus).not.toContain('More info');
   expect(transus).not.toContain('Worth checking with Transus');
 });
+
+// A real supplier XML declares encoding="utf-16". Without a BOM, File.text()
+// (UTF-8 only) left a NUL next to every character, so the file parsed as
+// nothing and every bol line showed as "missing from the supplier message".
+test('a UTF-16 XML DESADV without a BOM is decoded and compared normally', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'utf16-no-bom.sup.xml'),
+    path.join(FIX, 'utf16-no-bom.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Transus XML');
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+  expect(resultsText).not.toMatch(/only in the bol output/);
+});
+
+// Windows-1252 bytes (É, Ø, È) used to turn into U+FFFD replacement
+// characters, because every file was decoded as UTF-8.
+test('a windows-1252 XML DESADV keeps its accented characters in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'windows-1252.sup.xml'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('PLAID BOUCLÉ Ø40');
+  expect(overviewText).toContain('KUSSEN CRÈME');
+  expect(overviewText).not.toContain('�');
+});

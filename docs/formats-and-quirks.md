@@ -255,6 +255,26 @@ Handling:
   banner also shows a field-level diff between the two documents, which
   is often the fastest way to see what the retry actually changed.
 
+## File encoding
+
+Files are decoded from their raw bytes (`decodeFileBytes`), never with
+`File.text()` or JSZip's `'string'` output, which both assume UTF-8.
+
+- **A real supplier XML declares `encoding="utf-16"`.** Chromium's
+  `File.text()` happens to honour a UTF-16 BOM, but without one every
+  character came out with a NUL next to it: the file parsed as nothing, and
+  every bol line showed as "missing from the supplier message". JSZip's
+  `'string'` ignores the BOM entirely, so the same file inside a ZIP broke
+  even with one (and was routed to the EDIFACT parser).
+- **Windows-1252 / latin-1 bytes** (EDIFACT `UNOC` is latin-1; descriptions
+  like "BOUCLÉ", "Ø") became U+FFFD replacement characters.
+- Detection order: BOM (UTF-8, UTF-16LE/BE), then the NUL-byte pattern of
+  BOM-less UTF-16, then strict UTF-8, then the XML declaration's own
+  `encoding`, then windows-1252. The declaration is never trusted over the
+  bytes: a file that says `utf-16` but is really UTF-8 (common after a
+  re-save) decodes as UTF-8, and `DOMParser` ignores the declaration once
+  the text is a string.
+
 ## Confirmed EDIFACT / qualifier-code quirks (real production data)
 
 - **An all-zeros EAN (`LIN+1++0000000000000:EN`) in bol's DESADV output**
