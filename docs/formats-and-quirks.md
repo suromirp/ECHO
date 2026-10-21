@@ -11,6 +11,13 @@ complaint about a malformed test order is a real, recurring use case).
 
 Always the "bol output" side for INVOIC. Confirmed traps:
 
+- **VAT rate sits directly in `TaxSubtotal/Percent`**, both in the header
+  `TaxTotal` and in each `InvoiceLine/TaxTotal`. Checked on three real bol
+  UBL invoices (Supplier Alfa, Supplier India, a credit note); the line-level VAT
+  comparison runs on them ("VAT %: 9 → 9"). Several synthetic fixtures put
+  `Percent` under `TaxCategory` instead. That's a fixture quirk, not bol's
+  format, so don't "fix" the parser for it.
+
 - **Multiple `TaxSubtotal` blocks (one per VAT rate) must be summed** for
   the taxable total. Taking only the first silently under-reports it the
   moment a message has more than one VAT rate (e.g. 9% on goods, 0% on a
