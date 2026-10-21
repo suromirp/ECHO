@@ -319,3 +319,40 @@ test('a bol invoice with LegalMonetaryTotal/LineExtensionAmount stuck at 0 falls
   expect(resultsText).toContain('Total line amounts');
   expect(resultsText).toContain('450.00 EUR');
 });
+
+// Whitespace before "<?xml" is a hard DOMParser error ("XML declaration
+// allowed only at the start of the document") — a bol UBL file starting
+// with a blank line used to end in a bare "Couldn't read an invoice".
+test('a bol UBL invoice starting with a blank line is still read', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'leading-whitespace.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).toContain('Loud and clear');
+});
+
+// Unreadable XML used to give only a quiet status line ("Couldn't read an
+// invoice from the bol output") with no reason.
+test('a truncated XML invoice shows a plain-language banner with the reader position', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'truncated.bol.ubl.xml'),
+  );
+  const banner = page.locator('#compareBanner .xml-error-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("Bol's file couldn't be read as XML");
+  await expect(banner).toContainText(/line \d+, column \d+/);
+  await expect(page.locator('#invoiceResults')).toBeHidden();
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'truncated.bol.ubl.xml'));
+  await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
+  await expect(page.locator('#quickStatus')).toContainText('read as XML');
+});
