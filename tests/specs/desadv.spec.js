@@ -710,3 +710,23 @@ test('a malformed XML DESADV shows a plain-language banner instead of an empty c
   await runQuickFixture(page, path.join(FIX, 'malformed.sup.xml'));
   await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
 });
+
+// Header vs line in XML: a header-only <OrderNumberBuyer> wasn't inherited by
+// the Articles (false "order numbers differ" on every line), an Article's own
+// <DeliveryDate> stood in for the missing header date (false "Expected
+// delivery date changed"), and a unit took its nested Article's LineNumber.
+test('XML header fields are read from the header, and a header order number applies to every line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-header-scope.sup.xml'),
+    path.join(FIX, 'transusxml-header-scope.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /order numbers differ/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /delivery date/i.test(t))).toBe(false);
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).toContain('CPS 900');
+});
