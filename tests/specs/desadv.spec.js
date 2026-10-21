@@ -477,7 +477,7 @@ test('a TRANSUSXML DESADV without an <?xml declaration is read in Quick check', 
   await expect(page.locator('#quickOverview')).toBeVisible();
   const overviewText = await page.locator('#quickOverview').innerText();
   expect(overviewText).toContain('9100002');
-  expect(overviewText).toContain('387000000000000028');
+  expect(overviewText).toContain('387000000000000026');
 });
 
 // A real bol DESADV output had every LIN's EAN replaced by 0000000000000
@@ -616,4 +616,40 @@ test('long explanations sit behind a collapsed More info toggle and stay out of 
   expect(transus).toContain('Despatch date (DTM+11) changed');
   expect(transus).not.toContain('More info');
   expect(transus).not.toContain('Worth checking with Transus');
+});
+
+// Same Supplier Charlie shape: 5 units over 2 SSCCs. The SSCC stat counted
+// every unit (5) instead of distinct SSCCs (2).
+test('the SSCC count shows distinct SSCCs, not one per CPS group', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'repeated-sscc-units.sup.xml'),
+    path.join(FIX, 'repeated-sscc-units.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const stat = await page.locator('.stat', { hasText: 'SSCCs' }).first().innerText();
+  expect(stat).toMatch(/\b2\b/);
+  await expect(page.locator('#results')).toContainText('5 groups, 2 SSCCs');
+});
+
+// GS1 check digit: a real Supplier Bravo SSCC had a wrong check digit and ECHO
+// said nothing. One invalid EAN + one invalid SSCC; the valid EAN is not
+// listed. Single-message observation, so Quick check too.
+test('an EAN or SSCC with a wrong GS1 check digit is flagged, in Compare and Quick check', async ({ page }) => {
+  const fx = path.join(FIX, 'gs1-check-digit.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fx, fx);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => /Check digit doesn't match/.test(t));
+  expect(hits).toHaveLength(2); // one per side
+  expect(hits[0]).toContain('8700000000015');
+  expect(hits[0]).toContain('387000000000000012');
+  expect(hits[0]).not.toContain('8700000000025');
+
+  await openApp(page);
+  await runQuickFixture(page, fx);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('body')).toContainText("Check digit doesn't match");
 });

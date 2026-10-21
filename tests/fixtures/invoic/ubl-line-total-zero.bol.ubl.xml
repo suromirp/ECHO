@@ -25,7 +25,7 @@
     <cbc:InvoicedQuantity>10</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount>250.00</cbc:LineExtensionAmount>
     <cac:OrderLineReference><cac:OrderReference><cbc:ID>5000001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
-    <cac:Item><cbc:Name>Item 1</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000021</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Item><cbc:Name>Item 1</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000020</cbc:ID></cac:SellersItemIdentification></cac:Item>
     <cac:Price><cbc:PriceAmount>25.00</cbc:PriceAmount></cac:Price>
   </cac:InvoiceLine>
   <cac:InvoiceLine>
@@ -33,7 +33,7 @@
     <cbc:InvoicedQuantity>5</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount>200.00</cbc:LineExtensionAmount>
     <cac:OrderLineReference><cac:OrderReference><cbc:ID>5000001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
-    <cac:Item><cbc:Name>Item 2</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000022</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Item><cbc:Name>Item 2</cbc:Name><cac:SellersItemIdentification><cbc:ID>4000000000129</cbc:ID></cac:SellersItemIdentification></cac:Item>
     <cac:Price><cbc:PriceAmount>40.00</cbc:PriceAmount></cac:Price>
   </cac:InvoiceLine>
 </Invoice>
