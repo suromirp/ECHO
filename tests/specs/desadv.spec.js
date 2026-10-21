@@ -598,3 +598,22 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   await expect(page.locator('#quickOverview')).toBeVisible();
   await expect(page.locator('body')).toContainText('Packing slip number may be wrong');
 });
+
+// Findings stay short: explanation sits behind a collapsed "More info"
+// toggle, and Copy for Transus sends only the headline.
+test('long explanations sit behind a collapsed More info toggle and stay out of Copy for Transus', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'date-shift.sup.edi'),
+    path.join(FIX, 'date-shift.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const more = page.locator('#findings details.f-more');
+  expect(await more.count()).toBeGreaterThan(0);
+  expect(await more.first().evaluate(e => e.open)).toBe(false);
+  const transus = await page.evaluate(() => { setTransusLang('en'); return currentTransusText(); });
+  expect(transus).toContain('Despatch date (DTM+11) changed');
+  expect(transus).not.toContain('More info');
+  expect(transus).not.toContain('Worth checking with Transus');
+});
