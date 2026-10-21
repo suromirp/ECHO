@@ -133,6 +133,21 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     portal showed the correct packing slip number (it displays the document
     number), so judged from the Transus portal alone the case looked solved.
     bol's own system, reading `RFF+BM`, is what counts.
+  - **Header vs line fields must be told apart by position, not by name.**
+    The same tag names occur at both levels (`<OrderNumberBuyer>`,
+    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and `parseFactsTransusXml`
+    used `querySelector`, which returns the first match anywhere. Three
+    effects: a header-only `<OrderNumberBuyer>` wasn't applied to Articles
+    without their own (and the first Article's order became the "header"
+    order when the header had none), so every line read "supplier [—] vs bol
+    [order]" against bol's per-`LIN` `RFF+ON`, a false Transformation
+    difference; an Article's own `<DeliveryDate>` stood in for a missing
+    header date, giving a false "Expected delivery date changed"; and a
+    `<DespatchUnit>` took its nested Article's `<LineNumber>` (or a nested
+    unit's `<SSCC>`) when its own came later or was absent. Lookups now
+    take the direct child first, then a descendant that isn't inside another
+    line element, and a header order applies to every Article without one
+    (the same inheritance as EDIFACT's header `RFF+ON`).
   - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
     EDIFACT "SSCC present but no PAC segment" check must never fire on it.
   - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after

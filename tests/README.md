@@ -84,6 +84,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | VAT number shown per party in the Invoice details table, alongside GLN | `invoic/vat-number-shown.sup.edi`, `invoic/vat-number-shown.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | illegal XML control character in an item description flagged on the supplier side, and stripped with a loud banner when already inside an XML file | `invoic/illegal-xml-char.sup.edi`, `invoic/illegal-xml-char.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | bol's `LegalMonetaryTotal/LineExtensionAmount` stuck at 0 falls back to summing the invoice lines instead of a false "Total line amounts differs" | `invoic/ubl-line-total-zero.sup.edi`, `invoic/ubl-line-total-zero.bol.ubl.xml` | `specs/invoic.spec.js` |
+| DESADV | XML header vs line fields: a header-only order number applies to every Article, a line `<DeliveryDate>` isn't read as the header date, a unit keeps its own `<LineNumber>` | `desadv/transusxml-header-scope.sup.xml`, `desadv/transusxml-header-scope.bol.edi` | `specs/desadv.spec.js` |
 | DESADV | a UTF-16 XML without a BOM is decoded from its bytes and compared normally, not read as an empty message | `desadv/utf16-no-bom.sup.xml`, `desadv/utf16-no-bom.bol.edi` | `specs/desadv.spec.js` |
 | DESADV | windows-1252 characters (É, Ø, È) survive in Quick check instead of becoming U+FFFD | `desadv/windows-1252.sup.xml` | `specs/desadv.spec.js` |
 | ZIP | a UTF-16 XML (with BOM) inside a ZIP is decoded from its bytes, not as UTF-8 | `zip/utf16-pair.zip` | `specs/zip.spec.js` |
