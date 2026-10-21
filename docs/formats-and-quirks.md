@@ -117,6 +117,18 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
   - **Party GLNs are flat header fields** (`<SupplierGLN>`, `<BuyerGLN>`,
     `<DeliveryPartyGLN>`), and `<PackingSlipNumber>` is the packing
     reference (bol's `RFF+BM`).
+  - **One `<DespatchUnit>` per article, many sharing one SSCC.** A real Supplier
+    Charlie DESADV had 117 units over 8 SSCCs, each `<Article>` nested
+    inside its own unit, and bol's output mirrored it as one CPS per line.
+    ECHO kept only the first group per SSCC (`palletsBySSCC`) and flagged
+    every pallet as a mapping difference, although each SSCC held the same
+    items on both sides. Groups sharing an SSCC are now merged before
+    comparing, and a nested `<Article>` links to its own parent unit.
+  - **`PackingSlipNumber` vs `DespatchAdviceNumber` near-miss** (PKS100200
+    vs PKS100200A, same message): Transus mapped `PackingSlipNumber` to
+    `RFF+BM` faithfully, so this isn't a transformation difference. The
+    near-miss is flagged as a Message check, in both modes, so someone
+    confirms which value is on the physical packing slip.
   - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
     EDIFACT "SSCC present but no PAC segment" check must never fire on it.
   - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after
