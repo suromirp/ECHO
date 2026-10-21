@@ -141,6 +141,9 @@ actual test fixtures, don't just keep this list as prose:
   check adds findings that unrelated tests then count.
 - **DESADV**: the SSCC stat and overview count distinct SSCCs, not CPS
   groups ("117 groups, 8 SSCCs").
+- **ORDRSP/DESADV**: the "Header fields" table in Compare shows supplier vs
+  bol per header field, with the source field (RFF+BM, PackingSlipNumber,
+  DTM+11, …). It opens by itself when a shared field differs.
 - **UI**: long explanations sit behind a collapsed "More info" toggle, and
   "Copy for Transus" contains only the headline.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
