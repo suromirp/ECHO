@@ -790,6 +790,41 @@ function showEyeToast(msg){
 
 
 
+/* ================= file decoding ================= */
+/* Files are decoded from their raw bytes rather than with File.text(),
+   which always assumes UTF-8. A real supplier XML declares
+   encoding="utf-16": with a BOM Chromium's File.text() happens to cope,
+   but without one every character came out with a NUL next to it (so the
+   file parsed as nothing at all), and JSZip's 'string' never looks at a
+   BOM, so the same file inside a ZIP broke even with one. Windows-1252 /
+   latin-1 bytes (EDIFACT UNOC is latin-1; "BOUCLÉ", "Ø") turned into
+   U+FFFD replacement characters. Order: BOM, then a NUL-byte pattern for
+   BOM-less UTF-16, then strict UTF-8, then the XML declaration's own
+   encoding, then windows-1252 as the last resort. */
+function decodeFileBytes(input){
+  const b=input instanceof Uint8Array?input:new Uint8Array(input);
+  const dec=(enc,bytes,fatal)=>new TextDecoder(enc,{fatal:!!fatal,ignoreBOM:true}).decode(bytes);
+  if(b.length>=3&&b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF)return dec('utf-8',b.subarray(3));
+  if(b.length>=2&&b[0]===0xFF&&b[1]===0xFE)return dec('utf-16le',b.subarray(2));
+  if(b.length>=2&&b[0]===0xFE&&b[1]===0xFF)return dec('utf-16be',b.subarray(2));
+  // No BOM: ASCII-range text in UTF-16 has a NUL on every other byte —
+  // odd positions for little-endian, even positions for big-endian.
+  const n=Math.min(b.length,1024)&~1;
+  if(n>=4){
+    let even=0,odd=0;
+    for(let i=0;i<n;i++)if(b[i]===0){if(i%2)odd++;else even++;}
+    const half=n/2;
+    if(odd>=half*0.3&&even<=half*0.05)return dec('utf-16le',b);
+    if(even>=half*0.3&&odd<=half*0.05)return dec('utf-16be',b);
+  }
+  try{return dec('utf-8',b,true);}catch(e){}
+  const head=dec('windows-1252',b.subarray(0,200));
+  const m=head.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([\w.:-]+)["']/i);
+  if(m&&!/^utf-?(8|16)/i.test(m[1])){try{return dec(m[1],b);}catch(e){}}
+  return dec('windows-1252',b);
+}
+function readFileText(file){return file.arrayBuffer().then(decodeFileBytes);}
+
 /* ================= QUICK VIEW ================= */
 let quickPlain='';
 function quickColorizeSegment(seg,delims){
@@ -899,7 +934,7 @@ document.getElementById('quickFormatBtn').addEventListener('click',quickFormat);
 document.getElementById('quickInput').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')quickFormat();});
 document.getElementById('quickFileInput').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
-  f.text().then(t=>{
+  readFileText(f).then(t=>{
     document.getElementById('quickInput').value=t;
     quickFormat();
     quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
@@ -5816,8 +5851,8 @@ function cClearSide(side){cstate[side]=null;const drop=document.getElementById(s
   drop.addEventListener('click',e=>{if(e.target.classList.contains('clear'))return;input.click();});
   drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
   drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
-  drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;f.text().then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});});
-  input.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});e.target.value='';});
+  drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;readFileText(f).then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});});
+  input.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileText(f).then(t=>{cSetSide(side,f.name,t);cSetStatus(`${side==='bol'?'Bol':'Supplier'} file loaded: ${f.name}`);});e.target.value='';});
 });
 document.getElementById('clearBol').addEventListener('click',()=>cClearSide('bol'));
 document.getElementById('clearSup').addEventListener('click',()=>cClearSide('sup'));
@@ -5842,7 +5877,7 @@ async function handleZip(file){
     // hard-to-miss banner in Quick check itself, not just status text.
     if(entries.length===1){
       const only=entries[0];
-      const text=await only.entry.async('string');
+      const text=decodeFileBytes(await only.entry.async('uint8array'));
       const name=only.path.split('/').pop();
       cSetStatus(`This ZIP only contains one message ("${name}") — no supplier/bol pair to compare. Opening it in Quick check instead…`);
       await new Promise(r=>setTimeout(r,1100));
@@ -5862,7 +5897,7 @@ async function handleZip(file){
     for(const it of entries){const top=it.path.toLowerCase().split('/')[0];if(/bol/.test(top))bolE=it;else supE=it;}
     if(!bolE||!supE){if(entries.length>=2){supE=supE||entries[0];bolE=bolE||entries.find(e=>e!==supE)||entries[1];}}
     if(!bolE||!supE){cSetStatus('Couldn\u2019t distinguish two separate messages in the ZIP.',true);return;}
-    const bolText=await bolE.entry.async('string');const supText=await supE.entry.async('string');
+    const bolText=decodeFileBytes(await bolE.entry.async('uint8array'));const supText=decodeFileBytes(await supE.entry.async('uint8array'));
     cSetSide('bol',bolE.path.split('/').pop(),bolText);cSetSide('sup',supE.path.split('/').pop(),supText);
     cSetStatus('ZIP loaded. Bol ↔ supplier assigned automatically.');
     runCompare();
