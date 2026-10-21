@@ -557,8 +557,8 @@ test('a changed despatch date or expected delivery date is flagged as a transfor
   );
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
-  expect(buckets.diff.some(t => /Despatch date changed/.test(t) && /DTM\+11/.test(t))).toBe(true);
-  expect(buckets.diff.some(t => /Expected delivery date changed/.test(t) && /DTM\+132/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Despatch date \(DTM\+11\) changed/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Expected delivery date \(DTM\+132\) changed/.test(t))).toBe(true);
 });
 
 test('identical dates on both sides are not flagged', async ({ page }) => {
