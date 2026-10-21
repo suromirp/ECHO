@@ -2136,14 +2136,17 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
    slip. Values that differ completely are left alone: some suppliers
    legitimately use unrelated numbers for the two. Single-message
    observation, so both modes (parity rule). */
-function checkPackingRefNearMatch(facts,label,add,jumpCall){
+function packingRefNearMiss(facts){
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
-  if(!ref||!doc||ref===doc)return;
+  if(!ref||!doc||ref===doc)return false;
   const [shorter,longer]=ref.length<=doc.length?[ref,doc]:[doc,ref];
-  const nearly=ref.toUpperCase()===doc.toUpperCase()||(longer.startsWith(shorter)&&longer.length-shorter.length<=3);
-  if(!nearly)return;
-  const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:esc(s);
-  add('warn',`${label} — <strong>Packing reference and despatch advice number almost match</strong>: packing reference (RFF+BM) ${v(ref)}, despatch advice number (BGM) ${v(doc)}. bol uses the packing reference to match the delivery, so check which of the two is on the physical packing slip.`,'message');
+  return ref.toUpperCase()===doc.toUpperCase()||(longer.startsWith(shorter)&&longer.length-shorter.length<=3);
+}
+function checkPackingRefNearMatch(facts,label,add,jumpCall){
+  if(!packingRefNearMiss(facts))return;
+  const ref=facts.billOfLadingRef,doc=facts.docNumber;
+  const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
+  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: the message gives packing slip number ${v(ref)}, but its own document number is ${v(doc)}. The two are almost the same, which can mean one of them has a typo or a missing character. bol uses the packing slip number to match the delivery when it arrives, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is correct. <span style="opacity:.75">(Packing slip number = RFF+BM / PackingSlipNumber, document number = BGM / DespatchAdviceNumber.)</span>`,'message');
 }
 
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
@@ -2733,8 +2736,14 @@ function compare(bol,sup){
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     compareDesadvDates(sup,bol,add);
-    checkPackingRefNearMatch(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkPackingRefNearMatch(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    // Same near-miss on both sides means bol's output passed the supplier's
+    // values on unchanged: say it once, about the supplier's message.
+    if(packingRefNearMiss(sup)&&packingRefNearMiss(bol)&&sup.billOfLadingRef===bol.billOfLadingRef&&sup.docNumber===bol.docNumber){
+      checkPackingRefNearMatch(sup,'Supplier (passed on unchanged to bol)',add,v=>`jumpToFactsSource('both',${jsQuote(v)})`);
+    }else{
+      checkPackingRefNearMatch(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+      checkPackingRefNearMatch(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    }
     checkMissingPacWithSscc(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkMissingPacWithSscc(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkSsccLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
@@ -4469,7 +4478,7 @@ function factsOverviewHtml(facts){
     if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
     checkPalletStructure(facts,'This message',qcAdd,jumpCall);
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
-    checkPackingRefNearMatch(facts,'This message',qcAdd,jumpCall);
+    checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
     checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
     checkSsccLength(facts,'This message',qcAdd,jumpCall);
   }else if(type==='ORDRSP'){
