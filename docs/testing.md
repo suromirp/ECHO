@@ -174,6 +174,9 @@ actual test fixtures, don't just keep this list as prose:
   populated, the parser falls back to summing the lines instead of
   reporting a false "Total line amounts differs" against a header field
   bol's own downstream system doesn't rely on either.
+- **Encoding**: a UTF-16 XML without a BOM is decoded and compared
+  normally (not every line "missing"); windows-1252 characters (É, Ø, È)
+  survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
