@@ -33,7 +33,7 @@
     <cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount>
     <cac:Item>
       <cbc:Name>Widget</cbc:Name>
-      <cac:SellersItemIdentification><cbc:ID>1234567890123</cbc:ID></cac:SellersItemIdentification>
+      <cac:SellersItemIdentification><cbc:ID>1234567890128</cbc:ID></cac:SellersItemIdentification>
     </cac:Item>
     <cac:Price><cbc:PriceAmount>10.00</cbc:PriceAmount></cac:Price>
   </cac:InvoiceLine>

@@ -653,3 +653,171 @@ test('an EAN or SSCC with a wrong GS1 check digit is flagged, in Compare and Qui
   await expect(page.locator('#quickOverview')).toBeVisible();
   await expect(page.locator('body')).toContainText("Check digit doesn't match");
 });
+
+// A real supplier XML declares encoding="utf-16". Without a BOM, File.text()
+// (UTF-8 only) left a NUL next to every character, so the file parsed as
+// nothing and every bol line showed as "missing from the supplier message".
+test('a UTF-16 XML DESADV without a BOM is decoded and compared normally', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'utf16-no-bom.sup.xml'),
+    path.join(FIX, 'utf16-no-bom.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Transus XML');
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+  expect(resultsText).not.toMatch(/only in the bol output/);
+});
+
+// Windows-1252 bytes (É, Ø, È) used to turn into U+FFFD replacement
+// characters, because every file was decoded as UTF-8.
+test('a windows-1252 XML DESADV keeps its accented characters in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'windows-1252.sup.xml'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const overviewText = await page.locator('#quickOverview').innerText();
+  expect(overviewText).toContain('PLAID BOUCLÉ Ø40');
+  expect(overviewText).toContain('KUSSEN CRÈME');
+  expect(overviewText).not.toContain('�');
+});
+
+// Whitespace before "<?xml" is a hard DOMParser error, so a file starting
+// with a blank line used to parse as nothing: every bol line "missing".
+test('an XML DESADV starting with a blank line before <?xml is read normally', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'leading-whitespace.sup.xml'),
+    path.join(FIX, 'leading-whitespace.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+});
+
+// Text before the declaration (e.g. a stray log line) is skipped so the
+// contents can be shown, with a banner saying a strict reader would refuse it.
+test('text before the XML declaration is skipped with a banner', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'text-before-declaration.sup.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('has text before its XML declaration');
+  await expect(page.locator('#quickOverview')).toContainText('Resent by export job, attempt 2');
+  await expect(page.locator('#quickOverview')).toContainText('TX100');
+});
+
+// The illegal-control-character recovery used to exist for INVOIC XML only;
+// in a DESADV XML the same byte made the whole file parse as nothing.
+test('an illegal control character in a DESADV XML is stripped with a banner, not read as an empty file', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'illegal-xml-char.sup.xml'),
+    path.join(FIX, 'illegal-xml-char.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#factsBanners')).toContainText('illegal control character');
+  await expect(page.locator('#factsBanners')).toContainText('0x16');
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+});
+
+// Malformed XML used to produce an empty message and a wall of "missing"
+// findings. Now the comparison stops with a banner naming the position.
+test('a malformed XML DESADV shows a plain-language banner instead of an empty comparison', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'malformed.sup.xml'),
+    path.join(FIX, 'malformed.bol.edi'),
+  );
+  const banner = page.locator('#compareBanner .xml-error-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("The supplier file couldn't be read as XML");
+  await expect(banner).toContainText('line 2, column');
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#compareStatus')).toContainText('read as XML');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'malformed.sup.xml'));
+  await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
+});
+
+// Header vs line in XML: a header-only <OrderNumberBuyer> wasn't inherited by
+// the Articles (false "order numbers differ" on every line), an Article's own
+// <DeliveryDate> stood in for the missing header date (false "Expected
+// delivery date changed"), and a unit took its nested Article's LineNumber.
+test('XML header fields are read from the header, and a header order number applies to every line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-header-scope.sup.xml'),
+    path.join(FIX, 'transusxml-header-scope.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /order numbers differ/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /delivery date/i.test(t))).toBe(false);
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).toContain('CPS 900');
+});
+
+// Several <Message> elements in one <Messages> file used to be read as ONE
+// message: all Articles pooled, the first header on top, and a reused
+// DespatchUnitReference linking a later message's Article to the first
+// message's unit. Now split and paired by document number, like multi-UNH.
+test('a <Messages> file with several <Message> elements is split and paired by document number', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-two-messages.sup.xml'),
+    path.join(FIX, 'transusxml-two-messages.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).toContain('1/1');
+  await expect(page.locator('#factsNotes')).toContainText('contains 2 documents');
+  await expect(page.locator('#factsNotes')).toContainText('MM200');
+});
+
+test('Quick check shows each <Message> of a multi-message XML separately, with a picker', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'transusxml-two-messages.sup.xml'));
+  const picker = page.locator('#quickOverview .quick-doc-picker');
+  await expect(picker).toContainText('2 separate messages');
+  await expect(page.locator('#quickOverview')).toContainText('MM100');
+  await expect(page.locator('#quickOverview')).not.toContainText('8700000000025');
+  await picker.getByRole('button', { name: 'DESADV MM200' }).click();
+  await expect(page.locator('#quickOverview')).toContainText('Showing message 2 of 2');
+  await expect(page.locator('#quickOverview')).toContainText('8700000000025');
+  await expect(page.locator('#quickOverview')).toContainText('387000000000000095');
+  await expect(page.locator('#quickOverview')).not.toContainText('8700000000018');
+});
+
+// Parity for EDIFACT: a multi-UNH interchange was merged into one overview in
+// Quick check (last message's number, every line pooled). Also covers the
+// UNA-prefix bug that made each split message lose its type ("UUNH"), so
+// Compare skipped every DESADV-specific check on multi-message files.
+test('a multi-UNH EDIFACT DESADV keeps its type per message, in Quick check and Compare', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'two-messages.edi'));
+  const picker = page.locator('#quickOverview .quick-doc-picker');
+  await expect(picker).toContainText('2 separate messages');
+  await expect(picker.getByRole('button', { name: 'DESADV MM100' })).toBeVisible();
+
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'two-messages.edi'),
+    path.join(FIX, 'transusxml-two-messages.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('.stat', { hasText: /^type/i }).first()).toContainText('DESADV');
+  await expect(page.locator('#results')).toContainText('Loud and clear');
+});

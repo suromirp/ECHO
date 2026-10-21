@@ -23,7 +23,7 @@
     <cbc:ID>1</cbc:ID>
     <cbc:InvoicedQuantity>2</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount>56.20</cbc:LineExtensionAmount>
-    <cac:Item><cbc:Name>Item 1</cbc:Name><cac:SellersItemIdentification><cbc:ID>1234567890123</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Item><cbc:Name>Item 1</cbc:Name><cac:SellersItemIdentification><cbc:ID>1234567890128</cbc:ID></cac:SellersItemIdentification></cac:Item>
     <cac:Price><cbc:PriceAmount>28.10</cbc:PriceAmount></cac:Price>
   </cac:InvoiceLine>
   <cac:InvoiceLine>
