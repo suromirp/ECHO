@@ -1314,6 +1314,7 @@ function parseFactsTransusXml(raw){
      DespatchUnit via DespatchUnitReference. Mirrors the EDIFACT CPS/LIN model. */
   const despatchUnits=new Map();
   if(f.msgType==='DESADV'){
+    const unitOfEl=new Map();
     doc.querySelectorAll('DespatchUnit').forEach(du=>{
       const ln=g(du,'LineNumber');
       // hasPac: the PAC-segment check is EDIFACT-specific — an XML
@@ -1323,6 +1324,7 @@ function parseFactsTransusXml(raw){
       // TRANSUSXML links <Article> to its unit by the unit's own
       // <DespatchUnitReference> (e.g. "85871"), not its LineNumber.
       const dur=g(du,'DespatchUnitReference');if(dur&&!despatchUnits.has(dur))despatchUnits.set(dur,pallet);
+      unitOfEl.set(du,pallet);
       f.pallets.push(pallet);
     });
     doc.querySelectorAll('Article').forEach(el=>{
@@ -1334,7 +1336,10 @@ function parseFactsTransusXml(raw){
       const orders=new Set();const ob=g(el,'OrderNumberBuyer');if(ob)orders.add(ob);
       const line={lineNo:g(el,'LineNumber'),action:null,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty,dtm:{},orders,
         art:g(el,'ArticleCodeSupplier')||null,desc:g(el,'ArticleDescription')||g(el,'Description')||null};
-      const pallet=despatchUnits.get(g(el,'DespatchUnitReference'))||null;
+      // An <Article> nested inside its own <DespatchUnit> belongs to that
+      // unit, even when several units share one DespatchUnitReference.
+      const parentUnit=el.parentElement&&el.parentElement.localName==='DespatchUnit'?unitOfEl.get(el.parentElement):null;
+      const pallet=parentUnit||despatchUnits.get(g(el,'DespatchUnitReference'))||null;
       line.__cpsRef=pallet;
       if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
       f.lines.push(line);
@@ -1832,11 +1837,21 @@ function palletQtyVal(qty){
 function palletQtyEff(v){if(v===undefined||v===null||v==='')return 0;const n=parseInt(v,10);return isNaN(n)?v:n;}
 
 /* index a facts object's pallets by SSCC, for cross-side lookup */
+/* One entry per SSCC. Several CPS groups (or XML DespatchUnits) can carry
+   the same SSCC: a real Van der Meulen DESADV sent one DespatchUnit per
+   article, 117 units over 8 SSCCs, and bol's output kept that one-CPS-per-
+   line shape. Keeping only the first group per SSCC compared one article
+   against the other side's first article and reported every pallet as a
+   mapping difference although each SSCC held exactly the same items on
+   both sides. Items of all groups sharing an SSCC are merged here; the
+   original pallet objects are left untouched. */
 function palletsBySSCC(facts){
   const m=new Map();
   (facts.pallets||[]).forEach(p=>{
     if(!p.sscc)return;
-    if(!m.has(p.sscc))m.set(p.sscc,p);
+    const cur=m.get(p.sscc);
+    if(!cur){m.set(p.sscc,p);return;}
+    m.set(p.sscc,Object.assign({},cur,{items:[...(cur.items||[]),...(p.items||[])]}));
   });
   return m;
 }
@@ -2113,6 +2128,24 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
   add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'} — confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
 }
 
+/* Packing reference (RFF+BM / PackingSlipNumber) and despatch advice number
+   (BGM / DespatchAdviceNumber) that are almost but not quite the same, e.g.
+   GVZ285324 vs GVZ285324A on a real Van der Meulen DESADV. RFF+BM is the
+   reference bol's own systems lead on (see the Packing reference field), so
+   a near-miss like this is worth confirming against the physical packing
+   slip. Values that differ completely are left alone: some suppliers
+   legitimately use unrelated numbers for the two. Single-message
+   observation, so both modes (parity rule). */
+function checkPackingRefNearMatch(facts,label,add,jumpCall){
+  const ref=facts.billOfLadingRef,doc=facts.docNumber;
+  if(!ref||!doc||ref===doc)return;
+  const [shorter,longer]=ref.length<=doc.length?[ref,doc]:[doc,ref];
+  const nearly=ref.toUpperCase()===doc.toUpperCase()||(longer.startsWith(shorter)&&longer.length-shorter.length<=3);
+  if(!nearly)return;
+  const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:esc(s);
+  add('warn',`${label} — <strong>Packing reference and despatch advice number almost match</strong>: packing reference (RFF+BM) ${v(ref)}, despatch advice number (BGM) ${v(doc)}. bol uses the packing reference to match the delivery, so check which of the two is on the physical packing slip.`,'message');
+}
+
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
    across sides. A real Perfetti DESADV sent 12 Oct for both; bol's output
    said 8 and 9 Oct. Transus confirmed a wrong mapping in that supplier's
@@ -2296,6 +2329,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   // entry) is what fixes that reading without claiming either side did
   // anything wrong.
   const byCps=new Map(facts.pallets.map(p=>[p.cps,p]));
+  const ownBySscc=palletsBySSCC(facts);
   const childrenOf=new Map();
   facts.pallets.forEach(p=>{
     if(!p.parentCps||!palletIsNested(p,byCps))return;
@@ -2334,8 +2368,10 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     let gtinMatch=null,allItemsDiffer=false,otherTotals=null,singlePalletOverrideKey=null;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
-      const bItems=sideKey==='bol'?p.items:other.items;
-      const sItems=sideKey==='bol'?other.items:p.items;
+      // Compare whole SSCCs (all groups sharing it), not this one group.
+      const own=(ownBySscc.get(p.sscc)||p).items;
+      const bItems=sideKey==='bol'?own:other.items;
+      const sItems=sideKey==='bol'?other.items:own;
       const {bTot,sTot}=resolvePalletItemTotals(bItems,sItems,keyFn);
       const thisTot=sideKey==='bol'?bTot:sTot,otherTot=sideKey==='bol'?sTot:bTot;
       otherTotals=otherTot;
@@ -2697,6 +2733,8 @@ function compare(bol,sup){
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     compareDesadvDates(sup,bol,add);
+    checkPackingRefNearMatch(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkPackingRefNearMatch(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkMissingPacWithSscc(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkMissingPacWithSscc(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     checkSsccLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
@@ -4431,6 +4469,7 @@ function factsOverviewHtml(facts){
     if(facts.lines.length&&!facts.ssccs.length)qcAdd('warn',"This message doesn't contain an SSCC (GIN+BJ) anywhere — pallet-level structure can't be verified from this message alone.");
     checkPalletStructure(facts,'This message',qcAdd,jumpCall);
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
+    checkPackingRefNearMatch(facts,'This message',qcAdd,jumpCall);
     checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
     checkSsccLength(facts,'This message',qcAdd,jumpCall);
   }else if(type==='ORDRSP'){
