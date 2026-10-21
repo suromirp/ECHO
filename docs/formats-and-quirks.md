@@ -148,6 +148,19 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     take the direct child first, then a descendant that isn't inside another
     line element, and a header order applies to every Article without one
     (the same inheritance as EDIFACT's header `RFF+ON`).
+  - **Several `<Message>` elements in one `<Messages>` file** were read as
+    one message: every Article pooled under the first message's header, and
+    because `DespatchUnitReference` values are only unique within a message,
+    a later message's Article linked to the first message's unit (wrong
+    SSCC). `parseFactsTransusXmlList` now returns one facts object per
+    `<Message>`, so Compare pairs them by document number exactly like a
+    multi-`UNH` EDIFACT interchange, and Quick check shows one message at a
+    time with a picker. Quick check used to merge a multi-`UNH` EDIFACT
+    interchange too; same picker now. While fixing this,
+    `splitEdifactMessages` turned out to copy a 10-character `UNA` prefix
+    (it's 9), swallowing the next segment's first letter whenever no newline
+    followed: every split message started `UUNH`, lost its message type, and
+    Compare silently skipped all DESADV/ORDRSP-specific checks.
   - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
     EDIFACT "SSCC present but no PAC segment" check must never fire on it.
   - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after

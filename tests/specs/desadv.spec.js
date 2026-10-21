@@ -730,3 +730,58 @@ test('XML header fields are read from the header, and a header order number appl
   expect(resultsText).toContain('Loud and clear');
   expect(resultsText).toContain('CPS 900');
 });
+
+// Several <Message> elements in one <Messages> file used to be read as ONE
+// message: all Articles pooled, the first header on top, and a reused
+// DespatchUnitReference linking a later message's Article to the first
+// message's unit. Now split and paired by document number, like multi-UNH.
+test('a <Messages> file with several <Message> elements is split and paired by document number', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-two-messages.sup.xml'),
+    path.join(FIX, 'transusxml-two-messages.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).toContain('1/1');
+  await expect(page.locator('#factsNotes')).toContainText('contains 2 documents');
+  await expect(page.locator('#factsNotes')).toContainText('MM200');
+});
+
+test('Quick check shows each <Message> of a multi-message XML separately, with a picker', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'transusxml-two-messages.sup.xml'));
+  const picker = page.locator('#quickOverview .quick-doc-picker');
+  await expect(picker).toContainText('2 separate messages');
+  await expect(page.locator('#quickOverview')).toContainText('MM100');
+  await expect(page.locator('#quickOverview')).not.toContainText('8700000000021');
+  await picker.getByRole('button', { name: 'DESADV MM200' }).click();
+  await expect(page.locator('#quickOverview')).toContainText('Showing message 2 of 2');
+  await expect(page.locator('#quickOverview')).toContainText('8700000000021');
+  await expect(page.locator('#quickOverview')).toContainText('387000000000000097');
+  await expect(page.locator('#quickOverview')).not.toContainText('8700000000014');
+});
+
+// Parity for EDIFACT: a multi-UNH interchange was merged into one overview in
+// Quick check (last message's number, every line pooled). Also covers the
+// UNA-prefix bug that made each split message lose its type ("UUNH"), so
+// Compare skipped every DESADV-specific check on multi-message files.
+test('a multi-UNH EDIFACT DESADV keeps its type per message, in Quick check and Compare', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'two-messages.edi'));
+  const picker = page.locator('#quickOverview .quick-doc-picker');
+  await expect(picker).toContainText('2 separate messages');
+  await expect(picker.getByRole('button', { name: 'DESADV MM100' })).toBeVisible();
+
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'two-messages.edi'),
+    path.join(FIX, 'transusxml-two-messages.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('.stat', { hasText: /^type/i }).first()).toContainText('DESADV');
+  await expect(page.locator('#results')).toContainText('Loud and clear');
+});
