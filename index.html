@@ -3081,8 +3081,11 @@ function normDate(v,fmt){
   if(fmt==='203'&&/^\d{12}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{8}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{12}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+  /* CCYYMMDDHHMMSS (EDIFACT 204, ook in XML-exports) — bleef anders als ruwe
+     string staan en gaf een vals "datum verschilt" tegen een ISO-datum */
+  if(/^\d{14}$/.test(s))return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
-  const m=s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})/); /* DD-MM-YYYY, komt voor in bol XML */
+  const m=s.match(/^(\d{2})[-\/.](\d{2})[-\/.](\d{4})/); /* DD-MM-YYYY / DD.MM.YYYY, komt voor in bol XML */
   if(m)return m[3]+'-'+m[2]+'-'+m[1];
   return s;
 }
@@ -3455,7 +3458,8 @@ function parseInvoicExactOnlineXml(raw){
   const toIso=v=>{
     if(!v)return null;
     const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})/);
-    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
+    // anything else (e.g. ISO with a time part) through the shared normDate
+    return m?`${m[1]}-${m[2]}-${m[3]}`:normDate(v);
   };
   const inv=emptyInvoice('Exact Online export');
   const invAmt=num(gDeep('InvoiceTotals','InvoiceAmountDC'));
@@ -3510,9 +3514,10 @@ function parseInvoicExactOnlineXml(raw){
    BEFORE ArticleCharge is added on top (matching NetLineAmount), and the
    header VATBaseAmount/VATAmount reflect only ONE VAT-rate group — the
    full taxable base is the SUM across every <InvoiceVATTotals> block. */
+const TRANSUSXML_LABEL=/<Message(Standard|Format)>\s*TRANSUSXML/i;
 function looksLikeTransusMessageXml(raw){
   const head=raw.slice(0,2000);
-  return /<Messages[\s>]/.test(head)&&/<MessageStandard>\s*TRANSUSXML/i.test(head);
+  return /<Messages[\s>]/.test(head)&&TRANSUSXML_LABEL.test(head);
 }
 function pickDirect(el,parentTag,childTag){
   const parent=childByName(el,parentTag);
@@ -3526,11 +3531,10 @@ function parseInvoicTransusMessageXml(raw){
   if(!doc||doc.querySelector('parsererror'))return [];
   const messages=doc.documentElement?[...doc.documentElement.children].filter(c=>localName(c)==='Message'):[];
   if(!messages.length)return [];
-  const toIso=v=>{
-    if(!v)return null;
-    const m=String(v).trim().match(/^(\d{4})(\d{2})(\d{2})$/);
-    return m?`${m[1]}-${m[2]}-${m[3]}`:v;
-  };
+  // Was an exact-8-digit-only conversion: this dialect's 12-digit
+  // date+time form (202601151200, also seen in its DESADV variant) stayed a
+  // raw string and read as "Invoice date differs" against bol's ISO date.
+  const toIso=normDate;
   return messages.map(msg=>{
     const g=name=>{const c=childByName(msg,name);const t=c?textOf(c):null;return t||null;};
     const inv=emptyInvoice('TRANSUSXML');
@@ -3876,7 +3880,10 @@ function detectMsgType(raw){
     // that would otherwise trip the DESADV substring check below — checked
     // first, since its own signal (MessageStandard + an invoice field) is
     // unambiguous regardless of what else the message happens to contain.
-    if(/<MessageStandard>\s*TRANSUSXML/i.test(head)&&/<InvoiceNumber[\s>]|<InvoiceTotals[\s>]/i.test(head))return 'INVOIC';
+    // The self-label comes as <MessageStandard> or <MessageFormat> (both seen
+    // in this dialect); with <MessageFormat> an invoice used to fall through
+    // to the bare DespatchAdviceNumber check below and be read as a DESADV.
+    if(TRANSUSXML_LABEL.test(head)&&/<InvoiceNumber[\s>]|<InvoiceTotals[\s>]/i.test(head))return 'INVOIC';
     // Check the most specific, unambiguous fields first. Some suppliers'
     // ORDRSP-flavoured Transus XML uses <Article> as its line element — the
     // same tag DESADV uses for despatch lines — and even includes a

@@ -187,6 +187,10 @@ actual test fixtures, don't just keep this list as prose:
 - **Encoding**: a UTF-16 XML without a BOM is decoded and compared
   normally (not every line "missing"); windows-1252 characters (É, Ø, È)
   survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
+- **INVOIC (TRANSUSXML)**: a date with a time part (`202601151200`) is
+  normalized, not reported as "Invoice date differs"; an invoice labelled
+  `<MessageFormat>TRANSUSXML` (instead of `<MessageStandard>`) is detected as
+  INVOIC, not DESADV, in both modes.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

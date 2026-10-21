@@ -356,3 +356,42 @@ test('a truncated XML invoice shows a plain-language banner with the reader posi
   await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
   await expect(page.locator('#quickStatus')).toContainText('read as XML');
 });
+
+// The TRANSUSXML invoice parser only converted an exact 8-digit date; the
+// dialect's 12-digit date+time (202601151200) stayed a raw string and read
+// as "Invoice date differs" against bol's ISO date.
+test('a TRANSUSXML invoice date with a time part is normalized, not reported as a date difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-datetime.sup.transusxml.xml'),
+    path.join(FIX, 'multi-vat.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const findings = await invoiceFindingTexts(page);
+  expect(findings.some(t => /Invoice date differs/.test(t))).toBe(false);
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('Loud and clear');
+  expect(resultsText).not.toContain('202601151200');
+});
+
+// The TRANSUSXML self-label also appears as <MessageFormat>. Detection and
+// the dialect parser only knew <MessageStandard>, so this invoice was typed
+// DESADV (Quick check showed a despatch advice) and Compare couldn't read it.
+test('a TRANSUSXML invoice labelled with <MessageFormat> is detected and read as an invoice', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'transusxml-messageformat.sup.transusxml.xml'),
+    path.join(FIX, 'multi-vat.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('TRANSUSXML');
+  expect(resultsText).toContain('2/2');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'transusxml-messageformat.sup.transusxml.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('INV1001');
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+});
