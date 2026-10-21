@@ -372,6 +372,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   suppliers happened to send a batch number per line. Transus fixed each
   case in that supplier's own data source and didn't say whether the batch
   number played a role.
+- **Article moved to another pallet by the transformation** (real Perfetti
+  DESADV, after Transus adjusted that supplier's data source for EANs/dates):
+  the supplier puts each article in its own sub-CPS under its pallet
+  (`CPS+3+2`, `CPS+5+4` …). bol's output listed both pallets first and every
+  `LIN` after the last one, so pallet 1 came out empty and its article sat
+  under pallet 2. Quantities and EANs still matched; only the per-SSCC
+  comparison (`comparePalletMapping`) showed it. The same message's delivery
+  error, "Ean not known: 8723400797548", was unrelated. That EAN came through
+  unchanged, so it's a master-data/order question, not a mapping one.
 - **GS1 check digits**: a real Red Bull DESADV carried SSCC
   `287142544291779407`, whose check digit doesn't match. ECHO now checks
   the GS1 mod-10 check digit on every EAN/GTIN (8/12/13/14 digits) and SSCC
