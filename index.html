@@ -236,6 +236,15 @@
   .pill.a5{color:var(--accept);border-color:var(--accept);}
   .pill.a6{color:var(--backorder);border-color:var(--backorder);}
   .pill.a2{color:var(--cancel);border-color:var(--cancel);}
+  details.hdr-fields{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin:10px 0;}
+  details.hdr-fields>summary{cursor:pointer;font-weight:600;}
+  details.hdr-fields>summary .dim{font-weight:400;}
+  table.hdr-tbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
+  table.hdr-tbl th{text-align:left;font-weight:600;padding:5px 8px;border-bottom:1px solid var(--border);}
+  table.hdr-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top;}
+  table.hdr-tbl td.st{width:28px;text-align:center;}
+  table.hdr-tbl tr.differ td{background:rgba(255,160,0,.08);}
+  table.hdr-tbl .src{display:block;font-size:11px;opacity:.65;font-family:var(--mono);}
   .val-bol{color:var(--tag);}.val-sup{color:var(--elem);}.diff-val{color:var(--err);font-weight:700;}
   .findings{list-style:none;padding:0;margin:0;}
   .findings li{padding:9px 12px;border-radius:7px;margin-bottom:7px;font-size:13px;line-height:1.45;border:1px solid var(--border);display:flex;gap:9px;align-items:flex-start;}
@@ -485,6 +494,7 @@
       <div id="factsBanners"></div>
       <div id="verdict"></div>
       <div class="strip" id="strip"></div>
+      <div id="hdrFields"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
       <div class="panel" id="togglePanel">
@@ -2352,6 +2362,61 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
   add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: ${v(ref)} vs document number ${v(doc)}. Check with the supplier which one is on the packing slip.`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing slip number, so it must be exactly what's printed on the physical packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing slip number = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
+}
+
+/* Header fields side by side: what the supplier sent, what bol's output
+   carries, and which field each value came from (RFF+BM, PackingSlipNumber,
+   …). Answers "where did this value end up?" at a glance: the Van der Meulen
+   packing slip (PackingSlipNumber → RFF+BM, DespatchAdviceNumber → BGM) and
+   the Perfetti date shift were both read by hand from the raw messages. A
+   value present on only one side is shown, not flagged: formats differ in
+   what they carry (structural, rule 3). Findings for real differences come
+   from their own checks; this table only shows. */
+function headerSrcLabel(facts,ediSeg,xmlTags){
+  if(facts.format==='EDIFACT')return ediSeg;
+  if(facts.rawXml){const t=xmlTags.find(t=>new RegExp('<(\\w+:)?'+t+'[\\s>]').test(facts.rawXml));return t||xmlTags[0];}
+  return 'CSV';
+}
+function headerOrders(f){
+  const s=new Set(f.orderRefsHeader||[]);
+  if(!s.size)(f.lines||[]).forEach(l=>(l.orders||[]).forEach(o=>s.add(o)));
+  return [...s].sort();
+}
+function headerFieldsHtml(sup,bol,type){
+  const isD=type==='DESADV';
+  const arrSeg=f=>f.headerDtm&&f.headerDtm['132']?'DTM+132':(f.headerDtm&&f.headerDtm['17']?'DTM+17':'DTM+2');
+  const rows=[
+    isD&&['Packing slip number',f=>f.billOfLadingRef,()=>'RFF+BM',['PackingSlipNumber']],
+    ['Document number',f=>f.docNumber,()=>'BGM',['DespatchAdviceNumber','OrderResponseNumber','DocumentNumber']],
+    ['Order',f=>headerOrders(f).join(', ')||null,()=>'RFF+ON',['OrderNumberBuyer']],
+    ['Document date',f=>f.docDate,()=>'DTM+137',['DocumentDate','DespatchAdviceDate','OrderResponseDate']],
+    isD&&['Despatch date',f=>f.despatchDate,()=>'DTM+11',['DespatchDate']],
+    isD&&['Expected delivery',f=>f.arrivalDate,arrSeg,['ArrivalDate','DeliveryDate']],
+    ['Supplier GLN',f=>f.parties&&f.parties.SU&&f.parties.SU.gln,()=>'NAD+SU',['SupplierGLN','Supplier']],
+    ['Buyer GLN',f=>f.parties&&f.parties.BY&&f.parties.BY.gln,()=>'NAD+BY',['BuyerGLN','Buyer']],
+    ['Delivery address GLN',f=>f.parties&&f.parties.DP&&f.parties.DP.gln,()=>'NAD+DP',['DeliveryPartyGLN','DeliveryParty']]
+  ].filter(Boolean);
+  const isDate=l=>/date|delivery/i.test(l);
+  let differ=0,shown=0;
+  const cell=(f,side,label,get,ediSeg,xmlTags)=>{
+    const v=get(f);
+    if(!v)return {v:null,html:'<span class="dim">—</span>'};
+    const disp=isDate(label)?showDate(v):v;
+    const jumpVal=isDate(label)?String(v).replace(/-/g,''):String(v).split(', ')[0];
+    return {v,html:`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})">${esc(disp)}</span><span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`};
+  };
+  const body=rows.map(([label,get,ediSeg,xmlTags])=>{
+    const s=cell(sup,'sup',label,get,ediSeg,xmlTags),b=cell(bol,'bol',label,get,ediSeg,xmlTags);
+    if(!s.v&&!b.v)return '';
+    shown++;
+    let st,cls='';
+    if(s.v&&b.v){if(String(s.v)===String(b.v))st='<span style="color:var(--ok)">✓</span>';else{st='<span style="color:var(--warn)">≠</span>';cls=' class="differ"';differ++;}}
+    else st='<span class="dim" title="Only present on one side — formats differ in what they carry">·</span>';
+    return `<tr${cls}><td>${esc(label)}</td><td>${s.html}</td><td>${b.html}</td><td class="st">${st}</td></tr>`;
+  }).join('');
+  if(!shown)return '';
+  const sum=differ?`<span class="dim">(${differ} differ${differ===1?'s':''})</span>`:'<span class="dim">(all shared fields match)</span>';
+  return `<details class="hdr-fields"${differ?' open':''}><summary>Header fields ${sum}</summary><table class="hdr-tbl"><thead><tr><th>Field</th><th>Supplier</th><th>bol</th><th></th></tr></thead><tbody>${body}</tbody></table></details>`;
 }
 
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
@@ -5152,6 +5217,7 @@ function render(result,bol,sup,notes){
   strip.push(`<div class="stat"><div class="l">Supplier / bol lines</div><div class="v">${st.linesSup}/${st.linesBol}</div></div>`);
   if(st.ssccBol||st.ssccSup){const sm=result.ssccResult.onlyBol.length===0&&result.ssccResult.onlySup.length===0;strip.push(`<div class="stat ${sm?'match':'diff'}"><div class="l">SSCCs</div><div class="v">${sm?st.ssccBol:'≠'}</div></div>`);}
   document.getElementById('strip').innerHTML=strip.join('');
+  document.getElementById('hdrFields').innerHTML=(result.type==='DESADV'||result.type==='ORDRSP')?headerFieldsHtml(sup,bol,result.type):'';
 
   // action matrix (only relevant for ORDRSP)
   lastActionMatrix = result.type==='ORDRSP' ? result.actionMatrix : null;
