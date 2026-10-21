@@ -2146,7 +2146,7 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   if(!packingRefNearMiss(facts))return;
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
-  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: the message gives packing slip number ${v(ref)}, but its own document number is ${v(doc)}. The two are almost the same, which can mean one of them has a typo or a missing character. bol uses the packing slip number to match the delivery when it arrives, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is correct. <span style="opacity:.75">(Packing slip number = RFF+BM / PackingSlipNumber, document number = BGM / DespatchAdviceNumber.)</span>`,'message');
+  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: the message gives packing slip number ${v(ref)}, but its own document number is ${v(doc)}. The two are almost the same, which can mean one of them has a typo or a missing character. bol uses the packing slip number to match the delivery when it arrives, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is correct. Note: the Transus portal can show the document number as the packing slip, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). <span style="opacity:.75">(Packing slip number = RFF+BM / PackingSlipNumber, document number = BGM / DespatchAdviceNumber.)</span>`,'message');
 }
 
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared

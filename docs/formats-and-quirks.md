@@ -128,7 +128,11 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     vs GVZ285324A, same message): Transus mapped `PackingSlipNumber` to
     `RFF+BM` faithfully, so this isn't a transformation difference. The
     near-miss is flagged as a Message check, in both modes, so someone
-    confirms which value is on the physical packing slip.
+    confirms which value is on the physical packing slip. The real symptom
+    was a "duplicate reference" error in bol's own system, while the Transus
+    portal showed the correct packing slip number (it displays the document
+    number), so judged from the Transus portal alone the case looked solved.
+    bol's own system, reading `RFF+BM`, is what counts.
   - **No PAC concept** — a `<DespatchUnit>` *is* the packaging unit, so the
     EDIFACT "SSCC present but no PAC segment" check must never fire on it.
   - **`<OrderNumberBuyer>` appears twice per `<Article>`** (before and after
