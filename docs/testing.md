@@ -179,6 +179,11 @@ actual test fixtures, don't just keep this list as prose:
   "order numbers differ"), an Article's own `<DeliveryDate>` never stands in
   for the header date, and a unit keeps its own `<LineNumber>` even when its
   nested Article comes first.
+- **DESADV (TRANSUSXML)**: several `<Message>` elements in one file are
+  split and paired by document number in Compare (not pooled into one), and
+  shown one at a time with a picker in Quick check. A multi-`UNH` EDIFACT
+  interchange gets the same picker in Quick check and keeps its message type
+  per split message in Compare (the `UNA`-prefix bug).
 - **Encoding**: a UTF-16 XML without a BOM is decoded and compared
   normally (not every line "missing"); windows-1252 characters (É, Ø, È)
   survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
