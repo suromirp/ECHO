@@ -131,6 +131,10 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: a changed despatch date (`DTM+11`) or expected delivery date
   (`DTM+132`) between supplier and bol is a Transformation difference.
   Identical dates are never flagged. This check is Compare-only.
+- **DESADV**: several CPS groups / XML units sharing one SSCC are compared as
+  one pallet (no false "Pallet mapping differs"). A packing reference that
+  almost matches the despatch advice number (only a suffix of up to 3 characters differs, or only the case)
+  is a Message check in both modes.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
   by pallets that each carry an SSCC) is never flagged as "No SSCC at
   pallet level", in either mode.

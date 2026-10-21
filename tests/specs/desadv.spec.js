@@ -571,3 +571,28 @@ test('identical dates on both sides are not flagged', async ({ page }) => {
   await expect(page.locator('#results')).toBeVisible();
   await expect(page.locator('#findings')).not.toContainText('date changed');
 });
+
+// Real Supplier Charlie DESADV: one <DespatchUnit> per article (117 units, 8
+// SSCCs), mirrored by bol's output as one CPS per line. ECHO compared only
+// the first group per SSCC and reported every pallet as a mapping
+// difference. Same message: packing reference PKS100200 vs despatch advice
+// number PKS100200A, a near-miss worth checking against the packing slip.
+test('several groups sharing one SSCC are compared as one pallet, and a near-miss packing reference is flagged', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'repeated-sscc-units.sup.xml'),
+    path.join(FIX, 'repeated-sscc-units.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /Pallet mapping differs|pallet mapping difference/.test(t))).toBe(false);
+  const near = buckets.message.filter(t => /Packing reference and despatch advice number almost match/.test(t));
+  expect(near).toHaveLength(2);
+  expect(near[0]).toContain('PKB1000A');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'repeated-sscc-units.sup.xml'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('body')).toContainText('almost match');
+});
