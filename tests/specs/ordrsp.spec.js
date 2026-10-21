@@ -88,7 +88,7 @@ test('a net price missing on only one of two split-action lines for the same ite
   // Separate, standalone single-message observation (parity rule): bol's
   // own message shows the same item split across two actions with a price
   // on only one of them — supplier's own message doesn't have this issue.
-  const splitNotice = buckets.message.filter(t => /appears on 2 lines in this message/i.test(t));
+  const splitNotice = buckets.message.filter(t => /appears on 2 lines/i.test(t));
   expect(splitNotice).toHaveLength(1);
   expect(splitNotice[0]).toContain('Bol —');
   expect(splitNotice.some(t => t.includes('Supplier —'))).toBe(false);
@@ -99,7 +99,7 @@ test('a net price missing on only one of two split-action lines for the same ite
 test('the split-item price gap is also flagged standalone in Quick check', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'split-item-price-gap.bol.edi'));
-  await expect(page.locator('#quickOverview')).toContainText('appears on 2 lines in this message');
+  await expect(page.locator('#quickOverview')).toContainText('appears on 2 lines');
 });
 
 // docs/formats-and-quirks.md: a DTM qualifier (67, 69) repeated within one
@@ -322,7 +322,7 @@ test('a run of consecutive lines each showing the previous line\'s price is flag
   expect(missing).toHaveLength(1);
   expect(missing[0]).toContain('2222222222222');
 
-  const cascade = buckets.diff.filter(t => /consecutive lines each show/i.test(t));
+  const cascade = buckets.diff.filter(t => /Prices shifted one line down/i.test(t));
   expect(cascade).toHaveLength(1);
   expect(cascade[0]).toContain('3 consecutive lines');
   expect(cascade[0]).toContain('3333333333333');
@@ -350,7 +350,7 @@ test('a run of consecutive lines each showing the previous line\'s price is flag
   // Reaches "Copy for Transus" — this is exactly the kind of thing worth
   // reporting to Transus as a mapping question, not a supplier-message
   // quirk.
-  expect(buckets.message.some(t => /consecutive lines each show/i.test(t))).toBe(false);
+  expect(buckets.message.some(t => /Prices shifted one line down/i.test(t))).toBe(false);
 });
 
 // Same quoted-CSV family as the DESADV dialect in desadv.spec.js, but the
