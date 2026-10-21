@@ -177,6 +177,13 @@ actual test fixtures, don't just keep this list as prose:
 - **Encoding**: a UTF-16 XML without a BOM is decoded and compared
   normally (not every line "missing"); windows-1252 characters (É, Ø, È)
   survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
+- **XML reading**: whitespace before `<?xml` doesn't empty the message
+  (DESADV XML, bol UBL invoice); text before the declaration is skipped with
+  a banner; an illegal control character in a DESADV XML is stripped with
+  the same banner INVOIC already had; malformed XML (DESADV, truncated UBL
+  invoice) stops Compare with a plain-language banner naming the line and
+  column, and shows the same banner in Quick check, rather than an empty
+  result or a wall of "missing" findings.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.

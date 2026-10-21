@@ -255,6 +255,32 @@ Handling:
   banner also shows a field-level diff between the two documents, which
   is often the fastest way to see what the retry actually changed.
 
+## Reading XML safely (every dialect)
+
+All XML paths, ORDRSP/DESADV (`parseFactsTransusXml`) as well as INVOIC
+(`parseInvoices`), go through the same preparation (`prepareXmlText`)
+before `DOMParser` sees the text:
+
+- **Whitespace before `<?xml`** is a hard parse error ("XML declaration
+  allowed only at the start of the document"). A file starting with a blank
+  line used to parse as nothing: zero DESADV/ORDRSP lines (every bol line
+  "missing from the supplier message"), or "Couldn't read an invoice". It
+  is now skipped silently. Many strict readers (.NET, Xerces) refuse it
+  too, but it's also what a paste into Quick check produces, so no banner.
+- **Text before the declaration** (a stray log line, like the one in the
+  concatenated-documents case below) is skipped when nothing before it looks
+  like an EDIFACT envelope, with a warn-level banner. It's not a confirmed
+  delivery failure yet, but XML allows nothing there.
+- **Illegal control characters and concatenated documents** (both below)
+  used to be recovered for INVOIC only. In a DESADV/ORDRSP XML the same
+  byte made the whole file parse as nothing. Same recovery and banners now.
+- **Malformed XML** (cut off, a missing closing tag): `DOMParser` doesn't
+  throw, it returns a `<parsererror>` document, which every parser turned
+  into an empty result without a word. `parseXmlDoc` returns the reader's
+  line/column/message instead. Compare stops with a banner per unreadable
+  side (`#compareBanner`) rather than comparing an empty message, and Quick
+  check shows the same banner above the raw text.
+
 ## File encoding
 
 Files are decoded from their raw bytes (`decodeFileBytes`), never with
