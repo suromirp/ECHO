@@ -72,6 +72,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | several groups sharing one SSCC compared as one pallet; a near-miss packing reference vs despatch advice number flagged in both modes | `desadv/repeated-sscc-units.sup.xml`, `desadv/repeated-sscc-units.bol.edi` | `specs/desadv.spec.js` |
 | ORDRSP/DESADV/INVOIC | GS1 check digit mismatch on an EAN/GTIN or SSCC flagged as a Message check in both modes (fixtures elsewhere use valid check digits) | `desadv/gs1-check-digit.edi` (same file both sides) | `specs/desadv.spec.js` |
 | DESADV | SSCC stat counts distinct SSCCs, overview header shows groups vs SSCCs | `desadv/repeated-sscc-units.{sup.xml,bol.edi}` | `specs/desadv.spec.js` |
+| ORDRSP/DESADV | Header fields table: supplier vs bol per field with its source field, open when something differs | `desadv/date-shift.*`, `desadv/repeated-sscc-units.*` | `specs/desadv.spec.js` |
 | UI | long explanations behind a collapsed "More info" toggle; Copy for Transus sends only the headline | `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |

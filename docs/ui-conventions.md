@@ -35,6 +35,15 @@
 - Screen is assumed to be a phone: keep responses/labels short, this is a
   tool people glance at, not read end to end.
 
+## Header fields table
+
+In Compare (ORDRSP/DESADV), right under the stats: one row per header field,
+supplier value and bol value, each with the field it came from in small
+type. ✓ = same, ≠ = differs (row highlighted), · = only on one side. Only
+on one side is not flagged, because formats differ in what they carry. The
+table only shows values; findings come from their own checks. It is
+collapsed when every shared field matches.
+
 ## Short findings, details behind "More info"
 
 A finding shows a short headline plus the affected values (tags, old → new),

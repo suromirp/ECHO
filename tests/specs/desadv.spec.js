@@ -821,3 +821,23 @@ test('a multi-UNH EDIFACT DESADV keeps its type per message, in Quick check and 
   await expect(page.locator('.stat', { hasText: /^type/i }).first()).toContainText('DESADV');
   await expect(page.locator('#results')).toContainText('Loud and clear');
 });
+
+// Header fields table: supplier vs bol value per header field, with the
+// field each came from. Opens by itself when something differs.
+test('the header fields table shows each value with its source field, and opens on a difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const det = page.locator('#hdrFields details.hdr-fields');
+  expect(await det.evaluate(e => e.open)).toBe(true);
+  await expect(det.locator('summary')).toContainText('2 differ');
+  await expect(det.locator('tr.differ', { hasText: 'Despatch date' })).toContainText('DTM+11');
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'repeated-sscc-units.sup.xml'), path.join(FIX, 'repeated-sscc-units.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const row = page.locator('#hdrFields tr', { hasText: 'Packing slip number' });
+  await expect(row).toContainText('PackingSlipNumber');
+  await expect(row).toContainText('RFF+BM');
+  expect(await page.locator('#hdrFields details.hdr-fields').evaluate(e => e.open)).toBe(false);
+});
