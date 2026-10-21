@@ -146,6 +146,9 @@ actual test fixtures, don't just keep this list as prose:
   DTM+11, …). It opens by itself when a shared field differs.
 - **UI**: long explanations sit behind a collapsed "More info" toggle, and
   "Copy for Transus" contains only the headline.
+- **DESADV**: an article placed on another pallet in bol's output (supplier
+  sub-CPS per article, bol lists every LIN after the last pallet) is flagged
+  per SSCC as a pallet mapping difference.
 - **DESADV**: a top-level consignment `CPS` with a summary `PAC` (followed
   by pallets that each carry an SSCC) is never flagged as "No SSCC at
   pallet level", in either mode.
