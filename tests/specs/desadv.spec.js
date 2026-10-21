@@ -841,3 +841,16 @@ test('the header fields table shows each value with its source field, and opens 
   await expect(row).toContainText('RFF+BM');
   expect(await page.locator('#hdrFields details.hdr-fields').evaluate(e => e.open)).toBe(false);
 });
+
+// Real Supplier Alfa DESADV: each article in its own sub-CPS under its pallet;
+// bol's output listed both pallets first and every LIN after the last one,
+// so pallet 1 came out empty and its article moved to pallet 2. Quantities
+// still match, so only the per-SSCC comparison shows it.
+test('an article moved to another pallet in bol\'s output is flagged as a pallet mapping difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sub-cps-per-item.sup.edi'), path.join(FIX, 'sub-cps-per-item.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /387000000000000019/.test(t) && /missing on the bol side/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /387000000000000026/.test(t) && /missing on the supplier side/.test(t))).toBe(true);
+});
