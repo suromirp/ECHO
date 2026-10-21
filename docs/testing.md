@@ -180,6 +180,32 @@ actual test fixtures, don't just keep this list as prose:
   populated, the parser falls back to summing the lines instead of
   reporting a false "Total line amounts differs" against a header field
   bol's own downstream system doesn't rely on either.
+- **DESADV (TRANSUSXML)**: header and line fields are told apart by position:
+  a header-only `<OrderNumberBuyer>` applies to every Article (no false
+  "order numbers differ"), an Article's own `<DeliveryDate>` never stands in
+  for the header date, and a unit keeps its own `<LineNumber>` even when its
+  nested Article comes first.
+- **DESADV (TRANSUSXML)**: several `<Message>` elements in one file are
+  split and paired by document number in Compare (not pooled into one), and
+  shown one at a time with a picker in Quick check. A multi-`UNH` EDIFACT
+  interchange gets the same picker in Quick check and keeps its message type
+  per split message in Compare (the `UNA`-prefix bug).
+- **Encoding**: a UTF-16 XML without a BOM is decoded and compared
+  normally (not every line "missing"); windows-1252 characters (É, Ø, È)
+  survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
+- **INVOIC (TRANSUSXML)**: a date with a time part (`202601151200`) is
+  normalized, not reported as "Invoice date differs"; an invoice labelled
+  `<MessageFormat>TRANSUSXML` (instead of `<MessageStandard>`) is detected as
+  INVOIC, not DESADV, in both modes.
+- **INVOIC**: an `<?xml-stylesheet?>` instruction in bol's UBL is not
+  mistaken for a second concatenated document (no false banner).
+- **XML reading**: whitespace before `<?xml` doesn't empty the message
+  (DESADV XML, bol UBL invoice); text before the declaration is skipped with
+  a banner; an illegal control character in a DESADV XML is stripped with
+  the same banner INVOIC already had; malformed XML (DESADV, truncated UBL
+  invoice) stops Compare with a plain-language banner naming the line and
+  column, and shows the same banner in Quick check, rather than an empty
+  result or a wall of "missing" findings.
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.

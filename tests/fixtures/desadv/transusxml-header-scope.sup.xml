@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Messages>
+  <Message>
+    <MessageStandard>TRANSUSXML</MessageStandard>
+    <MessageType>6</MessageType>
+    <DespatchAdviceNumber>HO100</DespatchAdviceNumber>
+    <PackingSlipNumber>HO100</PackingSlipNumber>
+    <DespatchDate>20260401</DespatchDate>
+    <OrderNumberBuyer>9700001</OrderNumberBuyer>
+    <BuyerGLN>8712423020597</BuyerGLN>
+    <SupplierGLN>8700000000007</SupplierGLN>
+    <DespatchUnit>
+      <Article>
+        <LineNumber>1</LineNumber>
+        <GTIN>8700000000018</GTIN>
+        <DeliveredQuantity>2</DeliveredQuantity>
+        <DeliveryDate>20260420</DeliveryDate>
+      </Article>
+      <Article>
+        <LineNumber>2</LineNumber>
+        <GTIN>8700000000025</GTIN>
+        <DeliveredQuantity>5</DeliveredQuantity>
+      </Article>
+      <LineNumber>900</LineNumber>
+      <SSCC>387000000000000071</SSCC>
+    </DespatchUnit>
+  </Message>
+</Messages>
