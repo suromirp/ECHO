@@ -647,3 +647,66 @@ test('a windows-1252 XML DESADV keeps its accented characters in Quick check', a
   expect(overviewText).toContain('KUSSEN CRÈME');
   expect(overviewText).not.toContain('�');
 });
+
+// Whitespace before "<?xml" is a hard DOMParser error, so a file starting
+// with a blank line used to parse as nothing: every bol line "missing".
+test('an XML DESADV starting with a blank line before <?xml is read normally', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'leading-whitespace.sup.xml'),
+    path.join(FIX, 'leading-whitespace.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+});
+
+// Text before the declaration (e.g. a stray log line) is skipped so the
+// contents can be shown, with a banner saying a strict reader would refuse it.
+test('text before the XML declaration is skipped with a banner', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'text-before-declaration.sup.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('has text before its XML declaration');
+  await expect(page.locator('#quickOverview')).toContainText('Resent by export job, attempt 2');
+  await expect(page.locator('#quickOverview')).toContainText('TX100');
+});
+
+// The illegal-control-character recovery used to exist for INVOIC XML only;
+// in a DESADV XML the same byte made the whole file parse as nothing.
+test('an illegal control character in a DESADV XML is stripped with a banner, not read as an empty file', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'illegal-xml-char.sup.xml'),
+    path.join(FIX, 'illegal-xml-char.bol.edi'),
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#factsBanners')).toContainText('illegal control character');
+  await expect(page.locator('#factsBanners')).toContainText('0x16');
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('2/2');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+});
+
+// Malformed XML used to produce an empty message and a wall of "missing"
+// findings. Now the comparison stops with a banner naming the position.
+test('a malformed XML DESADV shows a plain-language banner instead of an empty comparison', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'malformed.sup.xml'),
+    path.join(FIX, 'malformed.bol.edi'),
+  );
+  const banner = page.locator('#compareBanner .xml-error-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("The supplier file couldn't be read as XML");
+  await expect(banner).toContainText('line 2, column');
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#compareStatus')).toContainText('read as XML');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'malformed.sup.xml'));
+  await expect(page.locator('#quickOverview .xml-error-banner')).toContainText("This file couldn't be read as XML");
+});

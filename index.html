@@ -479,8 +479,10 @@
       </div>
       <div class="status" id="compareStatus">Two messages. One question: did the important stuff make it through? Add both below to find out.</div>
     </div>
+    <div id="compareBanner"></div>
 
     <div id="results" class="hidden">
+      <div id="factsBanners"></div>
       <div id="verdict"></div>
       <div class="strip" id="strip"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
@@ -856,7 +858,8 @@ function quickFormat(){
   const msgType=detectMsgType(raw);
 
   /* ---------- 1. business overview ---------- */
-  let ovHtml='',ovNote='';
+  let ovHtml='',ovNote='',xmlErr=null;
+  const xmlErrPanel=err=>`<div class="panel"><h2>Overview</h2>${xmlParseErrorBannerHtml(err,'This file')}</div>`;
   pendingEyeReaction=null;
   try{
     if(msgType==='INVOIC'){
@@ -868,10 +871,16 @@ function quickFormat(){
           return `<details class="inv-det"${i===0?' open':''}><summary>Invoice ${esc(inv.number||('#'+(i+1)))} — ${inv.docType==='credit'?'credit note':'invoice'}${inv.date?' · '+esc(showDate(inv.date)):''}</summary><div class="panel">${body}</div></details>`;
         }).join('');
         if(invs.length>1)ovNote=`${invs.length} invoices found in this file.`;
-      }else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
+      }else if(invs.xmlError){xmlErr=invs.xmlError;ovHtml=xmlErrPanel(xmlErr);}
+      else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
     }else if(msgType==='ORDRSP'||msgType==='DESADV'||msgType==='ORDERS'){
       const facts=parseFacts(raw);
-      ovHtml=`<div class="panel"><h2>Overview</h2>${factsOverviewHtml(facts)}</div>`;
+      if(facts.xmlError){xmlErr=facts.xmlError;ovHtml=xmlErrPanel(xmlErr);}
+      else ovHtml=`<div class="panel"><h2>Overview</h2>${xmlFileBannersHtml(facts,'This file')}${factsOverviewHtml(facts)}</div>`;
+    }else if(isXmlText(raw)&&(xmlErr=parseXmlDoc(prepareXmlText(raw).text).error)){
+      // Not even recognizable as a message type — still say why, when it's
+      // because the XML itself can't be read.
+      ovHtml=xmlErrPanel(xmlErr);
     }else if(msgType){
       ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Message type <strong>${esc(msgType)}</strong> isn't supported as a business overview yet. The original message is shown below.</div></div>`;
     }else{
@@ -888,7 +897,8 @@ function quickFormat(){
   if(isXmlText(raw)||isCsvDesadv){
     const n=renderQuickRawXml(raw);
     lg.innerHTML='<span class="chip chip-strong">'+esc(msgType||(isCsvDesadv?'DESADV':'XML'))+'</span><span class="chip">'+(isCsvDesadv?'CSV':'XML')+'</span><span class="chip">'+n+' lines</span>';
-    quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
+    if(xmlErr)quickSetStatus('This file couldn’t be read as XML — see the note above. The original text is shown below.',true);
+    else quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
     return;
   }
   const mode=document.getElementById('quickMode').value;
@@ -937,7 +947,8 @@ document.getElementById('quickFileInput').addEventListener('change',e=>{
   readFileText(f).then(t=>{
     document.getElementById('quickInput').value=t;
     quickFormat();
-    quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
+    // Keep quickFormat's own error status (e.g. unreadable XML) visible.
+    if(!document.getElementById('quickStatus').classList.contains('error'))quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
   });
   e.target.value='';
 });
@@ -1295,12 +1306,39 @@ function parseFactsCsv(raw){
   return parseFactsCsvDesadv(raw);
 }
 
-function parseFactsTransusXml(raw){
-  const f={format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
+function emptyXmlFacts(raw){
+  return {format:'Transus XML',msgType:null,bgmFunc:null,lines:[],ssccs:[],rawXml:raw,pallets:[],
     docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},orderRefsHeader:new Set(),blankLinCount:0,billOfLadingRef:null};
-  let doc;
-  try{doc=new DOMParser().parseFromString(raw,'application/xml');}catch(e){return f;}
-  if(doc.querySelector('parsererror'))return f;
+}
+/* ORDRSP/DESADV XML gets the same reading safeguards as INVOIC XML
+   (parseInvoices): text before the declaration skipped, illegal control
+   characters stripped, concatenated documents reduced to the last
+   parseable one — each flagged with a banner — and, when the XML still
+   can't be read, facts.xmlError instead of a silently empty message (which
+   used to show every bol line as "missing from the supplier message"). */
+function parseFactsTransusXml(raw){
+  const prep=prepareXmlText(raw);
+  let parsed=null,concatenatedXml=null;
+  const pieces=splitConcatenatedXmlDocs(prep.text);
+  if(pieces.length>1){
+    const docs=pieces.map(parseXmlDoc);
+    const valid=[];docs.forEach((d,i)=>{if(d.doc)valid.push(i);});
+    if(valid.length){
+      const last=valid[valid.length-1];
+      const diffs=valid.length>=2?diffXmlLeaves(flattenXmlLeaves(docs[valid[valid.length-2]].doc),flattenXmlLeaves(docs[last].doc)):[];
+      concatenatedXml={total:pieces.length,validCount:valid.length,usedIndex:last,diffs};
+      parsed=docs[last];
+    }
+  }
+  if(!parsed)parsed=parseXmlDoc(prep.text);
+  const f=parsed.doc?factsFromXmlDoc(parsed.doc,raw):Object.assign(emptyXmlFacts(raw),{xmlError:parsed.error});
+  if(prep.leadingJunk)f.leadingJunk=prep.leadingJunk;
+  if(prep.illegalXmlChars)f.illegalXmlChars=prep.illegalXmlChars;
+  if(concatenatedXml)f.concatenatedXml=concatenatedXml;
+  return f;
+}
+function factsFromXmlDoc(doc,raw){
+  const f=emptyXmlFacts(raw);
   const orderEl=doc.querySelector('Order');
   // message type: presence of OrderLines/Status => ORDRSP; DespatchLine/Article/DespatchUnit => DESADV.
   // OrderResponseNumber is checked first because some suppliers' ORDRSP
@@ -1445,8 +1483,9 @@ function parseFacts(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
   // DESADV (<Messages><Message>, no <?xml declaration) used to fall through
-  // to the EDIFACT parser here and silently produce zero lines.
-  if(head.startsWith('<')) return parseFactsTransusXml(raw);
+  // to the EDIFACT parser here and silently produce zero lines. isXmlText
+  // also accepts a <?xml declaration after leading whitespace/text.
+  if(isXmlText(raw)) return parseFactsTransusXml(raw);
   if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
   return parseFactsEdifact(raw);
 }
@@ -1476,7 +1515,7 @@ function splitEdifactMessages(raw){
    as one message. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
-  if(head.startsWith('<')) return [parseFactsTransusXml(raw)];
+  if(isXmlText(raw)) return [parseFactsTransusXml(raw)];
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
@@ -1858,6 +1897,30 @@ function illegalXmlCharsBannerHtml(inv){
   return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
     ⚠ <strong>This file contains ${c.count} illegal control character${c.count===1?'':'s'}</strong> (${codeList}) — not valid inside XML text content, even though the byte itself is a perfectly ordinary one in EDIFACT free text. This is very likely why delivery failed ("Couldn't parse XML content of the file") — usually traced back to a free-text field (e.g. an item description) in the original EDIFACT message carried straight through. ECHO stripped ${c.count===1?'it':'them'} to still show this comparison — the delivery itself still needs fixing upstream.
   </div>`;
+}
+/* The XML itself couldn't be read (parseXmlDoc's error). Shown INSTEAD of a
+   result — an empty message compared against a full one only produces a
+   wall of "missing" findings that point at the wrong problem. */
+function xmlParseErrorBannerHtml(err,who){
+  if(!err)return '';
+  const where=err.line?` at line ${err.line}, column ${err.col}`:'';
+  return `<div class="note-inline xml-error-banner" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    ⚠ <strong>${esc(who)} couldn't be read as XML</strong> — the XML reader stopped${where}: <code>${esc(err.msg||'unknown error')}</code>. Nothing from this file can be shown or compared until that spot is looked at. Common causes are a file that was cut off, edited by hand, or exported with a character XML doesn't allow; a strict XML reader on the receiving side would most likely stop at the same place.
+  </div>`;
+}
+/* Text before the <?xml declaration (prepareXmlText skips it). Warn-level,
+   not err: no delivery failure has been traced to this yet, but XML allows
+   nothing before the declaration, so a strict reader would refuse it. */
+function leadingJunkBannerHtml(x,who){
+  if(!x||!x.leadingJunk)return '';
+  const s=x.leadingJunk,shown=s.length>80?s.slice(0,80)+'…':s;
+  return `<div class="note-inline" style="color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+    ⚠ <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
+  </div>`;
+}
+/* Every "read, but with a caveat" banner for one XML file, in one place. */
+function xmlFileBannersHtml(x,who){
+  return leadingJunkBannerHtml(x,who)+concatenatedXmlBannerHtml(x)+illegalXmlCharsBannerHtml(x);
 }
 /* classify action into accept/cancel/backorder buckets — limited to the
    codes bol/Transus actually maps (confirmed against bol's own ORDRSP
@@ -3691,9 +3754,50 @@ function parseInvoicTransusXml(raw){
 }
 
 /* ---------- detectie + centrale ingang ---------- */
-function isXmlText(raw){
-  const h=raw.replace(/^[\s\uFEFF]+/,'');
-  return h.startsWith('<?xml')||h.startsWith('<');
+/* Where the XML actually starts, or -1 if this isn't XML. Whitespace before
+   "<?xml" is a hard error for DOMParser ("XML declaration allowed only at
+   the start of the document"), so a file starting with a blank line used
+   to parse as nothing at all \u2014 zero lines, or "no invoice could be
+   extracted". Non-whitespace text before the declaration (a stray log
+   line, like the one between concatenated documents below) is skipped
+   too, but only when nothing before it looks like an EDIFACT envelope. */
+function xmlStartIndex(raw){
+  const m=raw.match(/^[\s\uFEFF]*</);
+  if(m)return m[0].length-1;
+  const i=raw.indexOf('<?xml');
+  if(i>0&&i<2000&&!/UN[ABH][+:]/.test(raw.slice(0,i)))return i;
+  return -1;
+}
+function isXmlText(raw){return xmlStartIndex(raw)!==-1;}
+/* XML text ready for DOMParser, plus what had to be skipped or stripped to
+   get there (text before the declaration, illegal control characters) \u2014
+   kept so the UI can say so, rather than silently reading around it. */
+function prepareXmlText(raw){
+  const start=xmlStartIndex(raw);
+  const text=start>0?raw.slice(start):raw;
+  const junk=start>0?raw.slice(0,start).replace(/^[\s\uFEFF]+|\s+$/g,''):'';
+  const stripped=stripIllegalXmlChars(text);
+  const codes=[...new Set(stripped.removed.map(x=>x.code))];
+  return {text:stripped.clean,leadingJunk:junk||null,
+    illegalXmlChars:stripped.removed.length?{count:stripped.removed.length,codes}:null};
+}
+/* DOMParser never throws on malformed XML \u2014 it returns a document holding a
+   <parsererror> element instead, which every parser here used to turn into
+   an empty result without a word. Returns {doc,error}; error carries the
+   reader's own line/column/message, for xmlParseErrorBannerHtml. */
+function parseXmlDoc(text){
+  let doc;
+  try{doc=new DOMParser().parseFromString(text,'application/xml');}
+  catch(e){return {doc:null,error:{line:null,col:null,msg:String(e.message||e)}};}
+  const pe=doc&&doc.querySelector('parsererror');
+  if(!pe)return {doc,error:null};
+  const t=pe.textContent||'';
+  // Chromium: "error on line 3 at column 7: \u2026"; Firefox: "\u2026 Line Number 3, Column 7:"
+  let m=t.match(/error on line (\d+) at column (\d+):\s*([^\n]*)/);
+  if(m)return {doc:null,error:{line:+m[1],col:+m[2],msg:m[3].trim()}};
+  m=t.match(/Line Number (\d+), Column (\d+)/);
+  const first=t.split('\n').map(s=>s.trim()).filter(Boolean)[0]||'';
+  return {doc:null,error:{line:m?+m[1]:null,col:m?+m[2]:null,msg:first.replace(/^XML Parsing Error:\s*/,'').slice(0,200)}};
 }
 function looksLikeBolUbl(raw){
   return /CommonAggregateComponents|nl-inv:|UBLVersionID|LegalMonetaryTotal/.test(raw.slice(0,4000));
@@ -3872,13 +3976,18 @@ function diffXmlLeaves(a,b){
    text, and the concatenated-XML split above always sees clean text too. */
 function parseInvoices(raw){
   if(isXmlText(raw)){
-    const stripped=stripIllegalXmlChars(raw);
-    if(stripped.removed.length){
-      const r=parseInvoicesInner(stripped.clean);
-      const codes=[...new Set(stripped.removed.map(x=>x.code))];
-      r.forEach(inv=>{inv.illegalXmlChars={count:stripped.removed.length,codes};});
-      return r;
-    }
+    // Same preparation for every XML path (see prepareXmlText): text before
+    // the declaration skipped, illegal control characters stripped.
+    const prep=prepareXmlText(raw);
+    const r=parseInvoicesInner(prep.text);
+    r.forEach(inv=>{
+      if(prep.illegalXmlChars)inv.illegalXmlChars=prep.illegalXmlChars;
+      if(prep.leadingJunk)inv.leadingJunk=prep.leadingJunk;
+    });
+    // Nothing extracted: say WHY when it's the XML itself that can't be
+    // read, instead of the bare "couldn't read an invoice".
+    if(!r.length){const pe=parseXmlDoc(prep.text).error;if(pe)r.xmlError=pe;}
+    return r;
   }
   return parseInvoicesInner(raw);
 }
@@ -4350,6 +4459,7 @@ function invoiceOverviewHtml(inv,opts={}){
   const isCredit=inv.docType==='credit';
   const jumpCall=opts.side?(val=>`jumpToInvSource(${jsQuote(opts.side)},${jsQuote(val)})`):(val=>`jumpToQuickSource(${jsQuote(val)})`);
   let h='';
+  h+=leadingJunkBannerHtml(inv);
   h+=concatenatedXmlBannerHtml(inv);
   h+=illegalXmlCharsBannerHtml(inv);
   h+=`<div class="ov-head"><span class="ov-type${isCredit?' credit':''}">${isCredit?'CREDIT NOTE':'INVOICE'}</span>`;
@@ -4839,6 +4949,7 @@ function renderActionMatrix(){
 
 function render(result,bol,sup,notes){
   document.getElementById('results').classList.remove('hidden');
+  document.getElementById('factsBanners').innerHTML=xmlFileBannersHtml(sup,'The supplier file')+xmlFileBannersHtml(bol,"Bol's file");
   const notesPanel=document.getElementById('factsNotesPanel');
   if(notes&&notes.length){notesPanel.classList.remove('hidden');document.getElementById('factsNotes').innerHTML=notes.map(esc).join('<br>');}
   else{notesPanel.classList.add('hidden');document.getElementById('factsNotes').innerHTML='';}
@@ -5668,6 +5779,8 @@ function renderInvoiceCompare(res,notes){
   const eanText=buildEanListText(res.rows.map(r=>r.gtin));
 
   let h='';
+  h+=leadingJunkBannerHtml(res.sup,'The supplier file');
+  h+=leadingJunkBannerHtml(res.bol,"Bol's file");
   h+=concatenatedXmlBannerHtml(res.sup);
   h+=concatenatedXmlBannerHtml(res.bol);
   h+=illegalXmlCharsBannerHtml(res.sup);
@@ -5835,6 +5948,7 @@ function cSetSide(side,name,text){
   if(changed){
     document.getElementById('results').classList.add('hidden');
     document.getElementById('invoiceResults').classList.add('hidden');
+    document.getElementById('compareBanner').innerHTML='';
   }
   const drop=document.getElementById(side==='bol'?'dropBol':'dropSup');
   document.getElementById(side==='bol'?'fnameBol':'fnameSup').textContent=name;
@@ -5910,8 +6024,22 @@ zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
 zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');const f=e.dataTransfer.files[0];if(f)handleZip(f);});
 zipInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)handleZip(f);e.target.value='';});
 
+/* An XML file that can't be read at all stops the comparison with a banner
+   per affected side — comparing an empty message against a full one only
+   produces "missing" findings that point at the wrong problem. */
+function showXmlReadErrors(errs){
+  const box=document.getElementById('compareBanner');
+  const hit=errs.filter(e=>e.err);
+  if(!hit.length)return false;
+  box.innerHTML=hit.map(e=>xmlParseErrorBannerHtml(e.err,e.who)).join('');
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('invoiceResults').classList.add('hidden');
+  cSetStatus(`${hit.length===2?'Neither file could':hit[0].who+' couldn’t'} be read as XML — see the note below.`,true);
+  return true;
+}
 function runCompare(){
   if(!cstate.bol||!cstate.sup){cSetStatus('Load both messages first.',true);return;}
+  document.getElementById('compareBanner').innerHTML='';
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
   if(tSup==='ORDERS'||tBol==='ORDERS'){
     cSetStatus(pickOrdersBlockMsg(),true);
@@ -5923,6 +6051,7 @@ function runCompare(){
     try{
       const supList=parseInvoices(cstate.sup.text);
       const bolList=parseInvoices(cstate.bol.text);
+      if(showXmlReadErrors([{who:'The supplier file',err:supList.xmlError},{who:"Bol's file",err:bolList.xmlError}]))return;
       if(!supList.length){cSetStatus('Couldn\u2019t read an invoice from the supplier file.',true);return;}
       if(!bolList.length){cSetStatus('Couldn\u2019t read an invoice from the bol output.',true);return;}
       const {pairs,notes}=matchInvoicePair(supList,bolList);
@@ -5948,6 +6077,8 @@ function runCompare(){
   try{
     const supList=parseFactsList(cstate.sup.text);
     const bolList=parseFactsList(cstate.bol.text);
+    const firstErr=list=>(list.find(f=>f.xmlError)||{}).xmlError;
+    if(showXmlReadErrors([{who:'The supplier file',err:firstErr(supList)},{who:"Bol's file",err:firstErr(bolList)}]))return;
     if(supList.length<=1&&bolList.length<=1){
       const bol=bolList[0],sup=supList[0];
       const result=compare(bol,sup);render(result,bol,sup);cSetStatus('Comparison ready.');
@@ -5971,6 +6102,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
+document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';});
 document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>

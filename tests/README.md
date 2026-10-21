@@ -87,6 +87,12 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | a UTF-16 XML without a BOM is decoded from its bytes and compared normally, not read as an empty message | `desadv/utf16-no-bom.sup.xml`, `desadv/utf16-no-bom.bol.edi` | `specs/desadv.spec.js` |
 | DESADV | windows-1252 characters (É, Ø, È) survive in Quick check instead of becoming U+FFFD | `desadv/windows-1252.sup.xml` | `specs/desadv.spec.js` |
 | ZIP | a UTF-16 XML (with BOM) inside a ZIP is decoded from its bytes, not as UTF-8 | `zip/utf16-pair.zip` | `specs/zip.spec.js` |
+| DESADV | whitespace before `<?xml` doesn't make the XML parse as nothing | `desadv/leading-whitespace.sup.xml`, `desadv/leading-whitespace.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | text before the XML declaration skipped, with a banner | `desadv/text-before-declaration.sup.xml` | `specs/desadv.spec.js` |
+| DESADV | illegal control character in a DESADV XML stripped with a banner, not read as an empty file | `desadv/illegal-xml-char.sup.xml`, `desadv/illegal-xml-char.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | malformed XML stops Compare with a plain-language banner (line/column) instead of an empty comparison; same banner in Quick check | `desadv/malformed.sup.xml`, `desadv/malformed.bol.edi` | `specs/desadv.spec.js` |
+| INVOIC | bol UBL invoice starting with a blank line is still read | `invoic/multi-vat.sup.transusxml.xml`, `invoic/leading-whitespace.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | truncated XML invoice shows a banner with the reader position, in Compare and Quick check | `invoic/multi-vat.sup.transusxml.xml`, `invoic/truncated.bol.ubl.xml` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 
