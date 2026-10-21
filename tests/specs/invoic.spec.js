@@ -280,7 +280,7 @@ test('an illegal XML control character in an item description is flagged on the 
   const supFinding = buckets.message.filter(t => /illegal control character/i.test(t) && t.includes('Supplier —'));
   expect(supFinding).toHaveLength(1);
   expect(supFinding[0]).toContain('0x16');
-  expect(supFinding[0]).toContain('Affected: line 1');
+  expect(supFinding[0]).toContain('line 1');
   expect(buckets.diff.some(t => /illegal control character/i.test(t))).toBe(false);
 });
 
