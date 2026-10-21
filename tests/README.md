@@ -98,6 +98,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | truncated XML invoice shows a banner with the reader position, in Compare and Quick check | `invoic/multi-vat.sup.transusxml.xml`, `invoic/truncated.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TRANSUSXML date with a time part (12 digits) normalized, no false "Invoice date differs" | `invoic/transusxml-datetime.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TRANSUSXML invoice labelled `<MessageFormat>` detected and read as INVOIC (not DESADV), Compare and Quick check | `invoic/transusxml-messageformat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
+| INVOIC | an `<?xml-stylesheet?>` instruction isn't mistaken for a concatenated second document | `invoic/multi-vat.sup.transusxml.xml`, `invoic/xml-stylesheet.bol.ubl.xml` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 

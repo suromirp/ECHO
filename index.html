@@ -3827,7 +3827,7 @@ function parseInvoicTransusXml(raw){
 function xmlStartIndex(raw){
   const m=raw.match(/^[\s\uFEFF]*</);
   if(m)return m[0].length-1;
-  const i=raw.indexOf('<?xml');
+  const i=raw.search(/<\?xml\s/);
   if(i>0&&i<2000&&!/UN[ABH][+:]/.test(raw.slice(0,i)))return i;
   return -1;
 }
@@ -3916,9 +3916,13 @@ function detectMsgType(raw){
    Splitting on that (rather than on the specific stray text) means this
    also catches the pattern if the text in between ever differs. */
 function splitConcatenatedXmlDocs(raw){
+  // "<?xml" + whitespace only: a plain indexOf('<?xml') also matched an
+  // ordinary <?xml-stylesheet …?> instruction, so a UBL invoice carrying one
+  // got the "concatenated XML documents" banner — a false delivery-failure
+  // claim on a perfectly readable file.
   const idxs=[];
-  let i=raw.indexOf('<?xml');
-  while(i!==-1){idxs.push(i);i=raw.indexOf('<?xml',i+1);}
+  const re=/<\?xml\s/g;let mm;
+  while((mm=re.exec(raw))!==null)idxs.push(mm.index);
   if(idxs.length<=1)return [raw];
   return idxs.map((start,n)=>trimToWellFormedXml(raw.slice(start,n+1<idxs.length?idxs[n+1]:raw.length)));
 }

@@ -395,3 +395,19 @@ test('a TRANSUSXML invoice labelled with <MessageFormat> is detected and read as
   await expect(page.locator('#quickOverview')).toContainText('INV1001');
   await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
 });
+
+// The concatenated-documents check counted every "<?xml", including an
+// ordinary <?xml-stylesheet?> instruction, so a readable UBL invoice got a
+// false "concatenated XML documents / delivery failed" banner.
+test('an <?xml-stylesheet?> instruction is not mistaken for a second concatenated document', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'multi-vat.sup.transusxml.xml'),
+    path.join(FIX, 'xml-stylesheet.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).not.toContain('concatenated XML documents');
+  expect(resultsText).toContain('Loud and clear');
+});
