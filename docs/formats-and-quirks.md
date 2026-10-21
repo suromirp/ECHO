@@ -66,6 +66,18 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
 - Header `VATBaseAmount`/`VATAmount` reflect only **one** VAT-rate group;
   the full taxable base is the sum across every `<InvoiceVATTotals>`
   block.
+- **The self-label is `<MessageStandard>` or `<MessageFormat>`** (the
+  ORDRSP variant below uses `<MessageFormat>`). Detection and
+  `looksLikeTransusMessageXml` only knew `<MessageStandard>`: an invoice
+  labelled with `<MessageFormat>` fell through to `detectMsgType`'s bare
+  `DespatchAdviceNumber` check and was typed DESADV (Quick check showed a
+  despatch advice), and Compare couldn't read it. Both labels are accepted
+  now (`TRANSUSXML_LABEL`).
+- **Dates can carry a time** (`202601151200`, 12 digits — the DESADV
+  variant's `DespatchDate` has it too). The invoice parser only converted an
+  exact 8-digit date, so the raw string read as "Invoice date differs"
+  against bol's ISO date. It uses the shared `normDate` now, which also
+  accepts 14 digits (`CCYYMMDDHHMMSS`) and `DD.MM.YYYY`.
 - **This dialect's ORDRSP variant** (same `<Messages><Message><Article>`
   shape, distinguished from the INVOIC one by `<OrderResponseNumber>`
   and the absence of `<OrderLine>`) has its own confirmed quirks:
