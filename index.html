@@ -260,6 +260,13 @@
   .wc-title{font-weight:600;}
   .wc-body{padding:0 12px 12px 33px;}
   .wc-detail{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
+  details.f-more{margin-top:5px;}
+  details.f-more>summary{cursor:pointer;font-size:12px;font-weight:400;color:var(--muted,#888);list-style:none;display:inline-block;background:none;border:0;padding:0;margin:0;box-shadow:none;}
+  details.f-more>summary:hover{text-decoration:underline;}
+  details.f-more>summary::-webkit-details-marker{display:none;}
+  details.f-more>summary::before{content:'▸ ';}
+  details.f-more[open]>summary::before{content:'▾ ';}
+  details.f-more>div{margin-top:4px;font-size:13px;opacity:.85;}
   .wc-affected{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px;}
   .wc-affected li{background:var(--panel-3);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-family:var(--mono);font-size:12px;}
   details{margin-bottom:16px;}
@@ -1837,6 +1844,10 @@ function palletQtyVal(qty){
 function palletQtyEff(v){if(v===undefined||v===null||v==='')return 0;const n=parseInt(v,10);return isNaN(n)?v:n;}
 
 /* index a facts object's pallets by SSCC, for cross-side lookup */
+/* Findings stay short in the panel: headline + affected values up front,
+   the why/what-to-do behind a "More info" toggle (docs/ui-conventions.md). */
+function moreInfo(html){return `<details class="f-more"><summary>More info</summary><div>${html}</div></details>`;}
+
 /* One entry per SSCC. Several CPS groups (or XML DespatchUnits) can carry
    the same SSCC: a real Supplier Charlie DESADV sent one DespatchUnit per
    article, 117 units over 8 SSCCs, and bol's output kept that one-CPS-per-
@@ -1930,7 +1941,7 @@ function checkZeroGtin(facts,label,add,jumpCall,skip){
     const jump=jumpCall?` onclick="${jumpCall('LIN+'+(l.lineNo||''))}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(lbl)}</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>EAN is all zeros</strong> on ${n} line${n===1?'':'s'} — these lines carry no usable EAN, so the item can't be identified by EAN downstream. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+  add('warn',`${label} — <strong>EAN is all zeros</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`These lines carry 0000000000000 instead of a real EAN, so the item can't be identified by EAN downstream.`),'message');
 }
 function compareZeroGtin(sup,bol,add){
   const supByLine=new Map();
@@ -1944,7 +1955,7 @@ function compareZeroGtin(sup,bol,add){
   if(pairs.length){
     const n=pairs.length;
     const tags=pairs.map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo)} · ${esc(s.gtin)}</span></li>`).join('');
-    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}: the supplier sent a valid EAN, but bol's output says 0000000000000, so bol can't tell which item ${n===1?'this is':'these are'}. Shown below as line · the supplier's EAN. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'diff');
+    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as line · supplier's EAN), but bol's output says 0000000000000, so bol can't tell which item ${n===1?'this is':'these are'}. Confirmed twice as a setting in Transus's data source for that supplier.`),'diff');
   }
   return new Set(pairs.map(p=>p[0]));
 }
@@ -2054,7 +2065,7 @@ function checkPalletStructure(facts,label,add,jumpCall){
     p.parentCps&&p.hasPac&&!palletIsNested(p,byCps)&&!p.sscc&&hasItemsBeneath(p)&&hasNestedSscc(p));
   if(wrapperNoSscc.length){
     const n=wrapperNoSscc.length;
-    add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'it wraps':'each wraps'} nested package(s) that do carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, not on nested packages beneath it, so this pallet effectively has no usable SSCC — worth confirming with whoever generates this feed that the top-level GIN+BJ isn't being dropped. ${bodyFor(wrapperNoSscc)}`,'message');
+    add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'}. ${bodyFor(wrapperNoSscc)}`+moreInfo(`${n===1?'This pallet wraps':'Each of these pallets wraps'} nested package(s) that carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, so this pallet has no usable SSCC. Worth confirming with whoever generates this feed that the pallet's GIN+BJ isn't being dropped.`),'message');
   }
   facts.pallets.forEach(p=>{
     if(p.palletGtin){
@@ -2104,7 +2115,7 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
   const ref=facts.billOfLadingRef;
   if(!ref||ref.length<=15)return;
   const jump=jumpCall?` onclick="${jumpCall(ref)}"`:'';
-  add('err',`${label} — <strong>Packing List Reference too long</strong>: <span class="clickable-val"${jump}>${esc(ref)}</span> is ${ref.length} characters (RFF+BM) — bol's delivery pipeline rejects anything over 15, and a message like this fails to deliver entirely.`,'message');
+  add('err',`${label} — <strong>Packing List Reference too long</strong>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline; a message like this fails to deliver entirely.`),'message');
 }
 
 // A CPS group that carries its own SSCC (GIN+BJ) but never declared itself
@@ -2125,7 +2136,7 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)}</span></li>`;
   }).join('');
-  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'} — confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message.`),'message');
 }
 
 /* Packing reference (RFF+BM / PackingSlipNumber) and despatch advice number
@@ -2146,7 +2157,7 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   if(!packingRefNearMiss(facts))return;
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
-  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: the message gives packing slip number ${v(ref)}, but its own document number is ${v(doc)}. The two are almost the same, which can mean one of them has a typo or a missing character. bol uses the packing slip number to match the delivery when it arrives, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is correct. Note: the Transus portal can show the document number as the packing slip, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). <span style="opacity:.75">(Packing slip number = RFF+BM / PackingSlipNumber, document number = BGM / DespatchAdviceNumber.)</span>`,'message');
+  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: ${v(ref)} vs document number ${v(doc)}. Check with the supplier which one is on the packing slip.`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing slip number, so it must be exactly what's printed on the physical packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing slip number = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
 }
 
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
@@ -2159,7 +2170,7 @@ function compareDesadvDates(sup,bol,add){
   [['despatchDate','Despatch date','DTM+11'],['arrivalDate','Expected delivery date','DTM+132']].forEach(([k,label,seg])=>{
     const s=sup[k],b=bol[k];
     if(!s||!b||s===b)return;
-    add('warn',`<strong>${label} changed</strong>: the supplier sent <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span>, but bol's output says <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span> (${seg}). Worth checking with Transus.`,'diff');
+    add('warn',`<strong>${label} (${seg}) changed</strong>: <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span> → <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span>`+moreInfo(`The supplier sent the first date; bol's output says the second. Worth checking with Transus.`),'diff');
   });
 }
 
@@ -2182,7 +2193,7 @@ function checkSsccLength(facts,label,add,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars)</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'} — bol's own documentation (both the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits with no Application Identifier prefix. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`,'message');
+  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".`),'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
@@ -5217,7 +5228,12 @@ function applyQuickSearch(){
 /* =====================================================================
    INVOIC — rendering of the comparison
    ===================================================================== */
-function stripHtml(s){const d=document.createElement('div');d.innerHTML=s;return d.textContent||'';}
+/* Copy report keeps the "More info" text (without the toggle label); Copy
+   for Transus drops it entirely and sends only the short headline. */
+function stripHtml(s,noDetails){const d=document.createElement('div');d.innerHTML=s;
+  d.querySelectorAll(noDetails?'details.f-more':'details.f-more>summary').forEach(n=>n.remove());
+  d.querySelectorAll('ul.wc-affected').forEach(ul=>{ul.textContent=' '+[...ul.children].map(li=>li.textContent.trim()).join(', ')+' ';});
+  return (d.textContent||'').replace(/\s+/g,' ').trim();}
 let lastReportText='';
 
 function buildReportText(title,findings,extra){
@@ -5290,7 +5306,7 @@ function buildTransusText(findings,context,lang){
   lines.push('');
   lines.push(wrap.intro(context));
   lines.push('');
-  shown.forEach(f=>lines.push('- '+transusShorten(stripHtml(f.text))));
+  shown.forEach(f=>lines.push('- '+transusShorten(stripHtml(f.text,true))));
   if(rest>0)lines.push(wrap.more(rest));
   lines.push('');
   lines.push(wrap.close);
