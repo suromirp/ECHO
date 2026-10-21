@@ -191,6 +191,8 @@ actual test fixtures, don't just keep this list as prose:
   normalized, not reported as "Invoice date differs"; an invoice labelled
   `<MessageFormat>TRANSUSXML` (instead of `<MessageStandard>`) is detected as
   INVOIC, not DESADV, in both modes.
+- **INVOIC**: an `<?xml-stylesheet?>` instruction in bol's UBL is not
+  mistaken for a second concatenated document (no false banner).
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with
