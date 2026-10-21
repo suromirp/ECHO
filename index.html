@@ -1337,22 +1337,33 @@ function parseFactsTransusXml(raw){
   if(concatenatedXml)f.concatenatedXml=concatenatedXml;
   return f;
 }
-function factsFromXmlDoc(doc,raw){
+function factsFromXmlDoc(doc,raw,scope){
   const f=emptyXmlFacts(raw);
-  const orderEl=doc.querySelector('Order');
+  scope=scope||doc.documentElement;
+  // Header vs line: a field only belongs to an element when no OTHER line
+  // element sits in between. A plain querySelector returned the first
+  // descendant anywhere, so a line's own <DeliveryDate>/<OrderNumberBuyer>
+  // stood in for a header field the message didn't have (and the first
+  // Article's order number became the whole message's), and a
+  // <DespatchUnit>'s LineNumber/SSCC could come from an <Article> or unit
+  // nested inside it. Direct child first, then a descendant outside any
+  // nested line element.
+  const LINE_TAGS=new Set(['Article','OrderLine','DespatchLine','DespatchUnit']);
+  const insideLine=(n,top)=>{for(let p=n.parentElement;p&&p!==top;p=p.parentElement)if(LINE_TAGS.has(localName(p)))return true;return false;};
+  const own=(el,tag)=>{const c=childByName(el,tag);if(c)return c;for(const n of el.querySelectorAll(tag))if(!insideLine(n,el))return n;return null;};
+  const g=(el,tag)=>{const n=own(el,tag);return n?n.textContent.trim():'';};
+  const gd=tag=>{const n=own(scope,tag);return n?n.textContent.trim():null;};
+  const orderEl=localName(scope)==='Order'?scope:own(scope,'Order');
   // message type: presence of OrderLines/Status => ORDRSP; DespatchLine/Article/DespatchUnit => DESADV.
   // OrderResponseNumber is checked first because some suppliers' ORDRSP
   // Transus XML uses <Article> as its line element too (see below) — without
   // this, such a message would fall through to the DESADV branch below.
-  if(doc.querySelector('OrderLine')||doc.querySelector('OrderLines')||doc.querySelector('OrderResponseNumber'))f.msgType='ORDRSP';
-  else if(doc.querySelector('DespatchLine')||doc.querySelector('Despatch')||doc.querySelector('Article')||doc.querySelector('DespatchUnit'))f.msgType='DESADV';
+  if(scope.querySelector('OrderLine')||scope.querySelector('OrderLines')||scope.querySelector('OrderResponseNumber'))f.msgType='ORDRSP';
+  else if(scope.querySelector('DespatchLine')||scope.querySelector('Despatch')||scope.querySelector('Article')||scope.querySelector('DespatchUnit'))f.msgType='DESADV';
   // header status (HeaderStatus) -> bgmFunc-ish (4=change, 29 accept, 27 not accepted). Transus uses 4/9 etc.
-  const hs=orderEl&&orderEl.querySelector('HeaderStatus');
+  const hs=orderEl&&own(orderEl,'HeaderStatus');
   if(hs)f.bgmFunc=hs.textContent.trim();
-  const headerOrder=(orderEl&&orderEl.querySelector('OrderNumberBuyer'))?orderEl.querySelector('OrderNumberBuyer').textContent.trim()
-    :(doc.querySelector('OrderNumberBuyer')?doc.querySelector('OrderNumberBuyer').textContent.trim():null);
-  const g=(el,tag)=>{const n=el.querySelector(tag);return n?n.textContent.trim():'';};
-  const gd=tag=>{const n=doc.querySelector(tag);return n?n.textContent.trim():null;};
+  const headerOrder=(orderEl&&g(orderEl,'OrderNumberBuyer'))||gd('OrderNumberBuyer')||null;
   f.docNumber=gd('DespatchAdviceNumber')||gd('OrderResponseNumber')||gd('DocumentNumber')||null;
   f.docDate=normDate(gd('DocumentDate')||gd('DespatchAdviceDate')||gd('OrderResponseDate'));
   f.arrivalDate=normDate(gd('ArrivalDate')||gd('DeliveryDate'));
@@ -1360,7 +1371,7 @@ function factsFromXmlDoc(doc,raw){
   if(headerOrder)f.orderRefsHeader.add(headerOrder);
   const dn=gd('DeliveryNoteNumber');if(dn)f.deliveryNoteRefs.push(dn);
   [['Supplier','SU'],['Buyer','BY'],['DeliveryParty','DP'],['Invoicee','IV']].forEach(([tagName,role])=>{
-    const node=doc.querySelector(tagName);
+    const node=own(scope,tagName);
     if(!node)return;
     const gln=g(node,'GLN')||g(node,'ID')||null;
     const name=g(node,'Name')||null;
@@ -1372,8 +1383,8 @@ function factsFromXmlDoc(doc,raw){
     const v=gd(tagName);if(v&&!f.parties[role])f.parties[role]={gln:v,name:null,vat:null};
   });
   const psn=gd('PackingSlipNumber');if(psn)f.billOfLadingRef=psn;
-  doc.querySelectorAll('SSCC').forEach(n=>{const v=n.textContent.trim();if(v)f.ssccs.push(v);});
-  doc.querySelectorAll('OrderLine').forEach(el=>{
+  scope.querySelectorAll('SSCC').forEach(n=>{const v=n.textContent.trim();if(v)f.ssccs.push(v);});
+  scope.querySelectorAll('OrderLine').forEach(el=>{
     const status=g(el,'Status');
     const delivered=g(el,'DeliveredQuantity');
     const backorder=g(el,'BackOrderQuantity');
@@ -1395,7 +1406,7 @@ function factsFromXmlDoc(doc,raw){
   const despatchUnits=new Map();
   if(f.msgType==='DESADV'){
     const unitOfEl=new Map();
-    doc.querySelectorAll('DespatchUnit').forEach(du=>{
+    scope.querySelectorAll('DespatchUnit').forEach(du=>{
       const ln=g(du,'LineNumber');
       // hasPac: the PAC-segment check is EDIFACT-specific — an XML
       // <DespatchUnit> is itself the packaging unit, never "missing" one.
@@ -1407,7 +1418,7 @@ function factsFromXmlDoc(doc,raw){
       unitOfEl.set(du,pallet);
       f.pallets.push(pallet);
     });
-    doc.querySelectorAll('Article').forEach(el=>{
+    scope.querySelectorAll('Article').forEach(el=>{
       const gtin=g(el,'GTIN');
       const delivered=g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity');
       const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
@@ -1418,13 +1429,20 @@ function factsFromXmlDoc(doc,raw){
         art:g(el,'ArticleCodeSupplier')||null,desc:g(el,'ArticleDescription')||g(el,'Description')||null};
       // An <Article> nested inside its own <DespatchUnit> belongs to that
       // unit, even when several units share one DespatchUnitReference.
-      const parentUnit=el.parentElement&&el.parentElement.localName==='DespatchUnit'?unitOfEl.get(el.parentElement):null;
+      const unitEl=el.parentElement&&el.parentElement.closest('DespatchUnit');
+      const parentUnit=unitEl?unitOfEl.get(unitEl):null;
       const pallet=parentUnit||despatchUnits.get(g(el,'DespatchUnitReference'))||null;
       line.__cpsRef=pallet;
       if(pallet)pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
       f.lines.push(line);
     });
-  }else if(f.msgType==='ORDRSP'&&!doc.querySelector('OrderLine')){
+    // A header-level <OrderNumberBuyer> applies to every Article that has
+    // none of its own — the same inheritance parseFactsEdifact applies to a
+    // header RFF+ON. Without it, every such line read "supplier [—] vs bol
+    // [<order>]" against bol's EDIFACT (which repeats RFF+ON per LIN): a
+    // false Transformation difference on every line.
+    if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
+  }else if(f.msgType==='ORDRSP'&&!scope.querySelector('OrderLine')){
     // Some suppliers' ORDRSP-flavoured Transus XML uses <Article> as the line
     // element too (the same tag DESADV uses above), distinguishable only by
     // header fields like <OrderResponseNumber>. Its action isn't a numeric
@@ -1433,7 +1451,7 @@ function factsFromXmlDoc(doc,raw){
     // action is derived from the actual quantities instead of guessing every
     // string that might appear, the same way STATUS_TO_ACTION derives it
     // from a known numeric code.
-    doc.querySelectorAll('Article').forEach(el=>{
+    scope.querySelectorAll('Article').forEach(el=>{
       const gtin=g(el,'GTIN');
       const toInt=v=>{const n=parseInt(parseFloat(v),10);return isNaN(n)?null:n;};
       const delivered=toInt(g(el,'DeliveredQuantity')||g(el,'DespatchedQuantity'));

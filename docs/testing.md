@@ -174,6 +174,11 @@ actual test fixtures, don't just keep this list as prose:
   populated, the parser falls back to summing the lines instead of
   reporting a false "Total line amounts differs" against a header field
   bol's own downstream system doesn't rely on either.
+- **DESADV (TRANSUSXML)**: header and line fields are told apart by position:
+  a header-only `<OrderNumberBuyer>` applies to every Article (no false
+  "order numbers differ"), an Article's own `<DeliveryDate>` never stands in
+  for the header date, and a unit keeps its own `<LineNumber>` even when its
+  nested Article comes first.
 - **Encoding**: a UTF-16 XML without a BOM is decoded and compared
   normally (not every line "missing"); windows-1252 characters (É, Ø, È)
   survive in Quick check; a UTF-16 XML inside a ZIP is decoded too.
