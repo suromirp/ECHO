@@ -854,3 +854,25 @@ test('an article moved to another pallet in bol\'s output is flagged as a pallet
   expect(buckets.diff.some(t => /387000000000000019/.test(t) && /missing on the bol side/.test(t))).toBe(true);
   expect(buckets.diff.some(t => /387000000000000026/.test(t) && /missing on the supplier side/.test(t))).toBe(true);
 });
+
+// Real Difox DESADV: RFF+ON:243025 on two lines next to 8243025, delivery
+// failed with "Purchase Order not found". Passed on unchanged, so Compare
+// said nothing. Also: the header table compared supplier header orders
+// against bol line orders and showed a false ≠.
+test('an order number missing its leading digit is flagged once, and the header table compares all orders', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'order-number-missing-digit.sup.edi'), path.join(FIX, 'order-number-missing-digit.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => /Order number looks incomplete/.test(t));
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toContain('passed on unchanged');
+  expect(hits[0]).toContain('700001 → 9700001?');
+  expect(hits[0]).not.toContain('9700002 →');
+  await expect(page.locator('#hdrFields tr', { hasText: 'Order' })).not.toHaveClass(/differ/);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'order-number-missing-digit.sup.edi'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('body')).toContainText('Order number looks incomplete');
+});

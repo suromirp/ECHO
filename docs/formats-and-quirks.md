@@ -372,6 +372,13 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   suppliers happened to send a batch number per line. Transus fixed each
   case in that supplier's own data source and didn't say whether the batch
   number played a role.
+- **Order number with its leading digit missing** (real Difox DESADV):
+  `RFF+ON:243025` on two lines, next to `8243025` elsewhere in the same
+  message. Transus passed it on unchanged, and bol rejected the delivery
+  with "Purchase Order not found". Flagged as a Message check (`orderNearMisses`):
+  an order number that is another one in the same message minus 1-2 leading
+  characters. The Header fields table also compares header and line order
+  numbers together, since one side may state the order only in the header.
 - **Article moved to another pallet by the transformation** (real Perfetti
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet

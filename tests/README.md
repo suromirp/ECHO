@@ -74,6 +74,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | SSCC stat counts distinct SSCCs, overview header shows groups vs SSCCs | `desadv/repeated-sscc-units.{sup.xml,bol.edi}` | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | Header fields table: supplier vs bol per field with its source field, open when something differs | `desadv/date-shift.*`, `desadv/repeated-sscc-units.*` | `specs/desadv.spec.js` |
 | UI | long explanations behind a collapsed "More info" toggle; Copy for Transus sends only the headline | `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| ORDRSP/DESADV | order number missing its leading digit flagged (once, passed on unchanged); header table compares all orders | `desadv/order-number-missing-digit.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | article moved to another pallet in bol's output flagged per SSCC | `desadv/sub-cps-per-item.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |

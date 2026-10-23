@@ -146,6 +146,10 @@ actual test fixtures, don't just keep this list as prose:
   DTM+11, …). It opens by itself when a shared field differs.
 - **UI**: long explanations sit behind a collapsed "More info" toggle, and
   "Copy for Transus" contains only the headline.
+- **ORDRSP/DESADV**: an order number that is another order number in the
+  same message minus 1-2 leading characters is a Message check in both
+  modes, reported once if bol's output carries the same. The header table
+  doesn't show a false ≠ for header-only vs line-only orders.
 - **DESADV**: an article placed on another pallet in bol's output (supplier
   sub-CPS per article, bol lists every LIN after the last pallet) is flagged
   per SSCC as a pallet mapping difference.

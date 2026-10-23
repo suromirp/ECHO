@@ -2377,10 +2377,38 @@ function headerSrcLabel(facts,ediSeg,xmlTags){
   if(facts.rawXml){const t=xmlTags.find(t=>new RegExp('<(\\w+:)?'+t+'[\\s>]').test(facts.rawXml));return t||xmlTags[0];}
   return 'CSV';
 }
+// All order numbers in the message, header and line level together: one
+// side may state the order only in the header, the other only per line
+// (structural), so comparing header-only vs line-only would show a false ≠.
 function headerOrders(f){
   const s=new Set(f.orderRefsHeader||[]);
-  if(!s.size)(f.lines||[]).forEach(l=>(l.orders||[]).forEach(o=>s.add(o)));
+  (f.lines||[]).forEach(l=>(l.orders||[]).forEach(o=>s.add(o)));
   return [...s].sort();
+}
+/* An order number that is another order number in the same message with
+   its first digit(s) missing: a real Difox DESADV had RFF+ON:243025 on two
+   lines next to 8243025 elsewhere, and delivery failed with "Purchase Order
+   not found". Transus passed it on unchanged, so Compare showed nothing.
+   Only a missing prefix of 1-2 characters counts, so unrelated short
+   numbers aren't paired by accident. Single-message observation: both
+   modes, reported once when bol's output carries the same values. */
+function orderNearMisses(facts){
+  const all=headerOrders(facts);
+  const out=[];
+  all.forEach(a=>{
+    const full=all.find(b=>b!==a&&b.endsWith(a)&&b.length-a.length>=1&&b.length-a.length<=2);
+    if(full)out.push({short:a,full,lines:(facts.lines||[]).filter(l=>l.orders&&l.orders.has(a)).map(l=>l.lineNo).filter(Boolean)});
+  });
+  return out;
+}
+function checkOrderNearMiss(facts,label,add,jumpCall,cat){
+  const hits=orderNearMisses(facts);
+  if(!hits.length)return;
+  const tags=hits.map(h=>{
+    const jump=jumpCall?` onclick="${jumpCall(h.short)}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(h.short)} → ${esc(h.full)}?${h.lines.length?' (line '+esc(h.lines.join(', '))+')':''}</span></li>`;
+  }).join('');
+  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),cat||'message');
 }
 function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
@@ -3069,6 +3097,9 @@ function compare(bol,sup){
   // both, per side.
   if(type==='ORDRSP'||type==='DESADV'){
     checkZeroGtin(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
+    {const sm=orderNearMisses(sup).map(h=>h.short).join('|'),bm=orderNearMisses(bol).map(h=>h.short).join('|');
+     if(sm&&sm===bm)checkOrderNearMiss(sup,'Supplier (passed on unchanged to bol)',add,v=>`jumpToFactsSource('both',${jsQuote(v)})`);
+     else{checkOrderNearMiss(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNearMiss(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);}}
     {const fs=factsGs1Finding(sup,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);if(fs)add('warn','Supplier — '+fs,'message');
      const fb=factsGs1Finding(bol,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);if(fb)add('warn','Bol — '+fb,'message');}
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
@@ -4836,6 +4867,7 @@ function factsOverviewHtml(facts){
   }
   if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkZeroGtin(facts,'This message',qcAdd,jumpCall);
+  if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV'){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
