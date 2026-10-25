@@ -672,7 +672,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   over `docNumber` wherever the packing reference is shown — in both
   Quick check and Compare (parity rule) — falling back to the BGM
   document number, then an RFF-based despatch note reference, only when
-  `RFF+BM` is absent. Not compared cross-side as a finding, matching how
+  `RFF+BM` is absent. The "No packing reference found" note uses the same
+  sources (`hasPackingRef`); it used to skip `RFF+BM`, so a message with
+  only `RFF+BM` and an empty BGM number was told it had none. Not compared
+  cross-side as a finding, matching how
   the packing reference itself has always been display-only, not a
   flagged check. The original trigger was real: a "Packing List Reference
   Invalid" delivery error couldn't be diagnosed from ECHO's output because

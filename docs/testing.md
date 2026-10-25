@@ -168,6 +168,11 @@ actual test fixtures, don't just keep this list as prose:
   as err because another rule on the same line is err); the action-6
   date-only amendment is info. Short headline + "More info", in Compare and
   Quick check.
+- **DESADV**: a message with only `RFF+BM` (empty BGM number) is not
+  flagged "no packing reference", in either mode. The near-miss finding is
+  headed "Packing reference almost matches the document number" with both
+  values visible and the advice in More info; the header table row is
+  "Packing reference".
 - **ORDRSP**: "Worth checking" counts any of QTY+12/83/182 as a quantity,
   so a cancelled line (action 2, QTY+182 only) isn't "Quantity missing".
 - **ORDRSP/DESADV**: message values in Compare findings (article code,
