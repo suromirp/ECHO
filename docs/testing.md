@@ -168,6 +168,11 @@ actual test fixtures, don't just keep this list as prose:
   as err because another rule on the same line is err); the action-6
   date-only amendment is info. Short headline + "More info", in Compare and
   Quick check.
+- **DESADV**: "Pallet EAN repeated as item" and "Item not linked to a
+  pallet" are one grouped finding each (tags per item), not one per line;
+  the shipment-weight and "No SSCC found" findings have a short headline +
+  More info; warn-level pallet pills use "!" (⚠ is for errors), in both
+  modes.
 - **DESADV**: a message with only `RFF+BM` (empty BGM number) is not
   flagged "no packing reference", in either mode. The near-miss finding is
   headed "Packing reference almost matches the document number" with both
