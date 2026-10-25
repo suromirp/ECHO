@@ -533,3 +533,37 @@ test('an MOA+203 right after ALC is the charge amount, not the line amount', asy
   await runQuickFixture(page, path.join(FIX, 'alc-moa-203.sup.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('quantity × net price');
 });
+
+// Compare ran qty × net price vs line amount on per-EAN sums, supplier side
+// only: one EAN on two lines (5.00 and 6.00) added its prices into 11.00 and
+// showed a gap that isn't there. It now runs per line, per side, through
+// the same helper as Quick check. PRI+INV stands in for a missing PRI+AAA
+// (real Supplier India pattern), so bol's PriceAmount from it compares as a match
+// and the line's real gap (amount = qty × gross price) is reported once.
+test('qty x price is checked per line and per side; PRI+INV is a net-price fallback', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'arith-per-line.sup.edi'),
+    path.join(FIX, 'arith-per-line.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const buckets = await invoiceFindingsByCategory(page);
+  const arith = buckets.message.filter(t => /quantity × net price/.test(t));
+  expect(arith).toHaveLength(1);
+  expect(arith[0]).toContain('Supplier (passed on unchanged to bol)');
+  expect(arith[0]).toContain('8710000000093');
+  expect(arith[0]).toContain('gross price (16.709)');
+  expect(buckets.message.some(t => /8710000000086/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /Net price/.test(t))).toBe(false);
+  const priceRow = page.locator('#invoiceResults tr', { hasText: '8710000000086' }).first();
+  await expect(priceRow).not.toContainText('11.00');
+
+  for (const file of ['arith-per-line.sup.edi', 'arith-per-line.bol.ubl.xml']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    const notes = await page.locator('#quickOverview .note-inline').allInnerTexts();
+    expect(notes.filter(t => /quantity × net price/.test(t))).toHaveLength(1);
+    expect(notes.some(t => /8710000000093/.test(t))).toBe(true);
+  }
+});
