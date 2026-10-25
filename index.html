@@ -399,7 +399,8 @@
         <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched.</span></div>
         <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side.</span></div>
         <div><span class="pill ok">OK</span><span>No structural issue found in this message.</span></div>
-        <div><span class="fi" style="color:var(--warn)">⚠</span><span>Worth a closer look — not necessarily an error.</span></div>
+        <div><span class="fi" style="color:var(--err)">⚠</span><span>Check this first.</span></div>
+        <div><span class="fi" style="color:var(--warn)">!</span><span>Worth a closer look — not necessarily an error.</span></div>
         <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
         <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
@@ -1152,7 +1153,7 @@ function parseFactsEdifact(raw){
         else if(q==='11')f.despatchDate=v;}}
     else if(tag==='RFF'){const c=splitEsc(el[1]||'',delims.comp,delims.rel);
       if(c[0]==='ON'&&c[1]){if(cur)cur.orders.add(c[1]);else f.orderRefsHeader.add(c[1]);}
-      else if((c[0]==='DQ'||c[0]==='AAS')&&c[1]&&!cur){if(!f.deliveryNoteRefs.includes(c[1]))f.deliveryNoteRefs.push(c[1]);}
+      else if((c[0]==='DQ'||c[0]==='AAS')&&c[1]&&!cur){if(!f.deliveryNoteRefs.includes(c[1])){f.deliveryNoteRefs.push(c[1]);if(!f.deliveryNoteQual)f.deliveryNoteQual=c[0];}}
       else if(c[0]==='VA'&&c[1]&&lastParty&&f.parties[lastParty])f.parties[lastParty].vat=c[1];
       // Bill of lading number — per bol's own implementation guide (not
       // generic EDIFACT semantics), this is the number that must be unique
@@ -1245,6 +1246,11 @@ function parseFactsCsvDesadv(raw){
       f.docNumber=row[2]||null;
       if(row[3]){f.docDate=row[3];f.headerDtm['137']=row[3];}
       if(row[5]){f.despatchDate=row[5];f.headerDtm['11']=row[5];}
+      // Expected arrival: the field right after the despatch date. Reverse-
+      // engineered like the rest: on the real Supplier Hotel DESADV it matched bol's
+      // DTM+132 exactly. Not read before, so the arrival date only showed
+      // on bol's side of the header table.
+      if(row[6]){f.arrivalDate=row[6];f.headerDtm['132']=row[6];}
       if(row[13])f.orderRefsHeader.add(row[13]);
       if(row[19])f.parties.SU={gln:row[19],name:null,vat:null};
       if(row[21])f.parties.BY={gln:row[21],name:null,vat:null};
@@ -1274,6 +1280,7 @@ function parseFactsCsvDesadv(raw){
   if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
   if(f.docDate)f.docDate=normDate(f.docDate);
   if(f.despatchDate)f.despatchDate=normDate(f.despatchDate);
+  if(f.arrivalDate)f.arrivalDate=normDate(f.arrivalDate);
   return f;
 }
 
@@ -1348,9 +1355,8 @@ function emptyXmlFacts(raw){
    characters stripped, concatenated documents reduced to the last
    parseable one — each flagged with a banner — and, when the XML still
    can't be read, facts.xmlError instead of a silently empty message (which
-   used to show every bol line as "missing from the supplier message"). */
-function parseFactsTransusXml(raw){return parseFactsTransusXmlList(raw)[0];}
-/* One facts object per <Message> in a <Messages> envelope. All messages
+   used to show every bol line as "missing from the supplier message").
+   One facts object per <Message> in a <Messages> envelope. All messages
    used to be read as ONE: every Article pooled under the first message's
    header, and a DespatchUnitReference reused by a later message linked
    its Articles to the first message's unit (wrong SSCC). Now split the
@@ -1543,19 +1549,6 @@ function factsFromXmlDoc(doc,raw,scope){
   return f;
 }
 
-/* Single-message reading (first <Message> only for XML, whole interchange
-   merged for EDIFACT) \u2014 Compare and Quick check use parseFactsList. */
-function parseFacts(raw){
-  const head=raw.replace(/^[\s\uFEFF]+/,'');
-  // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
-  // DESADV (<Messages><Message>, no <?xml declaration) used to fall through
-  // to the EDIFACT parser here and silently produce zero lines. isXmlText
-  // also accepts a <?xml declaration after leading whitespace/text.
-  if(isXmlText(raw)) return parseFactsTransusXml(raw);
-  if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
-  return parseFactsEdifact(raw);
-}
-
 /* An EDIFACT interchange can bundle more than one UNH...UNT message (e.g. a
    supplier batching several despatch advices into one transmission). Split
    it into one raw-text snippet per message — reusing the interchange's own
@@ -1581,7 +1574,11 @@ function splitEdifactMessages(raw){
 
 /* Returns an array of facts objects: one per message for a multi-message
    EDIFACT interchange or a <Messages> XML file with several <Message>
-   elements, or a single-element array otherwise. */
+   elements, or a single-element array otherwise. Any leading '<' is XML —
+   EDIFACT never starts with one. A TRANSUSXML DESADV (<Messages><Message>,
+   no <?xml declaration) used to fall through to the EDIFACT parser and
+   silently produce zero lines. isXmlText also accepts a <?xml declaration
+   after leading whitespace/text. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(isXmlText(raw)) return parseFactsTransusXmlList(raw);
@@ -1694,13 +1691,14 @@ function aggregate(facts,keyFn){
   const usesPallets=!!(facts.pallets&&facts.pallets.length);
   facts.lines.forEach(l=>{
     const key=keyFn(l);
-    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),count:0,noSscc:false});
+    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),dtm67:new Set(),count:0,noSscc:false});
     const a=map.get(key);a.count++;
     for(const q in l.qty){const n=parseInt(l.qty[q],10);if(!isNaN(n))a.qty[q]=(a.qty[q]||0)+n;}
     if(l.action)a.actions.add(l.action);
     l.orders.forEach(o=>a.orders.add(o));
     if(!a.gtin&&l.gtin)a.gtin=l.gtin;
     if(!a.art&&l.art)a.art=l.art;
+    if(l.dtm&&l.dtm['67'])a.dtm67.add(normDate(l.dtm['67'])||l.dtm['67']);
     // Track whether this item's own pallet (in a message that uses pallet
     // structure at all) actually had an SSCC. If it never had one, the other
     // side couldn't have received it regardless of how the transformation
@@ -1716,26 +1714,35 @@ function aggregate(facts,keyFn){
    independent) explanation — the specific item/qty is supplied separately
    by the caller, so many lines sharing the same key can be shown as ONE
    grouped observation (explanation + a tag per affected item) instead of
-   one near-identical paragraph per line. */
+   one near-identical paragraph per line.
+   Each rule has a short neutral headline (what is observed), the detail
+   behind "More info", and its OWN level. The level used to be the line's
+   worst one, so a line tripping an err rule and a warn rule showed both
+   groups as err: a rule could read as an error because of an unrelated
+   rule on the same line. action6-no-backorder-has-confirmed is info: a
+   recognised pattern (docs/formats-and-quirks.md), not a problem. */
 const ACTION_RULE_EXPLAIN={
-  'action5-missing-confirmed':"Action 5 (fully accepted), but no confirmed quantity (QTY+12) is present — a full accept should state how much was confirmed.",
-  'action5-confirmed-zero':"Action 5 (fully accepted), but the confirmed quantity (QTY+12) is explicitly 0 — that reads more like a cancellation than a full accept. Worth being aware of, though this alone doesn't affect the mapping.",
-  'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
-  'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
-  'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
-  'action6-no-backorder-has-confirmed':"<strong>Action 6 used as a delivery-date-only amendment</strong>"+moreInfo("Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity already covering the full amount — reads as a delivery-date-only amendment, a recognized use of action 6."),
-  'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder, a cancelled quantity, nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
-  'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
-  'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
-  'action2-has-confirmed':"Action 2 (cancelled), but a confirmed quantity is present too — a cancelled line shouldn't have anything confirmed."
+  'action5-missing-confirmed':{level:'err',h:'Action 5 without a confirmed quantity (QTY+12)',more:'Action 5 (fully accepted) normally states the confirmed quantity in QTY+12. None is present on these lines.'},
+  'action5-confirmed-zero':{level:'warn',h:'Action 5 with confirmed quantity 0',more:"Action 5 (fully accepted) with QTY+12 explicitly 0 reads more like a cancellation than a full accept. This alone doesn't affect the mapping."},
+  'action5-missing-date':{level:'warn',h:'Action 5 without a delivery date (DTM+67)',more:'These lines carry other dates, but no DTM+67, the delivery date an accepted line normally states.'},
+  'action5-has-backorder':{level:'err',h:'Action 5 with a backorder quantity (QTY+83)',more:'Action 5 means fully accepted, and these lines also carry a backorder quantity. Action 6 is the code bol uses for an accept with a backorder.'},
+  'action5-has-cancelled':{level:'err',h:'Action 5 with a cancelled quantity (QTY+182)',more:'Action 5 means fully accepted, and these lines also carry a cancelled quantity. Action 6 is the code bol uses for a partial cancellation.'},
+  'action6-no-backorder-has-confirmed':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:'Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity covering the full amount. This reads as a delivery-date-only amendment, a recognised use of action 6.'},
+  'action6-no-backorder-no-data':{level:'warn',h:'Action 6 without any quantity',more:"Action 6 (accepted with amendment), but no backorder, cancelled or confirmed quantity is present, so these lines don't show what was amended."},
+  'action2-missing-cancelled':{level:'err',h:'Action 2 without a cancelled quantity (QTY+182)',more:'Action 2 (cancelled) normally states the cancelled quantity in QTY+182. None is present on these lines.'},
+  'action2-cancelled-zero':{level:'warn',h:'Action 2 with cancelled quantity 0',more:"QTY+182 is explicitly 0 on a cancelled line. This alone doesn't affect the mapping."},
+  'action2-has-confirmed':{level:'err',h:'Action 2 with a confirmed quantity (QTY+12)',more:'Action 2 means cancelled, and these lines also carry a confirmed quantity. Action 6 is the code bol uses for a partial accept.'}
 };
-function actionRuleExplain(key){
+function actionRule(key){
   if(key.startsWith('action-unknown:')){
     const code=key.slice('action-unknown:'.length);
-    return `Action code ${esc(code)} isn't one of the codes bol/Transus maps (2, 5 or 6) — worth confirming this was handled correctly downstream.`;
+    return {level:'warn',h:`Action code ${esc(code)} isn't one bol/Transus maps`,more:'bol/Transus map action codes 2, 5 and 6. Worth confirming how this one was handled downstream.'};
   }
-  return ACTION_RULE_EXPLAIN[key]||key;
+  return ACTION_RULE_EXPLAIN[key]||{level:'warn',h:esc(key),more:''};
 }
+/* Returns the rule keys a line trips, and the line's worst rule level
+   ('ok' when none) — only used to know whether the line was flagged at
+   all; each grouped finding takes its own rule's level (actionRule). */
 function validateOrdrspLine(bgmFunc,line){
   const keys=[];let level='ok';const a=line.action;
   const has=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]!==''&&line.qty[q]!=='0';
@@ -1746,16 +1753,11 @@ function validateOrdrspLine(bgmFunc,line){
   // present, just zero.
   const isZero=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]==='0';
   const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
-  const bump=l=>{if(l==='err')level='err';else if(l==='warn'&&level!=='err')level='warn';};
   if(a==='5'){
-    if(!has('12')){
-      const zero=isZero('12');
-      keys.push(zero?'action5-confirmed-zero':'action5-missing-confirmed');
-      bump(zero?'warn':'err');
-    }
-    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){keys.push('action5-missing-date');bump('warn');}
-    if(has('83')){keys.push('action5-has-backorder');bump('err');}
-    if(has('182')){keys.push('action5-has-cancelled');bump('err');}
+    if(!has('12'))keys.push(isZero('12')?'action5-confirmed-zero':'action5-missing-confirmed');
+    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67'))keys.push('action5-missing-date');
+    if(has('83'))keys.push('action5-has-backorder');
+    if(has('182'))keys.push('action5-has-cancelled');
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date, OR a
     // cancelled quantity (partial cancellation is also a valid reason for
@@ -1766,19 +1768,16 @@ function validateOrdrspLine(bgmFunc,line){
     // reason for the amendment. Transus XML may express as delivered 0 + backorder.
     if(!has('83')&&!has('182')&&!(line.qty['12']==='0')){
       keys.push(line.qty['12']?'action6-no-backorder-has-confirmed':'action6-no-backorder-no-data');
-      bump('warn');
     }
   }else if(a==='2'){
-    if(!has('182')){
-      const zero=isZero('182');
-      keys.push(zero?'action2-cancelled-zero':'action2-missing-cancelled');
-      bump(zero?'warn':'err');
-    }
-    if(has('12')){keys.push('action2-has-confirmed');bump('err');}
-  }else{keys.push(`action-unknown:${a??'(none)'}`);bump('warn');}
+    if(!has('182'))keys.push(isZero('182')?'action2-cancelled-zero':'action2-missing-cancelled');
+    if(has('12'))keys.push('action2-has-confirmed');
+  }else keys.push(`action-unknown:${a??'(none)'}`);
+  const rank={ok:0,info:1,warn:2,err:3};
+  keys.forEach(k=>{const l=actionRule(k).level;if(rank[l]>rank[level])level=l;});
   return {level,keys};
 }
-/* Turns a flat list of {key,level,item,jump} entries (one per rule-violation
+/* Turns a flat list of {key,item,jump} entries (one per rule-violation
    per line) into one rendered block per distinct key — the shared
    explanation, plus every affected item as its own small clickable tag.
    This is the same "one explanation + a tag per item" shape "Worth
@@ -1787,14 +1786,15 @@ function validateOrdrspLine(bgmFunc,line){
 function groupActionFindings(entries){
   const order=[];const groups=new Map();
   entries.forEach(e=>{
-    if(!groups.has(e.key)){groups.set(e.key,{level:e.level,items:[]});order.push(e.key);}
+    if(!groups.has(e.key)){groups.set(e.key,{items:[]});order.push(e.key);}
     groups.get(e.key).items.push(e);
   });
   return order.map(key=>{
-    const g=groups.get(key);
+    const g=groups.get(key);const rule=actionRule(key);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.item)}</span></li>`).join('');
-    return {level:g.level,text:`${actionRuleExplain(key)} <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`};
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+    return {level:rule.level,text:`<strong>${rule.h}</strong> <span class="dim">(${n} line${n===1?'':'s'})</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+(rule.more?moreInfo(rule.more):'')};
   });
 }
 /* Groups {ref,taxType,category} entries from the TAX-segment "category
@@ -1899,17 +1899,8 @@ function priceMissingFindings(entries){
     return `<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
   });
 }
-/* Renders each detected run from findCascadingPriceShiftRuns (see compare())
-   as one finding — a run of consecutive lines where bol's price for line i
-   exactly equals the supplier's own price for line i-1 reads as a single
-   off-by-one shift, not N independent price differences. Confirmed against
-   a real 11-line cascade traced back to one earlier line closing early
-   (see checkDtmDuplicateQualifier) — every line after it inherited the
-   previous line's price instead of its own, and the last line in the
-   message lost its own price entirely with nothing left to shift it to.
-   Same one-explanation-many-tags shape as priceMissingFindings above. */
 /* Detects the run(s) of consecutive lines described by
-   cascadePriceShiftFindings above. Walks the item+action keys in the
+   cascadePriceShiftFindings below. Walks the item+action keys in the
    supplier's own line order (not bol's — a corrupted bol sequence is
    exactly the thing being detected, so it can't be trusted as the
    reference order) and looks for bol's price on line i matching the
@@ -1959,6 +1950,15 @@ function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
   flush();
   return runs;
 }
+/* Renders each detected run from findCascadingPriceShiftRuns (see compare())
+   as one finding — a run of consecutive lines where bol's price for line i
+   exactly equals the supplier's own price for line i-1 reads as a single
+   off-by-one shift, not N independent price differences. Confirmed against
+   a real 11-line cascade traced back to one earlier line closing early
+   (see checkDtmDuplicateQualifier) — every line after it inherited the
+   previous line's price instead of its own, and the last line in the
+   message lost its own price entirely with nothing left to shift it to.
+   Same one-explanation-many-tags shape as priceMissingFindings above. */
 function cascadePriceShiftFindings(runs){
   if(!runs||!runs.length)return [];
   return runs.map(({origin,items})=>{
@@ -1969,6 +1969,40 @@ function cascadePriceShiftFindings(runs){
       ?` This starts right after <code>${esc(origin.label)}</code>, which is flagged above for a duplicate DTM qualifier — a confirmed real cause (per Transus support) of exactly this kind of shift on every line after it.`
       :'';
     return `<strong>Prices shifted one line down</strong> on ${n} consecutive lines: one shift, not ${n} separate differences. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`On each of these lines bol's net price equals the supplier's price for the line before it, so this reads as a single price shifted one line too far down the message.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones.`);
+  });
+}
+
+/* The order-number counterpart of findCascadingPriceShiftRuns: bol's line i
+   carries the supplier's order number of line i-1. Real Supplier Delta DESADV
+   (TRANSUSXML, <OrderNumberBuyer> twice per Article): on every line where
+   the order changed, bol's RFF+ON was one line late, which ECHO reported as
+   many unrelated per-item "order numbers differ". Lines are paired by
+   position, and only when both messages have the same number of lines and
+   every pair is the same item (keyFn), so no guessing. A run continues
+   while bol[i] equals supplier[i-1]; it counts as a shift once at least 3
+   of its lines also differ from their own supplier order (a line whose
+   order didn't change reads the same either way). */
+function findOrderShiftRuns(supLines,bolLines,keyFn){
+  if(!supLines.length||supLines.length!==bolLines.length)return [];
+  if(supLines.some((l,i)=>keyFn(l)!==keyFn(bolLines[i])))return [];
+  const ord=l=>[...(l.orders||[])].sort().join(',');
+  const runs=[];let cur=[];
+  const flush=()=>{const ev=cur.filter(x=>x.changed);if(ev.length>=3)runs.push({lines:ev});cur=[];};
+  for(let i=1;i<supLines.length;i++){
+    const prev=ord(supLines[i-1]),own=ord(supLines[i]),b=ord(bolLines[i]);
+    if(b&&prev&&b===prev)cur.push({line:supLines[i],sup:own,bol:b,changed:b!==own});
+    else flush();
+  }
+  flush();
+  return runs;
+}
+function orderShiftFindings(runs){
+  return runs.map(({lines})=>{
+    const n=lines.length;
+    const lis=lines.map(x=>{const l=x.line;const v=l.gtin||l.art||l.lineNo||'';
+      return `<li><span class="clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(v)})">line ${esc(l.lineNo||'?')} · ${esc(l.art||l.gtin||'?')}: ${esc(x.sup||'—')} → ${esc(x.bol)}</span></li>`;}).join('');
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    return {n,text:`<strong>Order numbers shifted one line down in bol's output</strong> on ${n} lines. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`On each of these lines bol's order number (RFF+ON) is the one the supplier sent for the line before it, so this reads as one shift rather than ${n} separate order-number differences. Shown as supplier → bol per line.`)};
   });
 }
 
@@ -2021,7 +2055,7 @@ function leadingJunkBannerHtml(x,who){
   if(!x||!x.leadingJunk)return '';
   const s=x.leadingJunk,shown=s.length>80?s.slice(0,80)+'…':s;
   return `<div class="note-inline" style="color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-    ⚠ <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
+    ! <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
   </div>`;
 }
 /* Every "read, but with a caveat" banner for one XML file, in one place. */
@@ -2047,7 +2081,6 @@ function palletQtyVal(qty){
 }
 function palletQtyEff(v){if(v===undefined||v===null||v==='')return 0;const n=parseInt(v,10);return isNaN(n)?v:n;}
 
-/* index a facts object's pallets by SSCC, for cross-side lookup */
 /* Findings stay short in the panel: headline + affected values up front,
    the why/what-to-do behind a "More info" toggle (docs/ui-conventions.md). */
 function moreInfo(html){return `<details class="f-more"><summary>More info</summary><div>${html}</div></details>`;}
@@ -2216,7 +2249,22 @@ function palletIsNested(p,byCps){
    flow, so its absence is the normal case and isn't flagged — only its
    presence is worth a note (handled separately, as informational), and a
    pallet EAN that's incorrectly reused as an item GTIN is still flagged below. */
-function checkPalletStructure(facts,label,add,jumpCall){
+/* Pallet groups with item lines but no SSCC, and their CPS tags (collapsed
+   past ~20, docs/ui-conventions.md). Shared by checkPalletStructure and
+   Compare's "Neither message contains an SSCC" finding. */
+function noSsccPallets(facts){return (facts.pallets||[]).filter(p=>p.items&&p.items.length>0&&!p.sscc);}
+function cpsTagListHtml(list,jumpCall,what){
+  const lis=list.map(p=>{
+    const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
+    return `<li><span class="clickable-val"${jump}>CPS ${esc(p.cps||'?')}</span></li>`;
+  }).join('');
+  const tagList=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+  return list.length>20?`<details><summary>Show ${list.length} ${what||'affected pallets'}</summary>${tagList}</details>`:tagList;
+}
+/* opts.skipNoSscc: Compare already reports "Neither message contains an
+   SSCC" with these pallets listed, so the per-side "No SSCC found" would
+   repeat the same fact (real Supplier Golf DESADV: one fact, three findings). */
+function checkPalletStructure(facts,label,add,jumpCall,opts){
   if(!facts.pallets||!facts.pallets.length)return;
   // Grouped into one finding (with every affected CPS as a clickable tag)
   // rather than one line per pallet — a supplier that never sends SSCCs at
@@ -2224,19 +2272,16 @@ function checkPalletStructure(facts,label,add,jumpCall){
   // sometimes 50+ of them, per docs/ui-conventions.md's grouping rule. Past
   // ~20 tags the list itself collapses behind <details>, per the same
   // doc's "large lists collapse past roughly 20 items" rule.
-  const flatNoSscc=facts.pallets.filter(p=>p.items&&p.items.length>0&&!p.sscc);
-  const tagsFor=list=>list.map(p=>{
-    const cpsLabel=esc(p.cps||'?');
-    const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
-    return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
-  }).join('');
-  const bodyFor=list=>{
-    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${tagsFor(list)}</ul>`;
-    return list.length>20?`<details><summary>Show ${list.length} affected pallets</summary>${tagList}</details>`:tagList;
+  const flatNoSscc=(opts&&opts.skipNoSscc)?[]:noSsccPallets(facts);
+  // Shared tag-list shape: collapses past ~20 tags (docs/ui-conventions.md).
+  const tagListHtml=(lis,n,what)=>{
+    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    return n>20?`<details><summary>Show ${n} affected ${what}</summary>${tagList}</details>`:tagList;
   };
+  const bodyFor=list=>cpsTagListHtml(list,jumpCall);
   if(flatNoSscc.length){
     const n=flatNoSscc.length;
-    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'this':'each of these'} contains item lines, but no GIN+BJ SSCC was found. ${bodyFor(flatNoSscc)}`,'message');
+    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS). ${bodyFor(flatNoSscc)}`+moreInfo(`${n===1?'This CPS group contains':'Each of these CPS groups contains'} item lines, but no GIN+BJ SSCC was found, so the pallet can't be matched by SSCC.`),'message');
   }
   // A CPS group can wrap other CPS groups instead of carrying items
   // directly (a genuine pallet, with its actual contents nested one level
@@ -2271,39 +2316,52 @@ function checkPalletStructure(facts,label,add,jumpCall){
     const n=wrapperNoSscc.length;
     add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'}. ${bodyFor(wrapperNoSscc)}`+moreInfo(`${n===1?'This pallet wraps':'Each of these pallets wraps'} nested package(s) that carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, so this pallet has no usable SSCC. Worth confirming with whoever generates this feed that the pallet's GIN+BJ isn't being dropped.`),'message');
   }
+  // A pallet EAN (GIN+SRV) reused as an item EAN on the same pallet, and
+  // items outside every CPS group: one grouped finding each, with the
+  // affected items as tags, never one finding per item/line.
+  const repeated=[];
   facts.pallets.forEach(p=>{
-    if(p.palletGtin){
-      p.items.forEach(it=>{
-        if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){
-          const qv=palletQtyVal(it.qty);
-          add('warn',`${label} — pallet CPS ${esc(p.cps||'?')}: <strong>Pallet EAN repeated as item</strong>. Pallet EAN <code>${esc(p.palletGtin)}</code> also appears as a LIN item EAN${qv!==undefined?` with quantity ${esc(qv)}`:''}.`,'message');
-        }
-      });
-    }
+    if(!p.palletGtin)return;
+    p.items.forEach(it=>{
+      if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin))repeated.push({p,it,qv:palletQtyVal(it.qty)});
+    });
   });
-  // items that never ended up under any CPS group at all, in a message that otherwise uses pallet structure
-  facts.lines.forEach(l=>{
-    if(!l.__cpsRef){
-      add('warn',`${label} — item <code>${esc(l.art||l.gtin||l.lineNo||'?')}</code>: <strong>Item not linked to a pallet</strong>. Item EAN ${esc(l.gtin||'?')} could not be associated with a pallet containing an SSCC.`,'message');
-    }
-  });
+  if(repeated.length){
+    const n=repeated.length;
+    const lis=repeated.map(({p,it,qv})=>{
+      const jump=jumpCall?` onclick="${jumpCall(it.gtin)}"`:'';
+      return `<li><span class="clickable-val"${jump}>CPS ${esc(p.cps||'?')} · ${esc(it.gtin)}${qv!==undefined?` (qty ${esc(qv)})`:''}</span></li>`;
+    }).join('');
+    add('warn',`${label} — <strong>Pallet EAN repeated as item</strong> on ${n} line${n===1?'':'s'}. ${tagListHtml(lis,n,'lines')}`+moreInfo(`The pallet-level EAN (GIN+SRV) of ${n===1?'this pallet':'these pallets'} also appears as a LIN item EAN on the same pallet. A pallet EAN identifies the pallet itself, an item EAN the product on it.`),'message');
+  }
+  // Items that never ended up under any CPS group at all, in a message that
+  // otherwise uses pallet structure.
+  const unlinked=facts.lines.filter(l=>!l.__cpsRef);
+  if(unlinked.length){
+    const n=unlinked.length;
+    const lis=unlinked.map(l=>{
+      const v=l.gtin||l.art||l.lineNo||'';
+      const jump=jumpCall&&v?` onclick="${jumpCall(v)}"`:'';
+      return `<li><span class="clickable-val"${jump}>${esc(l.art||l.gtin||l.lineNo||'?')}</span></li>`;
+    }).join('');
+    add('warn',`${label} — <strong>Item not linked to a pallet</strong> on ${n} line${n===1?'':'s'}. ${tagListHtml(lis,n,'lines')}`+moreInfo(`${n===1?'This item line sits':'These item lines sit'} outside every CPS group in the message, so ${n===1?'it isn\'t':'they aren\'t'} part of any pallet.`),'message');
+  }
   // A parent CPS (e.g. the whole shipment) sometimes states its own total
   // weight (MEA+PD+AAD) alongside the individual weights of its child
   // pallets. These are the SAME message's own numbers, so they should
   // roughly reconcile — a modest gap is expected (packaging weight isn't
   // always included the same way at every level), but a large one is
   // worth a look, entirely independent of any bol comparison.
-  const byParent=new Map();
-  facts.pallets.forEach(p=>{if(p.parentCps){if(!byParent.has(p.parentCps))byParent.set(p.parentCps,[]);byParent.get(p.parentCps).push(p);}});
   facts.pallets.forEach(p=>{
     if(!p.weight||p.parentCps)return; // only a true parent (no parentCps of its own) with a stated weight
-    const children=(byParent.get(p.cps)||[]).filter(c=>c.weight&&c.weight.unit===p.weight.unit);
+    const children=(byParentCps.get(p.cps)||[]).filter(c=>c.weight&&c.weight.unit===p.weight.unit);
     if(children.length<2)return; // a single child alone isn't a meaningful sum to check
     const childSum=Math.round(children.reduce((s,c)=>s+c.weight.value,0)*1000)/1000;
     const diff=Math.round((childSum-p.weight.value)*1000)/1000;
     const relDiff=p.weight.value?Math.abs(diff)/p.weight.value:0;
     if(Math.abs(diff)<0.5||relDiff<0.15)return; // small/normal packaging-weight gap
-    add('warn',`${label}: the shipment's stated total weight (${esc(p.weight.value)} ${esc(p.weight.unit)}, CPS ${esc(p.cps)}) doesn't match the sum of its ${children.length} pallet weights (${esc(childSum)} ${esc(p.weight.unit)}) — a difference of ${esc(Math.abs(diff).toFixed(3))} ${esc(p.weight.unit)}.`,'message');
+    const u=esc(p.weight.unit);
+    add('warn',`${label} — <strong>Shipment weight doesn't match the sum of its pallet weights</strong>: ${esc(p.weight.value)} ${u} vs ${esc(childSum)} ${u}`+moreInfo(`The total weight stated on CPS ${esc(p.cps)} differs from the sum of its ${children.length} pallet weights by ${esc(Math.abs(diff).toFixed(3))} ${u}. A small gap is normal (packaging weight isn't always counted at every level); this one is over 15%. Both numbers come from this message itself.`),'message');
   });
 }
 
@@ -2351,6 +2409,12 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
    slip. Values that differ completely are left alone: some suppliers
    legitimately use unrelated numbers for the two. Single-message
    observation, so both modes (parity rule). */
+/* Any source ECHO shows as the packing reference: RFF+BM first, then the
+   BGM document number, then an RFF+DQ/AAS reference. RFF+BM used to be
+   left out here, so a message with only RFF+BM was told it had none. */
+function hasPackingRef(facts){
+  return !!(facts.billOfLadingRef||facts.docNumber||(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length));
+}
 function packingRefNearMiss(facts){
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   if(!ref||!doc||ref===doc)return false;
@@ -2361,7 +2425,7 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   if(!packingRefNearMiss(facts))return;
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
-  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: ${v(ref)} vs document number ${v(doc)}. Check with the supplier which one is on the packing slip.`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing slip number, so it must be exactly what's printed on the physical packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing slip number = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
+  add('warn',`${label?label+' — ':''}<strong>Packing reference almost matches the document number</strong>: ${v(ref)} vs ${v(doc)}`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing reference, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is on the packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing reference = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
 }
 
 /* Header fields side by side: what the supplier sent, what bol's output
@@ -2372,6 +2436,8 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
    value present on only one side is shown, not flagged: formats differ in
    what they carry (structural, rule 3). Findings for real differences come
    from their own checks; this table only shows. */
+// Source label for an RFF-based despatch note reference (DQ or AAS).
+function packRefRffQual(f){return 'RFF+'+(f.deliveryNoteQual||'DQ');}
 function headerSrcLabel(facts,ediSeg,xmlTags){
   if(facts.format==='EDIFACT')return ediSeg;
   if(facts.rawXml){const t=xmlTags.find(t=>new RegExp('<(\\w+:)?'+t+'[\\s>]').test(facts.rawXml));return t||xmlTags[0];}
@@ -2401,20 +2467,22 @@ function orderNearMisses(facts){
   });
   return out;
 }
-function checkOrderNearMiss(facts,label,add,jumpCall,cat){
+function checkOrderNearMiss(facts,label,add,jumpCall){
   const hits=orderNearMisses(facts);
   if(!hits.length)return;
   const tags=hits.map(h=>{
     const jump=jumpCall?` onclick="${jumpCall(h.short)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(h.short)} → ${esc(h.full)}?${h.lines.length?' (line '+esc(h.lines.join(', '))+')':''}</span></li>`;
   }).join('');
-  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),cat||'message');
+  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),'message');
 }
 function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
   const arrSeg=f=>f.headerDtm&&f.headerDtm['132']?'DTM+132':(f.headerDtm&&f.headerDtm['17']?'DTM+17':'DTM+2');
   const rows=[
-    isD&&['Packing slip number',f=>f.billOfLadingRef,()=>'RFF+BM',['PackingSlipNumber']],
+    // RFF+BM first; a supplier with only an RFF+DQ/AAS despatch note
+    // reference showed "—" here, so that is the fallback (source labelled).
+    isD&&['Packing reference',f=>f.billOfLadingRef||(f.deliveryNoteRefs&&f.deliveryNoteRefs[0])||null,f=>f.billOfLadingRef?'RFF+BM':packRefRffQual(f),['PackingSlipNumber']],
     ['Document number',f=>f.docNumber,()=>'BGM',['DespatchAdviceNumber','OrderResponseNumber','DocumentNumber']],
     ['Order',f=>headerOrders(f).join(', ')||null,()=>'RFF+ON',['OrderNumberBuyer']],
     ['Document date',f=>f.docDate,()=>'DTM+137',['DocumentDate','DespatchAdviceDate','OrderResponseDate']],
@@ -2431,7 +2499,15 @@ function headerFieldsHtml(sup,bol,type){
     if(!v)return {v:null,html:'<span class="dim">—</span>'};
     const disp=isDate(label)?showDate(v):v;
     const jumpVal=isDate(label)?String(v).replace(/-/g,''):String(v).split(', ')[0];
-    return {v,html:`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})">${esc(disp)}</span><span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`};
+    const src=`<span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`;
+    // A long order list (past ~20) collapses, each order still clickable
+    // (docs/ui-conventions.md).
+    const parts=label==='Order'?String(v).split(', '):[];
+    if(parts.length>20){
+      const list=parts.map(o=>`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(o)})">${esc(o)}</span>`).join(', ');
+      return {v,html:`<details><summary>${parts.length} orders</summary>${list}</details>${src}`};
+    }
+    return {v,html:`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})">${esc(disp)}</span>${src}`};
   };
   const body=rows.map(([label,get,ediSeg,xmlTags])=>{
     const s=cell(sup,'sup',label,get,ediSeg,xmlTags),b=cell(bol,'bol',label,get,ediSeg,xmlTags);
@@ -2476,11 +2552,22 @@ function checkSsccLength(facts,label,add,jumpCall){
   const affected=facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18);
   if(!affected.length)return;
   const n=affected.length;
+  // Say what the value most likely is: "00" (the SSCC Application
+  // Identifier) + a check-digit-valid SSCC-18, or a 17-digit value that is
+  // valid with a leading 0 (dropped, e.g. by a spreadsheet). Real Supplier Golf
+  // DESADV: 20-character "00…" values.
+  const hint=v=>{
+    if(/^00\d{18}$/.test(v)&&gs1CheckDigitOk(v.slice(2)))return '"00" + a valid 18-digit SSCC';
+    if(/^\d{17}$/.test(v)&&gs1CheckDigitOk('0'+v))return 'valid as an SSCC with a leading 0';
+    return '';
+  };
+  let anyHint=false;
   const tags=affected.map(p=>{
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
-    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars)</span></li>`;
+    const h=hint(p.sscc);if(h)anyHint=true;
+    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars${h?': '+h:''})</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".`),'message');
+  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
@@ -2594,10 +2681,13 @@ function comparePalletMapping(bol,sup,add,keyFn){
     // every pallet individually.
     const DETAIL_CAP=5,DIFF_CAP=6;
     mismatches.slice(0,DETAIL_CAP).forEach(m=>{
+      // Headline: SSCC + count. The per-item differences go behind More
+      // info (still in "Copy report"; "Copy for Transus" sends the headline).
       const shown=m.diffs.slice(0,DIFF_CAP);
       const extra=m.diffs.length-shown.length;
-      const text=shown.join('; ')+(extra>0?`; and ${extra} more difference(s) on this pallet`:'');
-      add('err',`SSCC <code>${esc(m.sscc)}</code>: <strong>Pallet mapping differs</strong> — ${text}.`,'diff');
+      const n=m.diffs.length;
+      const list=`<ul>${shown.map(d=>`<li>${d};</li>`).join(' ')}${extra>0?` <li>and ${extra} more on this pallet — see the Pallet / SSCC overview</li>`:''}</ul>`;
+      add('err',`<strong>Pallet mapping differs</strong> for SSCC <code>${esc(m.sscc)}</code> (${n} difference${n===1?'':'s'})`+moreInfo(list),'diff');
     });
     if(mismatches.length>DETAIL_CAP){
       const rest=mismatches.length-DETAIL_CAP;
@@ -2649,8 +2739,10 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   let blocks='';
   const statuses=[];
   relevant.forEach(p=>{
-    const items=(p.items&&p.items.length)?p.items:[{gtin:null,qty:{}}];
-    const hasItems=p.items&&p.items.length>0;
+    const hasItems=!!(p.items&&p.items.length>0);
+    // An empty group gets one placeholder row so its table isn't blank; it
+    // is never counted as an item (it used to read "1 item").
+    const items=hasItems?p.items:[{gtin:null,art:null,qty:{},__placeholder:true}];
     // Pallet-level issues describe the pallet/group as a whole (e.g. it has no
     // SSCC at all) — these belong on the summary line, not on one arbitrary
     // item's row, or it reads as if the issue were specific to that item.
@@ -2666,16 +2758,21 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     // item can legitimately appear as more than one line on the same pallet
     // (e.g. split across batches/best-before dates), so this compares the
     // item's total quantity rather than pairing individual lines by position.
-    let gtinMatch=null,allItemsDiffer=false,otherTotals=null,singlePalletOverrideKey=null;
+    let gtinMatch=null,allItemsDiffer=false,otherTotals=null,thisTotals=null,singlePalletOverrideKey=null,emptyVsOther=0;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
+      // This SSCC holds no items at all on this side (every group sharing it
+      // is empty) while the other side has items under it: a mapping
+      // difference, not "Match" (real Supplier Delta DESADV: bol's output left
+      // three pallets empty and put every LIN under the fourth).
+      if(!(ownBySscc.get(p.sscc)||p).items.length&&other.items&&other.items.length)emptyVsOther=other.items.length;
       // Compare whole SSCCs (all groups sharing it), not this one group.
       const own=(ownBySscc.get(p.sscc)||p).items;
       const bItems=sideKey==='bol'?own:other.items;
       const sItems=sideKey==='bol'?other.items:own;
       const {bTot,sTot}=resolvePalletItemTotals(bItems,sItems,keyFn);
       const thisTot=sideKey==='bol'?bTot:sTot,otherTot=sideKey==='bol'?sTot:bTot;
-      otherTotals=otherTot;
+      otherTotals=otherTot;thisTotals=thisTot;
       gtinMatch=new Map();
       thisTot.forEach((entry,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g).qty===entry.qty));
       // Only meaningful once there's more than one item to compare — with a
@@ -2689,14 +2786,16 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // reused below so the per-row lookup still finds it.
       if(thisTot.has('__single-item-pallet__'))singlePalletOverrideKey='__single-item-pallet__';
     }
-    let rows='',anyDiff=false;
+    let rows='',anyDiff=emptyVsOther>0;
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
     items.forEach(it=>{
       const qv=palletQtyVal(it.qty);
       const itKey=singlePalletOverrideKey||(keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null));
       let mappingPill;
-      if(!it.gtin&&!it.art){
-        mappingPill='<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
+      if(it.__placeholder){
+        mappingPill=emptyVsOther
+          ?pillDiff()+`<span class="dim" style="margin-left:6px;font-size:11px;">no items here; ${emptyVsOther} on the other side</span>`
+          :'<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
       }else if(gtinMatch){
         const ok=gtinMatch.get(itKey);
         if(!ok)anyDiff=true;
@@ -2711,13 +2810,17 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
           // Show the actual compared quantities alongside the pill, the same
           // way the Line comparison table does — a bare "Difference" pill on
           // its own doesn't say what differs.
+          // Both numbers are this item's total on this SSCC (all its lines),
+          // this side → other side. The per-line quantity used to stand on
+          // the left, so "Match (1 → 2)" put a line next to a total.
           const otherQ=otherTotals&&otherTotals.has(itKey)?otherTotals.get(itKey).qty:undefined;
-          const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;">(${esc(qv??'—')} → ${esc(otherQ??'—')})</span>`;
+          const thisQ=thisTotals&&thisTotals.has(itKey)?thisTotals.get(itKey).qty:qv;
+          const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;" title="Total for this item on this SSCC: this side → other side">(${esc(thisQ??'—')} → ${esc(otherQ??'—')})</span>`;
           mappingPill=(ok?pillMatch():pillDiff())+qtyTxt;
         }
       }else if(!p.sscc){
         // Pallet-level fact (this pallet has no SSCC at all) — already shown
-        // once on the pallet's own summary badge ("⚠ Missing SSCC"), so
+        // once on the pallet's own summary badge ("! Missing SSCC"), so
         // repeating the same warning on every single item row would just be
         // noise on a large pallet. A plain dash still makes clear there's
         // nothing to compare, without shouting it hundreds of times.
@@ -2731,15 +2834,19 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // Only speak up when there's something to flag — repeating "OK" on
       // every single row (this check almost never fires) says as little as
       // showing nothing, just with more noise.
-      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
-      const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
+      const checkPill=rowNotes.length?`<span class="pill warn">! ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
+      // A real line without an EAN (blank, or all zeros) is labelled as such
+      // — it used to be indistinguishable from an empty pallet ("No items").
+      const zeroed=it.__line&&it.__line.gtinZeroed;
+      const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`
+        :(it.__placeholder?'—':`<span class="dim">${zeroed?'EAN zeroed':'EAN missing'}${it.art?' · '+esc(it.art):''}</span>`);
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
     });
     const allNotes=[...palletLevelNotes,...itemLevelNotesSeen];
     const ssccTxt=p.sscc?`<span class="clickable-val" onclick="${jumpCall(p.sscc)}">${esc(p.sscc)}</span>`:'<span style="color:var(--warn)">— missing</span>';
     let summaryBadge,status;
     if(!singleMode&&anyDiff){summaryBadge=pillDiff();status='diff';}
-    else if(allNotes.length){summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;status='warn';}
+    else if(allNotes.length){summaryBadge=`<span class="pill warn">! ${esc(allNotes.join(' · '))}</span>`;status='warn';}
     else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
     statuses.push(status);
     const nestedUnder=palletIsNested(p,byCps)?byCps.get(p.parentCps):null;
@@ -2753,7 +2860,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
         <span class="mono">CPS ${esc(p.cps||'?')}</span>
         <span class="dim">Pallet EAN ${esc(p.palletGtin||'—')}</span>
         <span class="mono">SSCC ${ssccTxt}</span>
-        <span class="dim">${items.length} item${items.length===1?'':'s'}</span>
+        <span class="dim">${hasItems?p.items.length:0} item${hasItems&&p.items.length===1?'':'s'}</span>
         ${hierarchyNote}
         ${summaryBadge}
       </summary>
@@ -2850,7 +2957,7 @@ function detectWorthChecking(lines,cfg){
       if(outliers.length&&modeShare/groups.size>=0.7&&outliers.length<=Math.max(3,Math.ceil(groups.size*0.25))){
         notices.push({
           title:`${outliers.length} ${f.label}${outliers.length===1?'':'s'} appear${outliers.length===1?'s':''} a different number of times than the rest`,
-          detail:`Most ${f.label}s in this message appear ${modeFreq} time${modeFreq===1?'':'s'}; ${outliers.length} ${outliers.length===1?'appears':'appear'} a different number of times.`,
+          detail:`Most ${f.label}s in this message appear ${modeFreq} time${modeFreq===1?'':'s'}${f.note?' '+f.note:''}; ${outliers.length} ${outliers.length===1?'appears':'appear'} a different number of times.`,
           affected:outliers.map(([,g])=>({label:f.rowLabel(g[0])+` (${g.length}×)`,jump:f.rowJump(g[0])}))
         });
       }
@@ -2866,11 +2973,19 @@ function wcConfigOrdrspDesadv(type){
   const rowJump=l=>l.gtin||l.art||l.lineNo||'';
   const cfg={
     presence:[
-      {label:'Quantity',get:l=>{const v=l.qty&&l.qty['12'];return (v===undefined||v==='')?undefined:v;},rowLabel,rowJump},
+      // Any of confirmed (12), backorder (83) or cancelled (182) counts: a
+      // cancelled ORDRSP line (action 2) only carries QTY+182, and showed
+      // as "Quantity missing" when only QTY+12 was looked at.
+      {label:'Quantity',get:l=>{const v=l.qty&&['12','83','182'].map(q=>l.qty[q]).find(x=>x!==undefined&&x!=='');return v===undefined?undefined:v;},rowLabel,rowJump},
       {label:'Order reference',get:l=>(l.orders&&l.orders.size)?'x':undefined,rowLabel,rowJump}
     ],
     categorical:[],
-    repeatKey:{label:'EAN',get:l=>l.gtin,rowLabel,rowJump}
+    // Keyed on EAN + order: the same EAN legitimately appears once per
+    // order, so keying on the EAN alone fired on every multi-order DESADV.
+    // Labelled by EAN (an article code is not an EAN).
+    repeatKey:{label:'EAN',note:'(counted per order)',
+      get:l=>l.gtin?l.gtin+'|'+[...(l.orders||[])].sort().join(','):undefined,
+      rowLabel:l=>{const o=[...(l.orders||[])].sort().join(', ');return l.gtin+(o?` · order ${o}`:'');},rowJump}
   };
   if(type==='DESADV'){
     cfg.presence.push({label:'Date',get:l=>(l.dtm&&Object.keys(l.dtm).length)?Object.values(l.dtm)[0]:undefined,rowLabel,rowJump});
@@ -2909,8 +3024,10 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
 }
 
 function compare(bol,sup){
-  const findings=[];const add=(l,t,cat)=>findings.push({level:l,text:t,cat:cat||null});
-  if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${sup.msgType||'?'}</code> vs bol <code>${bol.msgType||'?'}</code>.`,'diff');
+  // count: how many items a finding stands for (a capped "N more" summary
+  // stands for N), so Copy for Transus can say how many are left out.
+  const findings=[];const add=(l,t,cat,count)=>findings.push({level:l,text:t,cat:cat||null,count:count||1});
+  if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${esc(sup.msgType||'?')}</code> vs bol <code>${esc(bol.msgType||'?')}</code>.`,'diff');
   const type=bol.msgType||sup.msgType;
   const keyFn=buildKeyResolver(bol,sup);
   const ba=aggregate(bol,keyFn),sa=aggregate(sup,keyFn);
@@ -2938,13 +3055,31 @@ function compare(bol,sup){
     // up as a difference rather than being silently ignored.
     const bucketOrRaw=arr=>[...new Set(arr.map(a=>actionBucket(a)||('raw:'+a)))].sort().join(',');
     row.actionDiff=(bucketOrRaw(row.bolActions)!==bucketOrRaw(row.supActions));
+    // Action 6 used as a delivery-date-only amendment (no backorder, no
+    // cancellation) that bol's output carries as action 5 with the same
+    // confirmed quantity and the same DTM+67: Transus remaps this on
+    // purpose (real Supplier Hotel ORDRSP, 66 lines; docs/formats-and-quirks.md).
+    // Structural, not an action difference — one grouped Good-to-know note.
+    row.dateOnlyRemap=false;
+    if(type==='ORDRSP'&&row.actionDiff&&b&&s){
+      const only=(arr,code)=>arr.length>0&&arr.every(a=>a===code);
+      const noBackCancel=x=>effVal(x.qty['83'])===0&&effVal(x.qty['182'])===0;
+      const conf=effVal(s.qty['12']);
+      const dates=x=>[...x.dtm67].sort().join(',');
+      if(only(row.supActions,'6')&&only(row.bolActions,'5')&&noBackCancel(s)&&noBackCancel(b)
+        &&typeof conf==='number'&&conf>0&&conf===effVal(b.qty['12'])&&!row.qtyDiff&&dates(s)===dates(b)){
+        row.actionDiff=false;row.dateOnlyRemap=true;
+      }
+    }
     row.bolOrders=b?[...b.orders]:[];row.supOrders=s?[...s.orders]:[];
     row.orderDiff=(row.bolOrders.slice().sort().join(',')!==row.supOrders.slice().sort().join(','));
     row.missing=!b||!s;
     if(row.qtyDiff)anyQtyDiff=true;
     if(row.actionDiff&&type==='ORDRSP')anyActionDiff=true;
     if(row.missing)anyMissing=true;
-    row.status=row.missing?'diff':((row.qtyDiff||(row.actionDiff&&type==='ORDRSP'))?'diff':(row.orderDiff?'warn':'ok'));
+    // A different order number is a business difference (bol matches the
+    // delivery to a purchase order on it), so Difference, not "Check".
+    row.status=(row.missing||row.qtyDiff||(row.actionDiff&&type==='ORDRSP')||row.orderDiff)?'diff':'ok';
     rows.push(row);
   });
 
@@ -2957,7 +3092,7 @@ function compare(bol,sup){
   const addCapped=(level,items,formatOne,summaryText)=>{
     if(!items.length)return;
     items.slice(0,FINDING_CAP).forEach(it=>add(level,formatOne(it),'diff'));
-    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff');
+    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff',items.length-FINDING_CAP);
   };
 
   const missingItems=[];
@@ -2973,22 +3108,34 @@ function compare(bol,sup){
     }
     else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
   addCapped('err',missingItems,
-    m=>`Item <code>${m.label}</code> is present in the ${m.onlyIn}.`,
+    m=>`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
     rest=>`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
 
+  // Order numbers shifted one line down (findOrderShiftRuns): one grouped
+  // finding per run; its items are left out of the per-item list below.
+  const orderShiftRuns=findOrderShiftRuns(sup.lines,bol.lines,keyFn);
+  const orderShiftKeys=new Set(orderShiftRuns.flatMap(run=>run.lines.map(x=>keyFn(x.line))));
+  orderShiftFindings(orderShiftRuns).forEach(f=>add('err',f.text,'diff',f.n));
   const qtyDiffs=[],actionDiffs=[],orderDiffs=[];
   rows.forEach(r=>{if(r.missing)return;const label=r.art||r.gtin;
     r.qtys.forEach(x=>{if(x.diff)qtyDiffs.push({label,x});});
     if(type==='ORDRSP'&&r.actionDiff)actionDiffs.push({label,r});
-    if(r.orderDiff)orderDiffs.push({label,r});});
+    if(r.orderDiff&&!orderShiftKeys.has(r.key))orderDiffs.push({label,r});});
   addCapped('err',qtyDiffs,
-    ({label,x})=>`Item <code>${label}</code>: quantity (qual ${x.q}) differs — supplier <span class="val-sup">${x.sup??'—'}</span> vs bol <span class="val-bol">${x.bol??'—'}</span>.`,
+    ({label,x})=>`Item <code>${esc(label)}</code>: quantity (qual ${esc(x.q)}) differs — supplier <span class="val-sup">${esc(x.sup??'—')}</span> vs bol <span class="val-bol">${esc(x.bol??'—')}</span>.`,
     rest=>`<strong>${rest} more item(s) also show a quantity difference</strong> — see the Line comparison below for the full list.`);
   addCapped('err',actionDiffs,
-    ({label,r})=>`Item <code>${label}</code>: action codes differ — supplier [${r.supActions.join(', ')||'—'}] vs bol [${r.bolActions.join(', ')||'—'}].`,
+    ({label,r})=>`Item <code>${esc(label)}</code>: action codes differ — supplier [${esc(r.supActions.join(', ')||'—')}] vs bol [${esc(r.bolActions.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an action code difference</strong> — see the Line comparison below for the full list.`);
-  addCapped('warn',orderDiffs,
-    ({label,r})=>`Item <code>${label}</code>: order numbers differ — supplier [${r.supOrders.join(', ')||'—'}] vs bol [${r.bolOrders.join(', ')||'—'}].`,
+  const remapped=rows.filter(r=>r.dateOnlyRemap);
+  if(remapped.length){
+    const n=remapped.length;
+    const lis=remapped.map(r=>{const v=r.gtin||r.art||'';return `<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(v)})">${esc(r.art||r.gtin||'?')}</span></li>`;}).join('');
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 with no backorder or cancellation; bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference.`),'info');
+  }
+  addCapped('err',orderDiffs,
+    ({label,r})=>`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
   // Neither side references an order number (RFF+ON) at all — the per-item
@@ -3016,8 +3163,26 @@ function compare(bol,sup){
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
   const ssccResult={onlyBol:[...bSscc].filter(x=>!sSscc.has(x)),onlySup:[...sSscc].filter(x=>!bSscc.has(x)),common:[...bSscc].filter(x=>sSscc.has(x))};
   if(bol.ssccs.length||sup.ssccs.length){
-    if(ssccResult.onlyBol.length)add('err',`${ssccResult.onlyBol.length} SSCC(s) only in the bol output: <code>${ssccResult.onlyBol.join(', ')}</code>.`,'diff');
-    if(ssccResult.onlySup.length)add('err',`${ssccResult.onlySup.length} SSCC(s) only in the supplier message: <code>${ssccResult.onlySup.join(', ')}</code>.`,'diff');
+    // Affected SSCCs as clickable tags, collapsed past ~20
+    // (docs/ui-conventions.md), instead of one long inline list.
+    const ssccTags=(list,side)=>{
+      const lis=list.map(s=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(s)})">${esc(s)}</span></li>`).join('');
+      const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+      return list.length>20?`<details><summary>Show ${list.length} SSCCs</summary>${ul}</details>`:ul;
+    };
+    const ssccHead=(n,where)=>`<strong>${n} SSCC${n===1?'':'s'} only in the ${where}</strong>`;
+    if(ssccResult.onlyBol.length)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol'),'diff');
+    // When every one of these SSCCs sits in a CPS group without PAC, the
+    // cause is already flagged (checkMissingPacWithSscc, Transus-confirmed:
+    // without PAC the SSCC never reaches bol). That's the supplier's own
+    // message, not a mapping question, so it's a Message check pointing
+    // there rather than a Transformation difference sent to Transus (real
+    // Supplier Golf DESADV, 9 SSCCs). A PAC-carrying pallet still counts as a diff.
+    const pacLess=new Set((sup.pallets||[]).filter(p=>p.sscc&&!p.hasPac).map(p=>p.sscc));
+    if(ssccResult.onlySup.length&&ssccResult.onlySup.every(s=>pacLess.has(s))){
+      add('warn',`Supplier — ${ssccHead(ssccResult.onlySup.length,'supplier message')}, all in CPS groups without PAC`+ssccTags(ssccResult.onlySup,'sup')+moreInfo(`Each of these SSCCs sits in a CPS group that has no PAC segment (see the PAC finding above). Transus support confirmed that without PAC the SSCC doesn't reach bol, so their absence from bol's output follows from the supplier message.`),'message');
+    }
+    else if(ssccResult.onlySup.length)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
     if(!ssccResult.onlyBol.length&&!ssccResult.onlySup.length)add('ok',`All ${ssccResult.common.length} SSCCs are present in both messages.`,'diff');
   }else if(type==='DESADV'&&(sup.lines.length||bol.lines.length)){
     // Neither side has any SSCC at all — "Quantities: Match" only means the
@@ -3026,13 +3191,18 @@ function compare(bol,sup){
     // either side. Worth stating plainly rather than leaving this silently
     // absent — a supplier-side gap ("No SSCC found" above), not something
     // Transus can fix, so kept at message level rather than sent to them.
-    add('warn',"Neither message contains an SSCC (GIN+BJ), so pallet-level mapping couldn't be checked between the two — only the item quantities were compared.",'message');
+    // One finding for one fact: the per-side "No SSCC found" is skipped
+    // below (checkPalletStructure opts.skipNoSscc), its pallets listed here.
+    const sNo=noSsccPallets(sup),bNo=noSsccPallets(bol);
+    const part=(list,who,side)=>list.length?`<div style="margin-top:6px">${who}: ${list.length} pallet group${list.length===1?'':'s'} without SSCC${cpsTagListHtml(list,v=>`jumpToFactsSource(${jsQuote(side)},${jsQuote(v)})`,`${who.toLowerCase()} pallet groups`)}</div>`:'';
+    add('warn',"<strong>Neither message contains an SSCC (GIN+BJ)</strong>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
   }
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
   if(type==='DESADV'){
-    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    const noSsccAnywhere=!bol.ssccs.length&&!sup.ssccs.length;
+    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere});
+    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere});
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     compareDesadvDates(sup,bol,add);
@@ -3053,8 +3223,8 @@ function compare(bol,sup){
     // than silently not appearing anywhere in the comparison — but BGM's
     // document number often already serves as the packing reference for
     // DESADV, so only flag this when that's ALSO missing
-    if(sup.lines.length&&!(sup.deliveryNoteRefs&&sup.deliveryNoteRefs.length)&&!sup.docNumber)add('info','Supplier — no packing reference (despatch note) found in this message.','message');
-    if(bol.lines.length&&!(bol.deliveryNoteRefs&&bol.deliveryNoteRefs.length)&&!bol.docNumber)add('info','Bol — no packing reference (despatch note) found in this message.','message');
+    if(sup.lines.length&&!hasPackingRef(sup))add('info','Supplier — no packing reference found in this message.','message');
+    if(bol.lines.length&&!hasPackingRef(bol))add('info','Bol — no packing reference found in this message.','message');
   }
 
   // ORDRSP rule validation (validate supplier + bol lines). Grouped by which
@@ -3074,7 +3244,7 @@ function compare(bol,sup){
           const itemKey=l.art||l.gtin||l.lineNo;
           flaggedActionItems.add(itemKey);
           const jumpVal=l.gtin||l.art||l.lineNo||'';
-          res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
+          res.keys.forEach(k=>entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
         }
       });
       groupActionFindings(entries).forEach(g=>add(g.level,`${lab} — ${g.text}`,'message'));
@@ -3122,9 +3292,10 @@ function compare(bol,sup){
       const m=new Map();
       facts.lines.forEach(l=>{
         const k=keyFn(l)+'|'+(l.action??'?');
-        if(!m.has(k))m.set(k,{price:null,art:l.art,gtin:l.gtin,action:l.action,dtmConflict:false});
+        if(!m.has(k))m.set(k,{price:null,date:null,art:l.art,gtin:l.gtin,action:l.action,dtmConflict:false});
         const b=m.get(k);
         if(b.price===null&&l.netPrice!==null&&l.netPrice!==undefined)b.price=l.netPrice;
+        if(b.date===null&&l.dtm&&l.dtm['67'])b.date=normDate(l.dtm['67'])||l.dtm['67'];
         if(l.dtmConflicts&&l.dtmConflicts.length)b.dtmConflict=true;
       });
       return m;
@@ -3139,9 +3310,15 @@ function compare(bol,sup){
       (s,b)=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(s.gtin||b.gtin||s.art||b.art||'')})`);
     const cascadeKeys=new Set(cascadeRuns.flatMap(run=>run.items.map(it=>it.key)));
     const priceKeys=[...new Set([...bPrice.keys(),...sPrice.keys()])];
-    const priceDiffs=[],priceMissing=[];
+    const priceDiffs=[],priceMissing=[],dateDiffs=[];
     priceKeys.forEach(k=>{
       const b=bPrice.get(k),s=sPrice.get(k);
+      // Confirmed delivery date (DTM+67), same (item, action) bucket. Only
+      // when both sides state it: missing on one side is structural.
+      if(b&&s&&b.date&&s.date&&b.date!==s.date){
+        const v=s.gtin||b.gtin||s.art||b.art||'';
+        dateDiffs.push({label:`${s.art||s.gtin||b.art||b.gtin||k.split('|')[0]} — action ${s.action||b.action||'?'}`,sup:s.date,bol:b.date,jump:`jumpToFactsSource('both',${jsQuote(v)})`});
+      }
       // A bucket entirely missing on one side is already covered by the
       // item-missing check earlier — nothing new to say about its price.
       if(!b||!s)return;
@@ -3158,6 +3335,12 @@ function compare(bol,sup){
       }
     });
     priceMissingFindings(priceMissing).forEach(t=>add('err',t,'diff'));
+    if(dateDiffs.length){
+      const n=dateDiffs.length;
+      const lis=dateDiffs.map(d=>`<li><span class="clickable-val" onclick="${d.jump}">${esc(d.label)}: ${esc(showDate(d.sup))} → ${esc(showDate(d.bol))}</span></li>`).join('');
+      const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+      add('warn',`<strong>Delivery date (DTM+67) differs</strong> on ${n} line${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The supplier's confirmed delivery date (first value) differs from the one in bol's output (second value) for the same item and action. Worth checking with Transus.`),'diff',n);
+    }
     cascadePriceShiftFindings(cascadeRuns).forEach(t=>add('err',t,'diff'));
     addCapped('err',priceDiffs,
       ({label,sup,bol})=>`Item <code>${esc(label)}</code>: net price differs — supplier <span class="val-sup">${esc(sup.toFixed(2))}</span> vs bol <span class="val-bol">${esc(bol.toFixed(2))}</span>.`,
@@ -3171,12 +3354,19 @@ function compare(bol,sup){
   bol.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].bol++;});
   sup.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].sup++;});
 
+  // The headline verdict is about the transformation, so only Transformation
+  // differences (cat 'diff') can make it "lost in translation". A Message
+  // check, even at err level (no PAC, RFF+BM too long, an ORDRSP action
+  // rule), is about one side's own message: it gives the calmer "mapping is
+  // correct, see Message checks" verdict instead (rule 7). render() picks
+  // the wording from verdict + whether a diff issue exists.
+  const isDiff=f=>(f.cat||'diff')==='diff';
   let verdict='ok';
-  if(findings.some(f=>f.level==='err'))verdict='err';
-  else if(findings.some(f=>f.level==='warn'))verdict='warn';
-  if(!findings.some(f=>f.level==='err'||f.level==='warn'))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
+  if(findings.some(f=>isDiff(f)&&f.level==='err'))verdict='err';
+  else if(findings.some(f=>f.level==='err'||f.level==='warn'))verdict='warn';
+  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
-  return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,
+  return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
       qtyMatch:!anyQtyDiff&&!anyMissing,actionMatch:type==='ORDRSP'?(!anyActionDiff&&!anyMissing):null},
     fmtBol:bol.format,fmtSup:sup.format};
@@ -5043,7 +5233,7 @@ function factsOverviewHtml(facts){
     if(!hasAnyOrder)qcAdd('warn',"This message doesn't reference an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.");
   }
   if(type==='DESADV'){
-    if(facts.lines.length&&!(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)&&!facts.docNumber)qcAdd('info','No packing reference (despatch note) found in this message.');
+    if(facts.lines.length&&!hasPackingRef(facts))qcAdd('info','No packing reference found in this message.');
     // Mirrors the Compare-mode "neither message contains an SSCC" note —
     // checkPalletStructure below only speaks up per-pallet, so a message
     // with items but literally zero SSCCs anywhere (not even a single
@@ -5066,17 +5256,21 @@ function factsOverviewHtml(facts){
         const itemKey=l.art||l.gtin||l.lineNo;
         flaggedActionItems.add(itemKey);
         const jumpVal=l.gtin||l.art||l.lineNo||'';
-        res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:jumpCall(jumpVal)}));
+        res.keys.forEach(k=>entries.push({key:k,item:itemKey,jump:jumpCall(jumpVal)}));
       }
     });
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
     checkNoPriceAnywhere(facts,'This message',qcAdd);
     checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
-  if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
-  if(type==='ORDRSP'||type==='DESADV')checkZeroGtin(facts,'This message',qcAdd,jumpCall);
+  // Checks on the message's own LIN groups apply to ORDERS too: Quick check
+  // is the only mode that reads it, and a supplier complaint about a
+  // malformed test order is a real use case.
+  const lineChecks=type==='ORDRSP'||type==='DESADV'||type==='ORDERS';
+  if(lineChecks)checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
+  if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
-  if(type==='ORDRSP'||type==='DESADV'){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
+  if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
   if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;
@@ -5211,7 +5405,13 @@ function factsOverviewHtml(facts){
     if(showArt)th+=`<th>Item</th>`;
     if(showDesc)th+=`<th>Description</th>`;
     quals.forEach(q=>{th+=`<th>${esc(qname[q]||('Qty '+q))}</th>`;});
+    // ORDRSP: the confirmed delivery date (DTM+67) and net price (PRI+AAA)
+    // per line, the two line values Compare also compares.
+    const showOrdDate=type==='ORDRSP'&&facts.lines.some(l=>l.dtm&&l.dtm['67']);
+    const showOrdPrice=type==='ORDRSP'&&facts.lines.some(l=>l.netPrice!==null&&l.netPrice!==undefined);
     if(type==='ORDRSP')th+=`<th>Action</th>`;
+    if(showOrdDate)th+=`<th>Delivery date</th>`;
+    if(showOrdPrice)th+=`<th>Net price</th>`;
     if(type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length))th+=`<th>Date</th>`;
     th+=`</tr>`;
     const showLineDate=type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length);
@@ -5225,6 +5425,8 @@ function factsOverviewHtml(facts){
         const a=l.action;
         t+=`<td>${actionPillHtml(a,{confirmed:(l.qty||{})['12'],backorder:(l.qty||{})['83']})}</td>`;
       }
+      if(showOrdDate){const d=l.dtm&&l.dtm['67'];t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;}
+      if(showOrdPrice)t+=`<td class="num">${l.netPrice!==null&&l.netPrice!==undefined?esc(l.netPrice.toFixed(2)):'—'}</td>`;
       if(showLineDate){
         const d=l.dtm?Object.values(l.dtm)[0]:null;
         t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;
@@ -5380,18 +5582,15 @@ function render(result,bol,sup,notes){
   // note about the message itself (cat 'message') — these need very
   // different follow-up from whoever's reading this, so the subtitle should
   // say which one it is rather than a single generic "something to check".
+  // compare() only gives 'err' for a Transformation difference; a Message
+  // check alone gives 'warn' with the "mapping is correct" subtitle below.
   const hasDiffIssue=result.findings.some(f=>(f.cat||'diff')==='diff'&&(f.level==='err'||f.level==='warn'));
-  const vmap={ok:{i:'✓',t:'Loud and clear',s:'All compared values match between the supplier message and bol output.'},
+  const isD=result.type==='DESADV';
+  const vmap={ok:{i:'✓',t:'Loud and clear',s:isD?'All compared values and pallet mappings match.':'All compared values match between the supplier message and bol output.'},
     warn:{i:'!',t:'Almost in sync',s:hasDiffIssue
-      ?'The compared values mostly match, but ECHO found something worth a closer look.'
-      :'The mapping itself is correct — nothing to fix there. ECHO just noticed something worth checking in the message data itself — see Message checks below.'},
-    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output. See findings.'}};
-  if(result.type==='DESADV'){
-    // same headline, clearer supporting copy: makes explicit that a supplier-side
-    // check and a preserved transformation are two different things
-    vmap.ok=Object.assign({},vmap.ok,{s:'All compared values and pallet mappings match.'});
-    if(hasDiffIssue)vmap.warn=Object.assign({},vmap.warn,{s:'The transformation matches, but ECHO found something to check in the supplier message.'});
-  }
+      ?'The compared values mostly match, but ECHO found something worth a closer look — see Transformation differences below.'
+      :(isD?(result.ssccResult.onlyBol.length||result.ssccResult.onlySup.length?'No transformation differences found.':'The transformation and pallet mappings match.'):'The mapping itself is correct — nothing to fix there.')+' ECHO noticed something worth checking in the message data itself — see Message checks below.'},
+    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output — see Transformation differences below.'}};
   const v=vmap[result.verdict];
   document.getElementById('verdict').className='verdict '+result.verdict;
   // Worth-checking is computed once here (moved up from further below) so both
@@ -5426,7 +5625,9 @@ function render(result,bol,sup,notes){
   strip.push(`<div class="stat"><div class="l">Type</div><div class="v">${result.type||'?'}</div></div>`);
   const allOrders=[...new Set([...(sup.orderRefsHeader||[]),...sup.lines.flatMap(l=>[...(l.orders||[])]),...(bol.orderRefsHeader||[]),...bol.lines.flatMap(l=>[...(l.orders||[])])])];
   if(allOrders.length){
-    const orderVal=allOrders.map(o=>`<div class="order-row"><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(o)})">${esc(o)}</span>${purpleLink(o)}</div>`).join('');
+    const orderRows=allOrders.map(o=>`<div class="order-row"><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(o)})">${esc(o)}</span>${purpleLink(o)}</div>`).join('');
+    // Past ~20 orders the list collapses (docs/ui-conventions.md).
+    const orderVal=allOrders.length>20?`<details class="order-list"><summary>${allOrders.length} orders</summary>${orderRows}</details>`:orderRows;
     const orderCopyText=allOrders.join('\n');
     strip.push(`<div class="stat"><div class="l"><span>Order${allOrders.length>1?'(s)':''}</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(orderCopyText)},this)">📋</button></div><div class="v" style="font-size:13px">${orderVal}</div></div>`);
   }
@@ -5467,8 +5668,13 @@ function render(result,bol,sup,notes){
     togglePanel.classList.remove('hidden');
     const m=result.actionMatrix;
     const seen=[];if(m.accept.sup>0)seen.push('accept');if(m.cancel.sup>0)seen.push('cancel');if(m.backorder.sup>0)seen.push('amendment');
-    const allMatch=m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup;
-    sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(allMatch?' · match':' · DIFFERENCE');
+    const exact=m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup;
+    // Counts differ only because date-only action-6 lines were carried as
+    // action 5 (see dateOnlyRemap in compare()): not a difference.
+    const shift=m.accept.bol-m.accept.sup;
+    const remapOnly=!exact&&result.dateOnlyRemaps>0&&st.actionMatch&&shift>0&&shift===m.backorder.sup-m.backorder.bol&&m.cancel.bol===m.cancel.sup;
+    const allMatch=exact||remapOnly;
+    sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(exact?' · match':(remapOnly?' · match (date-only 6 → 5)':' · DIFFERENCE'));
     sumBadge.style.color=allMatch?'var(--ok)':'var(--err)';
     renderActionMatrix();
     const boLines=result.rows.filter(r=>actionBucket((r.supActions||[])[0])==='backorder'||(r.supActions||[]).includes('6')).map(r=>{
@@ -5546,7 +5752,7 @@ function render(result,bol,sup,notes){
     // Split findings into three plain-language buckets so a preserved
     // transformation and a supplier-message observation never blur together.
     const cats=[
-      {key:'message',title:'Message checks',hint:'Observations about the supplier\'s own message structure — not a transformation issue.'},
+      {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
       {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
       {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
     ];
@@ -5811,10 +6017,19 @@ function buildReportText(title,findings,extra){
   lines.push(new Date().toLocaleString('en-GB'));
   if(extra)lines.push(extra);
   lines.push('');
+  // Neutral marks (rule 2): "[ERROR]" on a supplier's own Message check read
+  // as "the supplier did something wrong". The mark says which section a
+  // finding belongs to instead; the level only orders findings within it.
   const order={err:0,warn:1,info:2,ok:3};
-  const mark={err:'[ERROR]',warn:'[WARNING]',info:'[INFO]',ok:'[OK]'};
-  [...findings].sort((a,b)=>order[a.level]-order[b.level]).forEach(f=>{
-    lines.push(mark[f.level]+' '+stripHtml(f.text));
+  const markOf=f=>{
+    if(f.level==='ok')return 'OK';
+    if(f.level==='info'||f.cat==='info')return 'INFO';
+    if(f.cat==='message')return 'CHECK';
+    return 'DIFFERENCE';
+  };
+  const rank={DIFFERENCE:0,CHECK:1,INFO:2,OK:3};
+  [...findings].sort((a,b)=>(rank[markOf(a)]-rank[markOf(b)])||(order[a.level]-order[b.level])).forEach(f=>{
+    lines.push('['+markOf(f)+'] '+stripHtml(f.text));
   });
   return lines.join('\n');
 }
@@ -5869,7 +6084,9 @@ function buildTransusText(findings,context,lang){
   const order={err:0,warn:1};
   const CAP=6;
   const sorted=[...relevant].sort((a,b)=>order[a.level]-order[b.level]);
-  const shown=sorted.slice(0,CAP),rest=sorted.length-shown.length;
+  // A capped "N more item(s) …" summary stands for N items (f.count), so
+  // the "…and N more" line counts items, not findings.
+  const shown=sorted.slice(0,CAP),rest=sorted.slice(CAP).reduce((n,f)=>n+(f.count||1),0);
   const lines=[];
   lines.push(wrap.greet);
   lines.push('');
@@ -6424,7 +6641,7 @@ async function handleZip(file){
       const banner=document.createElement('div');
       banner.className='note-inline';
       banner.style.cssText='color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;';
-      banner.innerHTML=`⚠ <strong>Switched here automatically.</strong> The ZIP you dropped only contained one message ("${esc(name)}"), not a supplier/bol pair — so there was nothing to compare. Shown here in Quick check instead.`;
+      banner.innerHTML=`! <strong>Switched here automatically.</strong> The ZIP you dropped only contained one message ("${esc(name)}"), not a supplier/bol pair — so there was nothing to compare. Shown here in Quick check instead.`;
       const ov=document.getElementById('quickOverview');
       ov.insertBefore(banner,ov.firstChild);
       quickSetStatus('');
@@ -6525,8 +6742,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
-document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';});
-document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
+document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>
 </body>

@@ -397,3 +397,119 @@ test('the CSV ORDRSP dialect is also recognized in Quick check', async ({ page }
   expect(overviewText).toContain('ORDRSP');
   expect(overviewText).toContain('9000002'); // order number read from the CSV
 });
+
+// Message values (article codes, quantities, actions, order numbers) were
+// inserted into the Compare findings as raw HTML. A value like "ART<b>1"
+// must show as text, not become markup.
+test('message values in Compare findings are escaped, not rendered as HTML', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'html-in-values.sup.edi'), path.join(FIX, 'html-in-values.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#findings b, #findings i').count()).toBe(0);
+  const text = await page.locator('#findings').innerText();
+  expect(text).toContain('Item ART<b>1: quantity (qual 12) differs');
+  expect(text).toContain('action codes differ');
+  expect(text).toContain('supplier [PO<i>1] vs bol [PO<i>2]');
+});
+
+// Each ORDRSP action rule used to inherit the worst level of its line, so
+// "no DTM+67" showed as an error only because the same line also had a
+// backorder on action 5. Each rule now has its own level; the action-6
+// date-only amendment (a recognised pattern) is info. Message checks only,
+// so the verdict stays calm.
+test('each ORDRSP action rule keeps its own level, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'rule-levels.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const levelOf = async (root, re) => page.locator(`${root} li`, { hasText: re }).first().getAttribute('class');
+  expect(await levelOf('#findings', /Supplier — Action 5 without a delivery date \(DTM\+67\)/)).toBe('f-warn');
+  expect(await levelOf('#findings', /Supplier — Action 5 with a backorder quantity/)).toBe('f-err');
+  expect(await levelOf('#findings', /Supplier — Action 6 used as a delivery-date-only amendment/)).toBe('f-info');
+  // Short headline visible, the explanation behind "More info".
+  const dateRule = page.locator('#findings li', { hasText: /Supplier — Action 5 without a delivery date/ }).first();
+  await expect(dateRule.locator('details.f-more')).toContainText('normally states');
+  const verdict = page.locator('#verdict');
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('The mapping itself is correct');
+  await expect(verdict).not.toContainText('lost in translation');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  expect(await levelOf('#quickOverview', /Action 5 without a delivery date/)).toBe('f-warn');
+  expect(await levelOf('#quickOverview', /Action 5 with a backorder quantity/)).toBe('f-err');
+  expect(await levelOf('#quickOverview', /delivery-date-only amendment/)).toBe('f-info');
+});
+
+// "Worth checking" only looked at QTY+12, so a cancelled line (action 2,
+// QTY+182 only) showed as "Quantity missing on 1 of 5 lines".
+test('a cancelled ORDRSP line with only QTY+182 is not reported as "Quantity missing"', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'cancelled-line-quantity.edi');
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText('Quantity missing');
+
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#wcBody').innerHTML()).not.toContain('Quantity missing');
+});
+
+// Real Supplier Hotel ORDRSP: 66 lines of supplier action 6 used as a date-only
+// amendment, carried as action 5 by bol's output with the same QTY+12 and
+// DTM+67. ECHO reported 66 "action codes differ" errors while its own
+// message check called the pattern recognised. Now one Good-to-know note;
+// a line whose DTM+67 changed too is still an action difference.
+test('a date-only action 6 carried as action 5 in bol\'s output is one Good-to-know note, not an action difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'action6-remapped-to-5.sup.edi'), path.join(FIX, 'action6-remapped-to-5.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const actionDiffs = buckets.diff.filter(t => /action codes differ/.test(t));
+  expect(actionDiffs).toHaveLength(1);
+  expect(actionDiffs[0]).toContain('8712345000042');
+  const note = buckets.info.filter(t => /Action 6 date-only amendment carried as action 5/.test(t));
+  expect(note).toHaveLength(1);
+  expect(note[0]).toContain('on 3 items');
+  expect(note[0]).not.toContain('8712345000042');
+});
+
+// Copy for Transus' "…and N more" counted left-out findings, so a capped
+// "7 more item(s) also show …" summary counted as one. It counts items now.
+test('Copy for Transus counts left-out items, not findings, in its "and N more" line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'transus-more-count.sup.edi'), path.join(FIX, 'transus-more-count.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const text = await page.evaluate(() => lastTransusTextEn);
+  // Shown: 5 quantity differences + the "7 more" quantity summary. Left
+  // out: 5 action differences + a "7 more" action summary = 12 items.
+  expect(text).toContain('7 more item(s) also show a quantity difference');
+  expect(text).toContain('…and 12 more difference(s)');
+});
+
+// ORDRSP's confirmed delivery date (DTM+67) was never compared: a changed
+// date still gave "Loud and clear". Compared per (item, action) like the
+// net price; Quick check's Lines table shows date and price per line.
+test('a changed ORDRSP delivery date (DTM+67) is a Transformation difference; Quick check shows date and price', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'delivery-date-differs.sup.edi'), path.join(FIX, 'delivery-date-differs.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const d = buckets.diff.filter(t => /Delivery date \(DTM\+67\) differs/.test(t));
+  expect(d).toHaveLength(1);
+  expect(d[0]).toContain('on 1 line');
+  expect(d[0]).toContain('8712345000028');
+  expect(d[0]).toContain('22-01-2026 → 29-01-2026');
+  expect(d[0]).not.toContain('8712345000011');
+  await expect(page.locator('#verdict')).not.toContainText('Loud and clear');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'delivery-date-differs.bol.edi'));
+  const table = page.locator('#quickLinesTable');
+  await expect(table).toContainText('Delivery date');
+  await expect(table).toContainText('Net price');
+  await expect(table).toContainText('29-01-2026');
+  await expect(table).toContainText('6.50');
+});

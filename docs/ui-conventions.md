@@ -12,7 +12,8 @@
 - A clickable *value* jumps to the source text. A separate, small **↗**
   icon opens an external tool (Summa for EAN→product page, Purple for
   order→trace). Never combine the two actions into one click target.
-- Large lists (pallets, lines) collapse/filter past roughly 20 items, with
+- Large lists (pallets, lines, tag lists in findings, order numbers in the
+  strip and header table) collapse/filter past roughly 20 items, with
   sensible defaults, but always with a way to still see everything.
 - One search box (Compare and Quick check each have their own) filters
   Amendment details, the line table, and the pallet/SSCC overview
@@ -50,7 +51,9 @@ A finding shows a short headline plus the affected values (tags, old → new),
 so the panel reads as a quick overview. The why and what-to-do go inside
 `moreInfo(...)`, a collapsed `<details class="f-more">` toggle. "Copy
 report" includes that text (without the toggle label). "Copy for Transus"
-leaves it out and sends only the headline. Applied to every finding
+leaves it out and sends only the headline. "Copy report" marks each line
+by section, never by severity: `[DIFFERENCE]` (Transformation differences),
+`[CHECK]` (Message checks), `[INFO]`, `[OK]`. Applied to every finding
 whose visible text ran past ~150 characters (ORDRSP, DESADV and INVOIC).
 New findings follow the same shape: if the visible part needs more than
 one sentence, the rest belongs in `moreInfo`.

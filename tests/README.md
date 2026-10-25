@@ -59,11 +59,15 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | `RFF+BM`, when present, shown as the packing reference instead of the BGM document number | `desadv/bill-of-lading-reference.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a Packing List Reference (`RFF+BM`) over 15 characters is flagged, per side — a confirmed hard delivery limit, undocumented on bol's own DESADV page | `desadv/packing-reference-too-long.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a CPS group with an SSCC but no PAC segment is flagged as a confirmed (Transus-support) cause of the SSCC not reaching bol; a 20-character SSCC is flagged separately at info level | `desadv/sscc-no-pac.{sup,bol}.edi` | `specs/desadv.spec.js` |
-| DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
+| DESADV | many pallets missing an SSCC grouped into one finding with a collapsed list; in Compare with no SSCC on either side, one "Neither message contains an SSCC" finding listing both sides | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
+| ORDRSP/DESADV | Worth checking EAN-repeat pattern keyed per EAN + order; long order lists collapse in strip and header table | `desadv/many-orders.edi` (same file both sides) | `specs/desadv.spec.js` |
+| DESADV | SSCC length finding notes "00" + valid SSCC-18 / valid with a leading 0 | `desadv/sscc-length-hints.edi` (same file both sides) | `specs/desadv.spec.js` |
+| DESADV | header table Packing reference falls back to RFF+DQ, source labelled | `desadv/packing-ref-dq-only.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | nested CPS group with its own SSCC marked as nested, not an independent pallet; long Quick check pallet list collapses behind a toggle | `desadv/nested-sscc-hierarchy.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | one search box filters the line table and pallet overview together (EAN, order, SSCC, article code), overriding the diff/flagged-only filter, in both Compare and Quick check | `desadv/search-fields.edi` (same file both sides) | `specs/desadv.spec.js` |
 | DESADV | a pallet wrapper missing its own SSCC is flagged even though nested packages inside it carry one; a bare shipment-root CPS is never flagged for this | `desadv/pallet-sscc-only-on-package.edi` (same file both sides) | `specs/desadv.spec.js` |
 | DESADV | a flat, quoted-CSV DESADV dialect (no EDIFACT segment syntax) is read correctly instead of silently producing zero supplier lines | `desadv/csv-dialect.sup.des`, `desadv/csv-dialect.bol.edi` | `specs/desadv.spec.js` |
+| DESADV | the CSV dialect's HDR arrival date is read and matches bol's DTM+132 (Compare header table, Quick check) | `desadv/csv-dialect.sup.des`, `desadv/csv-dialect.bol.edi` | `specs/desadv.spec.js` |
 | ORDRSP | the same CSV dialect's ORDRSP variant is routed to its own parser (by the HDR record's doc-type field), not misread as DESADV | `ordrsp/csv-dialect.sup.ORD`, `ordrsp/csv-dialect.bol.edi` | `specs/ordrsp.spec.js` |
 | DESADV | a TRANSUSXML DESADV with no `<?xml` declaration is parsed as XML (not EDIFACT), linked to its boxes by `DespatchUnitReference`, and bol's one-line-late order numbers surface as order-number differences | `desadv/transusxml-messages.sup.xml`, `desadv/transusxml-messages.bol.edi` | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | an all-zeros EAN in bol's output, where the supplier sent a real one, is flagged as a Transformation difference; standalone Message check in Quick check | `desadv/sscc-single-item-fallback.{sup,bol}.edi` | `specs/desadv.spec.js` |
@@ -78,6 +82,20 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | article moved to another pallet in bol's output flagged per SSCC | `desadv/sub-cps-per-item.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
+| ORDRSP/DESADV | verdict driven by Transformation differences only: Message checks alone (even err) get the calm "mapping is correct" verdict; a DESADV diff at warn level never reads "transformation matches" | `desadv/message-checks-only.edi` (same file both sides), `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| ORDRSP | each action rule keeps its own level (not the line's worst); action-6 date-only amendment is info; Message checks alone keep the verdict calm | `ordrsp/rule-levels.edi` (same file both sides) | `specs/ordrsp.spec.js` |
+| DESADV | order numbers shifted one line down in bol's output grouped into one finding; an order mismatch is a Difference (err), not Check | `desadv/order-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| UI | Copy for Transus "…and N more" counts items behind capped summaries | `ordrsp/transus-more-count.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| DESADV | pallet overview: empty SSCC vs items on the other side is a Difference with "0 items"; zeroed EAN labelled; pill quantities are SSCC totals on both sides | `desadv/pallet-overview-empty-and-zeroed.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | SSCCs only in the supplier message, all in PAC-less CPS groups, are a Message check (not sent to Transus); with PAC they stay a difference | `desadv/sscc-no-pac.{sup,bol}.edi`, `desadv/sscc-only-one-side.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | SSCCs only on one side listed as tags, collapsed past 20; "Pallet mapping differs" headline = SSCC + count, per-item diffs in More info | `desadv/sscc-only-one-side.{sup,bol}.edi`, `desadv/sub-cps-per-item.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| DESADV | pallet EAN repeated as item / item not linked to a pallet grouped into one finding each with tags; weight-sum finding short; warn pills use "!" | `desadv/pallet-structure-grouping.edi` (same file both sides) | `specs/desadv.spec.js` |
+| DESADV | only `RFF+BM` (no BGM number) is not "no packing reference" (both modes); near-miss finding has a neutral headline, advice in More info | `desadv/packing-ref-bm-only.edi` (same file both sides), `desadv/repeated-sscc-units.{sup.xml,bol.edi}` | `specs/desadv.spec.js` |
+| ORDRSP | changed DTM+67 (per item + action) is a Transformation difference; Quick check Lines table shows date and price | `ordrsp/delivery-date-differs.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| ORDRSP | date-only action 6 carried as action 5 by bol (same QTY+12/DTM+67) is one Good-to-know note, not an action difference; a changed DTM+67 still is | `ordrsp/action6-remapped-to-5.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| ORDRSP | a cancelled line carrying only QTY+182 isn't reported as "Quantity missing" in Worth checking (Quick check and Compare) | `ordrsp/cancelled-line-quantity.edi` (same file both sides) | `specs/ordrsp.spec.js` |
+| ORDRSP/DESADV | message values (article code, quantity, action, order number) in Compare findings are escaped, not rendered as HTML | `ordrsp/html-in-values.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| UI | Copy report uses neutral per-section marks (`[DIFFERENCE]`/`[CHECK]`/`[INFO]`/`[OK]`), never `[ERROR]` | `desadv/message-checks-only.edi`, `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | qty×price vs. line-amount gap, rounding tolerance | `invoic/line-arithmetic-tolerance.sup.edi`, `invoic/line-arithmetic-tolerance.bol.ubl.xml` | `specs/invoic.spec.js` |
@@ -113,6 +131,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | per-EAN differences capped at 5 per kind with a summary line; credit-note note behind More info | `invoic/many-qty-diffs.{sup.edi,bol.ubl.xml}`, `invoic/credit-type-code-2.*` | `specs/invoic.spec.js` |
 | INVOIC | qty × price checked per line and per side (no summed prices for an EAN on two lines), once when passed on unchanged; `PRI+INV` as net-price fallback | `invoic/arith-per-line.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
+| ORDERS | Quick check runs the GS1 check-digit, all-zeros EAN and duplicate-DTM checks | `orders/line-checks.edi` | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 
 ## Adding a new regression fixture

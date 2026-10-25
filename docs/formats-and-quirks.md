@@ -6,6 +6,8 @@ EDIFACT — ORDRSP, DESADV, INVOIC, and ORDERS (Quick check only; an
 outbound bol→supplier purchase order has nothing to compare against, so
 Compare still declines it — but Quick check reads it, since a supplier
 complaint about a malformed test order is a real, recurring use case).
+Quick check runs the line-level checks on it (GS1 check digit, all-zeros
+EAN, duplicate `DTM` qualifier) just like ORDRSP/DESADV.
 
 ## bol's own UBL XML (`nl-inv:Invoice` namespace)
 
@@ -125,7 +127,7 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
   boxes/pallets with an `<SSCC>`, `<Article>` lines) has its own confirmed
   quirks:
   - **No `<?xml` declaration** — the file starts straight at `<Messages>`.
-    `parseFacts`/`parseFactsList` used to route only `<?xml`/`<Order(s)>`
+    `parseFactsList` used to route only `<?xml`/`<Order(s)>`
     starts to the XML parser, so this went to the EDIFACT parser and
     produced zero supplier lines (every item "missing from the supplier
     message", every SSCC "only in bol's output"). Any leading `<` now means
@@ -154,7 +156,7 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     bol's own system, reading `RFF+BM`, is what counts.
   - **Header vs line fields must be told apart by position, not by name.**
     The same tag names occur at both levels (`<OrderNumberBuyer>`,
-    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and `parseFactsTransusXml`
+    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and the XML facts reader (`factsFromXmlDoc`)
     used `querySelector`, which returns the first match anywhere. Three
     effects: a header-only `<OrderNumberBuyer>` wasn't applied to Articles
     without their own (and the first Article's order became the "header"
@@ -190,6 +192,17 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     the dialect was parsed, ECHO's ordinary per-item order-number comparison
     surfaced this; in the same message bol's output also put every `LIN`
     under the last box and nested the other boxes under the first one.
+    A second real message (Supplier Delta, same dialect) showed the same
+    one-line-late shift on 14 lines, reported as 13 unrelated per-item
+    "order numbers differ" warnings. `findOrderShiftRuns` (modelled on
+    `findCascadingPriceShiftRuns`) now pairs lines by position — only when
+    both messages have the same number of lines and every pair is the same
+    item — and reports a run where bol's order equals the supplier's order
+    of the previous line, with at least 3 lines whose own order changed, as
+    one grouped Transformation difference ("supplier → bol" per line). Those
+    items are left out of the per-item list. An order-number mismatch is
+    now a Difference (err), not a "Check": bol matches the delivery to a
+    purchase order on it.
 
 ### 3. Exact Online raw export
 
@@ -262,6 +275,11 @@ terminators at all.
   6 used purely to signal a changed delivery date" entry further below
   (every line sent as action 6 with no backorder, remapped to action 5 in
   bol's output).
+- **The DESADV `HDR` arrival date (field 6, right after the despatch date in
+  field 5) wasn't read**, so the Header fields table showed the expected
+  delivery date on bol's side only. On the real Supplier Hotel DESADV it matches
+  bol's `DTM+132` exactly; read as `arrivalDate` now. Same caveat as the
+  other positions: reverse-engineered from one message.
 - If a third message type turns up in this dialect, detect it the same way
   — a signal from the `HDR` record's own type field, checked before the
   generic `"ENV"` routing — per the same principle as the invoice-dialect
@@ -307,7 +325,7 @@ Handling:
 
 ## Reading XML safely (every dialect)
 
-All XML paths, ORDRSP/DESADV (`parseFactsTransusXml`) as well as INVOIC
+All XML paths, ORDRSP/DESADV (`parseFactsTransusXmlList`) as well as INVOIC
 (`parseInvoices`), go through the same preparation (`prepareXmlText`)
 before `DOMParser` sees the text:
 
@@ -408,6 +426,19 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   comparison (`comparePalletMapping`) showed it. The same message's delivery
   error, "Ean not known: 8700000012345", was unrelated. That EAN came through
   unchanged, so it's a master-data/order question, not a mapping one.
+- **Empty pallets and zeroed EANs in the pallet overview** (real Supplier
+  Delta DESADV: bol's output left three of four SSCC pallets empty and
+  put every `LIN` under the fourth; Supplier Bravo/Supplier Alfa: zeroed EANs). The
+  findings caught the mapping difference, but `palletOverviewHtml` showed
+  an empty group as "1 item" (its placeholder row was counted), "— — No
+  items" and a "Match" badge, even though the other side had items for
+  that SSCC. A real line whose EAN was zeroed also showed as "No items".
+  An empty SSCC is now a Difference when the other side has items for it
+  ("no items here; N on the other side"), the item count only counts real
+  lines, and a line without an EAN is labelled "EAN zeroed"/"EAN missing".
+  The quantity next to the Match/Difference pill is the item's SSCC total
+  on both sides; it used to put this line's quantity next to the other
+  side's total ("Match (1 → 2)").
 - **GS1 check digits**: a real Supplier Bravo DESADV carried SSCC
   `371234560000012345`, whose check digit doesn't match. ECHO now checks
   the GS1 mod-10 check digit on every EAN/GTIN (8/12/13/14 digits) and SSCC
@@ -617,6 +648,12 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   gap pattern, visible without any second message) also runs standalone
   in Quick check and per-side in Compare as a Message check
   (`checkSplitItemPriceGap`), per CLAUDE.md's parity rule.
+  The confirmed delivery date (`DTM+67`) had the same blind spot: never
+  compared, so a changed date still read "Loud and clear". It's now taken
+  per (item, action) bucket next to the price and a difference is one
+  grouped Transformation difference (only when both sides state a date;
+  missing on one side is structural). Compare-only, since it needs both
+  messages; Quick check's Lines table shows the date and price per line.
 - **A `DTM` qualifier code (e.g. `67` delivery date, `69` despatch date)
   appearing more than once within the same `LIN` group, with genuinely
   different dates, can cause a downstream EDI processor to silently drop
@@ -712,6 +749,16 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   line's action from 6 to 5 in the bol-facing output, keeping `BGM+29`
   internally consistent. Both cases show Transus's mapping treating this
   as a known, gracefully-handled pattern, not something it stumbles on.
+  **Compare follows that remapping (Transus maps 6 → 5).** On the real
+  Quoted CSV ORDRSP (66 lines, all action 6 with confirmed = ordered, no
+  backorder/cancel; bol's output action 5 with the same `QTY+12`, `PRI`
+  and `DTM+67`) Compare reported 66 "action codes differ" errors while its
+  own Message check called the pattern recognised. An item whose supplier
+  side is only action 6 with no `QTY+83`/`QTY+182`, and whose bol side is
+  only action 5 with the same non-zero `QTY+12` and the same `DTM+67`, is
+  no longer an action difference (`dateOnlyRemap` in `compare()`); it gets
+  one grouped Good-to-know note instead, and the action summary badge reads
+  "match (date-only 6 → 5)". A changed `DTM+67` or quantity still counts.
   bol's own documentation only partially reflects this: the "Betekenis"
   column for action 6 already names two distinct sub-cases ("in backorder
   geplaatst *of* voorzien van een nieuwe leverdatum"), but the "Verplichte
@@ -721,7 +768,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   read "worth confirming these weren't meant to be action 5 instead",
   which reads as an accusation for a pattern that's demonstrably fine in
   practice; reworded to describe the pattern neutrally instead
-  (`action6-no-backorder-has-confirmed` in `ACTION_RULE_EXPLAIN`). Per
+  (`action6-no-backorder-has-confirmed` in `ACTION_RULE_EXPLAIN`), and it
+  is shown at info level. Every rule there carries its own level; a group
+  used to take the worst level of its first line, so this rule could show
+  as an error next to an unrelated err rule on the same line. Per
   CLAUDE.md rule 7: a finding that reads as "you did something wrong"
   needs either a generous tolerance or shouldn't exist — this is a case
   where real evidence turned up proving the tolerance was warranted. Since
@@ -738,7 +788,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   over `docNumber` wherever the packing reference is shown — in both
   Quick check and Compare (parity rule) — falling back to the BGM
   document number, then an RFF-based despatch note reference, only when
-  `RFF+BM` is absent. Not compared cross-side as a finding, matching how
+  `RFF+BM` is absent. The "No packing reference found" note uses the same
+  sources (`hasPackingRef`); it used to skip `RFF+BM`, so a message with
+  only `RFF+BM` and an empty BGM number was told it had none. Not compared
+  cross-side as a finding, matching how
   the packing reference itself has always been display-only, not a
   flagged check. The original trigger was real: a "Packing List Reference
   Invalid" delivery error couldn't be diagnosed from ECHO's output because
@@ -769,7 +822,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   `checkMissingPacWithSscc` flags this as `cat:'message'` (the supplier's
   own message construction, not a mapping question bol/Transus can fix on
   their end) — `err` level, since this isn't a "might be worth a look"
-  observation, it's a confirmed cause of real data loss.
+  observation, it's a confirmed cause of real data loss. A second real
+  Supplier Golf DESADV showed the knock-on: "9 SSCC(s) only in the supplier
+  message" was also reported as an err Transformation difference (and so
+  went to "Copy for Transus"), for the very SSCCs the PAC check explains.
+  When every SSCC only on the supplier side sits in a PAC-less CPS group,
+  that finding is now a Message check pointing at the PAC finding. One
+  PAC-carrying pallet among them keeps it a Transformation difference, and
+  the Quoted CSV flattening (pallets with SSCCs, bol output with none) is
+  unaffected, since that dialect has no PAC concept.
 - **The same real message also had a 20-character SSCC** (`GIN+BJ`'s value
   started with `00`) where bol's own documentation specifies exactly 18
   digits with no Application Identifier prefix. Flagged by
@@ -783,7 +844,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   onderdeel van de SSCC-code") — not just a checklist bullet on a different
   page about something else. Still not `err`: no message has confirmed a
   downstream failure caused by the length alone, independent of the
-  missing-PAC issue.
+  missing-PAC issue. A later Supplier Golf DESADV had nine such values, each "00"
+  + a check-digit-valid SSCC-18; the finding now says so per value (and,
+  for a 17-digit value, when it is valid with a leading 0), which points at
+  the likely difference without claiming a fix.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what
@@ -793,7 +857,18 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   `wc-affected` tag-list style) — and past ~20 tags, wrapped in a collapsed
   `<details>` per the same doc's "large lists collapse past roughly 20
   items" rule, so the finding list stays scannable regardless of pallet
-  count.
+  count. The same function's "Pallet EAN repeated as item" and "Item not
+  linked to a pallet" checks still emitted one finding per item/line; both
+  are grouped the same way now. In Compare, when neither message has any
+  SSCC, one fact still gave three findings (real Supplier Golf DESADV: "Neither
+  message contains an SSCC" plus a "No SSCC found" per side). It's one
+  finding now, listing each side's SSCC-less pallet groups as tags; Quick
+  check keeps its single grouped "No SSCC found".
+- **Packing reference from `RFF+DQ`/`RFF+AAS` only**: the Header fields
+  table read the packing reference from `RFF+BM` alone and showed "—" for
+  a supplier that only sends a despatch note reference. It falls back to
+  that reference now and labels the source (`RFF+DQ`/`RFF+AAS`), like the
+  Packing reference stat already did.
 - **A `CPS` group nested under a pallet `CPS` (`CPS+<own>+<parent>'`) can
   legitimately carry its own SSCC** — a real, confirmed two-level GS1
   packing hierarchy (e.g. cartons each with their own SSCC, packed onto
