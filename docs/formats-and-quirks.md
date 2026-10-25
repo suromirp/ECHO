@@ -390,6 +390,19 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   comparison (`comparePalletMapping`) showed it. The same message's delivery
   error, "Ean not known: 8700000012345", was unrelated. That EAN came through
   unchanged, so it's a master-data/order question, not a mapping one.
+- **Empty pallets and zeroed EANs in the pallet overview** (real Supplier
+  Delta DESADV: bol's output left three of four SSCC pallets empty and
+  put every `LIN` under the fourth; Supplier Bravo/Supplier Alfa: zeroed EANs). The
+  findings caught the mapping difference, but `palletOverviewHtml` showed
+  an empty group as "1 item" (its placeholder row was counted), "— — No
+  items" and a "Match" badge, even though the other side had items for
+  that SSCC. A real line whose EAN was zeroed also showed as "No items".
+  An empty SSCC is now a Difference when the other side has items for it
+  ("no items here; N on the other side"), the item count only counts real
+  lines, and a line without an EAN is labelled "EAN zeroed"/"EAN missing".
+  The quantity next to the Match/Difference pill is the item's SSCC total
+  on both sides; it used to put this line's quantity next to the other
+  side's total ("Match (1 → 2)").
 - **GS1 check digits**: a real Supplier Bravo DESADV carried SSCC
   `371234560000012345`, whose check digit doesn't match. ECHO now checks
   the GS1 mod-10 check digit on every EAN/GTIN (8/12/13/14 digits) and SSCC
