@@ -2499,7 +2499,15 @@ function headerFieldsHtml(sup,bol,type){
     if(!v)return {v:null,html:'<span class="dim">—</span>'};
     const disp=isDate(label)?showDate(v):v;
     const jumpVal=isDate(label)?String(v).replace(/-/g,''):String(v).split(', ')[0];
-    return {v,html:`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})">${esc(disp)}</span><span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`};
+    const src=`<span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`;
+    // A long order list (past ~20) collapses, each order still clickable
+    // (docs/ui-conventions.md).
+    const parts=label==='Order'?String(v).split(', '):[];
+    if(parts.length>20){
+      const list=parts.map(o=>`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(o)})">${esc(o)}</span>`).join(', ');
+      return {v,html:`<details><summary>${parts.length} orders</summary>${list}</details>${src}`};
+    }
+    return {v,html:`<span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})">${esc(disp)}</span>${src}`};
   };
   const body=rows.map(([label,get,ediSeg,xmlTags])=>{
     const s=cell(sup,'sup',label,get,ediSeg,xmlTags),b=cell(bol,'bol',label,get,ediSeg,xmlTags);
@@ -2949,7 +2957,7 @@ function detectWorthChecking(lines,cfg){
       if(outliers.length&&modeShare/groups.size>=0.7&&outliers.length<=Math.max(3,Math.ceil(groups.size*0.25))){
         notices.push({
           title:`${outliers.length} ${f.label}${outliers.length===1?'':'s'} appear${outliers.length===1?'s':''} a different number of times than the rest`,
-          detail:`Most ${f.label}s in this message appear ${modeFreq} time${modeFreq===1?'':'s'}; ${outliers.length} ${outliers.length===1?'appears':'appear'} a different number of times.`,
+          detail:`Most ${f.label}s in this message appear ${modeFreq} time${modeFreq===1?'':'s'}${f.note?' '+f.note:''}; ${outliers.length} ${outliers.length===1?'appears':'appear'} a different number of times.`,
           affected:outliers.map(([,g])=>({label:f.rowLabel(g[0])+` (${g.length}×)`,jump:f.rowJump(g[0])}))
         });
       }
@@ -2972,7 +2980,12 @@ function wcConfigOrdrspDesadv(type){
       {label:'Order reference',get:l=>(l.orders&&l.orders.size)?'x':undefined,rowLabel,rowJump}
     ],
     categorical:[],
-    repeatKey:{label:'EAN',get:l=>l.gtin,rowLabel,rowJump}
+    // Keyed on EAN + order: the same EAN legitimately appears once per
+    // order, so keying on the EAN alone fired on every multi-order DESADV.
+    // Labelled by EAN (an article code is not an EAN).
+    repeatKey:{label:'EAN',note:'(counted per order)',
+      get:l=>l.gtin?l.gtin+'|'+[...(l.orders||[])].sort().join(','):undefined,
+      rowLabel:l=>{const o=[...(l.orders||[])].sort().join(', ');return l.gtin+(o?` · order ${o}`:'');},rowJump}
   };
   if(type==='DESADV'){
     cfg.presence.push({label:'Date',get:l=>(l.dtm&&Object.keys(l.dtm).length)?Object.values(l.dtm)[0]:undefined,rowLabel,rowJump});
@@ -5404,7 +5417,9 @@ function render(result,bol,sup,notes){
   strip.push(`<div class="stat"><div class="l">Type</div><div class="v">${result.type||'?'}</div></div>`);
   const allOrders=[...new Set([...(sup.orderRefsHeader||[]),...sup.lines.flatMap(l=>[...(l.orders||[])]),...(bol.orderRefsHeader||[]),...bol.lines.flatMap(l=>[...(l.orders||[])])])];
   if(allOrders.length){
-    const orderVal=allOrders.map(o=>`<div class="order-row"><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(o)})">${esc(o)}</span>${purpleLink(o)}</div>`).join('');
+    const orderRows=allOrders.map(o=>`<div class="order-row"><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(o)})">${esc(o)}</span>${purpleLink(o)}</div>`).join('');
+    // Past ~20 orders the list collapses (docs/ui-conventions.md).
+    const orderVal=allOrders.length>20?`<details class="order-list"><summary>${allOrders.length} orders</summary>${orderRows}</details>`:orderRows;
     const orderCopyText=allOrders.join('\n');
     strip.push(`<div class="stat"><div class="l"><span>Order${allOrders.length>1?'(s)':''}</span><button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(orderCopyText)},this)">📋</button></div><div class="v" style="font-size:13px">${orderVal}</div></div>`);
   }

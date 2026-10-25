@@ -88,6 +88,10 @@ actual test fixtures, don't just keep this list as prose:
   side with a collapsed tag list, not one finding per pallet. In Compare,
   when neither side has any SSCC, that is one "Neither message contains an
   SSCC" finding listing both sides' pallets (not three findings).
+- **ORDRSP/DESADV**: Worth checking's "EANs appear a different number of
+  times" counts per EAN + order (a multi-order message isn't flagged just
+  for repeating an EAN once per order) and labels by EAN, not article code;
+  an order list past ~20 collapses in the Compare strip and header table.
 - **DESADV**: the SSCC length finding says when a value is "00" + a valid
   SSCC-18, or a 17-digit value valid with a leading 0, in both modes.
 - **DESADV**: the Header fields table's Packing reference falls back to

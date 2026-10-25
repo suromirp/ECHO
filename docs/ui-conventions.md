@@ -12,7 +12,8 @@
 - A clickable *value* jumps to the source text. A separate, small **↗**
   icon opens an external tool (Summa for EAN→product page, Purple for
   order→trace). Never combine the two actions into one click target.
-- Large lists (pallets, lines) collapse/filter past roughly 20 items, with
+- Large lists (pallets, lines, tag lists in findings, order numbers in the
+  strip and header table) collapse/filter past roughly 20 items, with
   sensible defaults, but always with a way to still see everything.
 - One search box (Compare and Quick check each have their own) filters
   Amendment details, the line table, and the pallet/SSCC overview
