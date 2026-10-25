@@ -427,6 +427,18 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   amount — recognized as a fallback amount source for a charge/allowance,
   since the alternative (silently treating it as "no amount sent,"
   defaulting to 0) is worse.
+- **`MOA+203` right after `ALC` is the charge amount** (real Supplier Juliett credit
+  note): `LIN+5…'MOA+203:10.94'PRI+AAA:10.94…'ALC+C++++ATR'MOA+203:0.4'`.
+  `parseInvoicEdifact` only took `MOA` 8/204/23/131/52/25 as an ALC amount,
+  so this `MOA+203` fell through to the line amount and overwrote 10.94 with
+  0.40. On the real message that gave 6 false "Line amount differs", 7 false
+  charge differences, false qty×price notes and an error verdict, although
+  bol's UBL had mapped every line and charge correctly. Now the first `MOA`
+  after an `ALC` (any qualifier) is that charge/allowance's amount, an
+  explicit amount qualifier (8/23/204) arriving later replaces a first
+  non-explicit one such as 25, and an `MOA+203` inside an ALC group never
+  overwrites the line amount. After the fix the real Supplier Juliett pair compares
+  clean.
 - **An `ALC` segment with no following `MOA` at all** means "no amount was
   sent," which must render as `—`, never as `0.00` — a `0.00` display
   looks like a real, business-meaningful zero rather than "nothing was

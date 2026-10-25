@@ -3471,7 +3471,19 @@ function parseInvoicEdifact(raw){
         // an ALC segment as that allowance's amount, and without this it
         // silently fell through into the generic line-MOA bucket below,
         // leaving the allowance's own amount blank.
-        if(curAlc&&curAlc.amount===null&&(q==='8'||q==='204'||q==='23'||q==='131'||q==='52'||q==='25')){curAlc.amount=v;break;}
+        // While an ALC group is open, its first MOA is that charge's or
+        // allowance's amount, whatever the qualifier. A real Supplier Juliett credit
+        // note sent "ALC+C++++ATR'MOA+203:0.4'": the MOA+203 fell through to
+        // the line amount below and overwrote 10.94 with 0.40 (false "Line
+        // amount differs", false charge differences). An explicit amount
+        // qualifier (8/23/204) arriving after a first, non-explicit one
+        // (e.g. 25 = basis) replaces it. A later MOA+203 inside the ALC
+        // group never overwrites the line amount.
+        if(curAlc){
+          const explicitAmt=q==='8'||q==='204'||q==='23';
+          if(curAlc.amount===null||(explicitAmt&&!curAlc.amountExplicit)){curAlc.amount=v;curAlc.amountExplicit=explicitAmt;break;}
+          if(q==='203')break;
+        }
         if(curLine&&!inSummary){
           if(q==='203')curLine.lineAmount=v;
           else{curLine.moa=curLine.moa||{};curLine.moa[q]=v;}

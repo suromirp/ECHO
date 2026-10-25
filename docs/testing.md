@@ -221,6 +221,9 @@ actual test fixtures, don't just keep this list as prose:
   digit, both passed on unchanged to bol, are each reported once as the
   supplier's Message check in Compare, and show in Quick check for either
   file.
+- **INVOIC**: an `MOA+203` right after a line-level `ALC` is read as the
+  charge amount and doesn't overwrite the line amount (no false line-amount,
+  charge, total or arithmetic findings).
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with
