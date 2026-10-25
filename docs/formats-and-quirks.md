@@ -372,6 +372,21 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   suppliers happened to send a batch number per line. Transus fixed each
   case in that supplier's own data source and didn't say whether the batch
   number played a role.
+- **The all-zeros EAN check ran for ORDRSP/DESADV only** — a parity gap, not
+  a choice. Every INVOIC parser normalized a zeroed EAN to `''` and said
+  nothing, and bol's UBL parser had two more holes: an all-zeros
+  `SellersItemIdentification` stayed behind as the line's article code (so
+  every zeroed line shared one phantom match key), and an all-zeros
+  `BuyersItemIdentification` was put back as the EAN after the zeroed
+  Sellers ID was cleared. The TRANSUSXML and Exact Online invoice parsers
+  didn't clear zeros at all. `invoiceGtin` now picks the first real EAN
+  among a line's candidates and sets `gtinZeroed` (the flag the facts
+  parsers already set) when only zeros were there. INVOIC now runs the same
+  check: Quick check, per side in Compare, a Transformation difference when
+  only bol's output is zeroed (`invoiceZeroPairs`, see `docs/matching.md`),
+  and reported once as "passed on unchanged to bol" when both sides carry
+  the same number of zeroed lines. No real INVOIC with a zeroed EAN has
+  turned up yet; the fixtures are synthetic.
 - **Order number with its leading digit missing** (real Supplier Foxtrot DESADV):
   `RFF+ON:310467` on two lines, next to `9310467` elsewhere in the same
   message. Transus passed it on unchanged, and bol rejected the delivery
@@ -379,6 +394,11 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   an order number that is another one in the same message minus 1-2 leading
   characters. The Header fields table also compares header and line order
   numbers together, since one side may state the order only in the header.
+  INVOIC runs the same check (parity rule), in Quick check and per side in
+  Compare, reported once when bol's output carries the same. Invoice lines
+  are passed to the shared check through `invoiceAsFacts`; Exact Online and
+  TRANSUSXML only state the order at header level, so their orders count as
+  header orders there.
 - **Article moved to another pallet by the transformation** (real Supplier Alfa
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet

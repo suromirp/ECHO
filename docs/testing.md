@@ -213,6 +213,14 @@ actual test fixtures, don't just keep this list as prose:
   (`1` stays an invoice), in Compare and Quick check. A supplier `BGM+381`
   credit against a bol credit with positive amounts shows matching document
   types and no amount differences.
+- **INVOIC**: an all-zeros EAN only in bol's UBL output (supplier lines
+  10/20/30, bol lines 1/2/3) is a Transformation difference, paired by
+  position, with no knock-on "missing" or "without an EAN" findings; Quick
+  check on bol's output shows it standalone.
+- **INVOIC**: an all-zeros EAN and an order number missing its leading
+  digit, both passed on unchanged to bol, are each reported once as the
+  supplier's Message check in Compare, and show in Quick check for either
+  file.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

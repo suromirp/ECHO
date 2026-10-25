@@ -445,3 +445,67 @@ test('bol InvoiceTypeCode 2 is read as a credit note; positive amounts on both s
   await runQuickFixture(page, path.join(FIX, 'ubl-line-total-zero.bol.ubl.xml'));
   await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
 });
+
+// Parity: the all-zeros EAN check ran for ORDRSP/DESADV only. In INVOIC an
+// all-zeros EAN was normalized to '' at parse time and nothing was said.
+// Supplier lines 10/20/30 vs bol UBL lines 1/2/3, so the zeroed bol line is
+// paired by position (every other line carries the same EAN in order).
+test('an all-zeros EAN only in bol\'s invoice output is a Transformation difference, paired without knock-on findings', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'zero-ean-bol-output.sup.edi'),
+    path.join(FIX, 'zero-ean-bol-output.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const buckets = await invoiceFindingsByCategory(page);
+  const zeroDiff = buckets.diff.filter(t => /EAN replaced by zeros in bol's output/.test(t));
+  expect(zeroDiff).toHaveLength(1);
+  expect(zeroDiff[0]).toContain('Line 2 · 8710000000024');
+  expect(buckets.message.some(t => /all zeros/.test(t))).toBe(false);
+  const all = [...buckets.message, ...buckets.diff];
+  expect(all.some(t => /missing/.test(t))).toBe(false);
+  expect(all.some(t => /without an EAN/.test(t))).toBe(false);
+  const resultsText = await page.locator('#invoiceResults').innerText();
+  expect(resultsText).toContain('3/3');
+
+  // Quick check on bol's output alone: standalone note.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'zero-ean-bol-output.bol.ubl.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('EAN is all zeros');
+  await expect(page.locator('#quickOverview')).toContainText('Line 2');
+  await expect(page.locator('#quickOverview')).not.toContainText('no EAN or item number');
+});
+
+// Parity: the order-number-missing-leading-digit check ran for ORDRSP/DESADV
+// only. Here the supplier sends an all-zeros EAN and an order number that is
+// another one minus its first digit, and bol's output carries both unchanged:
+// each is reported once, as the supplier's, not once per side.
+test('an all-zeros EAN and an incomplete order number passed on unchanged are each reported once, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'zero-ean-order-digit.sup.edi'),
+    path.join(FIX, 'zero-ean-order-digit.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const buckets = await invoiceFindingsByCategory(page);
+  const zero = buckets.message.filter(t => /EAN is all zeros/.test(t));
+  expect(zero).toHaveLength(1);
+  expect(zero[0]).toContain('passed on unchanged to bol');
+  expect(zero[0]).toContain('Line 20');
+  const order = buckets.message.filter(t => /Order number looks incomplete/.test(t));
+  expect(order).toHaveLength(1);
+  expect(order[0]).toContain('passed on unchanged to bol');
+  expect(order[0]).toContain('150201 → 6150201?');
+  expect(order[0]).toContain('line 30');
+  expect(buckets.diff.some(t => /zeros|Order/.test(t))).toBe(false);
+
+  for (const file of ['zero-ean-order-digit.sup.edi', 'zero-ean-order-digit.bol.ubl.xml']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    await expect(page.locator('#quickOverview')).toContainText('EAN is all zeros');
+    await expect(page.locator('#quickOverview')).toContainText('Order number looks incomplete');
+    await expect(page.locator('#quickOverview')).toContainText('150201 → 6150201?');
+  }
+});

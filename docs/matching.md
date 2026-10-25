@@ -43,6 +43,16 @@ matching. Without it, several zeroed lines on one pallet (where the SSCC
 fallback can't help) produced "Item ?" knock-on differences next to the
 real "EAN replaced by zeros" finding, which is still reported.
 
+INVOIC does the same (`invoiceZeroPairs`), with one extra rule, because
+invoice dialects number lines differently (supplier `10`/`20`/`30`, bol UBL
+`1`/`2`/`3`), so an identical line-number set almost never occurs there.
+With the same number of lines on both sides, and different line numbers, a
+zeroed bol line is paired by position only when **every other line** carries
+the same (normalized) EAN at the same position on both sides. The
+paired line borrows the supplier's EAN for the line match and for matching
+its line-level charges. Anything less clear-cut stays unpaired: the zeroing
+is then a per-side Message check and the line shows as unmatched.
+
 ## Charge/line matching
 
 Match a line-level charge to its line by the line's **GTIN**, not by the
