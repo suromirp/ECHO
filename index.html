@@ -2910,7 +2910,7 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
 
 function compare(bol,sup){
   const findings=[];const add=(l,t,cat)=>findings.push({level:l,text:t,cat:cat||null});
-  if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${sup.msgType||'?'}</code> vs bol <code>${bol.msgType||'?'}</code>.`,'diff');
+  if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${esc(sup.msgType||'?')}</code> vs bol <code>${esc(bol.msgType||'?')}</code>.`,'diff');
   const type=bol.msgType||sup.msgType;
   const keyFn=buildKeyResolver(bol,sup);
   const ba=aggregate(bol,keyFn),sa=aggregate(sup,keyFn);
@@ -2973,7 +2973,7 @@ function compare(bol,sup){
     }
     else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
   addCapped('err',missingItems,
-    m=>`Item <code>${m.label}</code> is present in the ${m.onlyIn}.`,
+    m=>`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
     rest=>`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
 
   const qtyDiffs=[],actionDiffs=[],orderDiffs=[];
@@ -2982,13 +2982,13 @@ function compare(bol,sup){
     if(type==='ORDRSP'&&r.actionDiff)actionDiffs.push({label,r});
     if(r.orderDiff)orderDiffs.push({label,r});});
   addCapped('err',qtyDiffs,
-    ({label,x})=>`Item <code>${label}</code>: quantity (qual ${x.q}) differs — supplier <span class="val-sup">${x.sup??'—'}</span> vs bol <span class="val-bol">${x.bol??'—'}</span>.`,
+    ({label,x})=>`Item <code>${esc(label)}</code>: quantity (qual ${esc(x.q)}) differs — supplier <span class="val-sup">${esc(x.sup??'—')}</span> vs bol <span class="val-bol">${esc(x.bol??'—')}</span>.`,
     rest=>`<strong>${rest} more item(s) also show a quantity difference</strong> — see the Line comparison below for the full list.`);
   addCapped('err',actionDiffs,
-    ({label,r})=>`Item <code>${label}</code>: action codes differ — supplier [${r.supActions.join(', ')||'—'}] vs bol [${r.bolActions.join(', ')||'—'}].`,
+    ({label,r})=>`Item <code>${esc(label)}</code>: action codes differ — supplier [${esc(r.supActions.join(', ')||'—')}] vs bol [${esc(r.bolActions.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an action code difference</strong> — see the Line comparison below for the full list.`);
   addCapped('warn',orderDiffs,
-    ({label,r})=>`Item <code>${label}</code>: order numbers differ — supplier [${r.supOrders.join(', ')||'—'}] vs bol [${r.bolOrders.join(', ')||'—'}].`,
+    ({label,r})=>`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
   // Neither side references an order number (RFF+ON) at all — the per-item

@@ -397,3 +397,17 @@ test('the CSV ORDRSP dialect is also recognized in Quick check', async ({ page }
   expect(overviewText).toContain('ORDRSP');
   expect(overviewText).toContain('9000002'); // order number read from the CSV
 });
+
+// Message values (article codes, quantities, actions, order numbers) were
+// inserted into the Compare findings as raw HTML. A value like "ART<b>1"
+// must show as text, not become markup.
+test('message values in Compare findings are escaped, not rendered as HTML', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'html-in-values.sup.edi'), path.join(FIX, 'html-in-values.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#findings b, #findings i').count()).toBe(0);
+  const text = await page.locator('#findings').innerText();
+  expect(text).toContain('Item ART<b>1: quantity (qual 12) differs');
+  expect(text).toContain('action codes differ');
+  expect(text).toContain('supplier [PO<i>1] vs bol [PO<i>2]');
+});
