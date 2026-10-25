@@ -718,7 +718,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   `checkMissingPacWithSscc` flags this as `cat:'message'` (the supplier's
   own message construction, not a mapping question bol/Transus can fix on
   their end) — `err` level, since this isn't a "might be worth a look"
-  observation, it's a confirmed cause of real data loss.
+  observation, it's a confirmed cause of real data loss. A second real
+  Supplier Golf DESADV showed the knock-on: "9 SSCC(s) only in the supplier
+  message" was also reported as an err Transformation difference (and so
+  went to "Copy for Transus"), for the very SSCCs the PAC check explains.
+  When every SSCC only on the supplier side sits in a PAC-less CPS group,
+  that finding is now a Message check pointing at the PAC finding. One
+  PAC-carrying pallet among them keeps it a Transformation difference, and
+  the Quoted CSV flattening (pallets with SSCCs, bol output with none) is
+  unaffected, since that dialect has no PAC concept.
 - **The same real message also had a 20-character SSCC** (`GIN+BJ`'s value
   started with `00`) where bol's own documentation specifies exactly 18
   digits with no Application Identifier prefix. Flagged by

@@ -437,6 +437,30 @@ test('an SSCC without a PAC segment is flagged as a confirmed cause of the SSCC 
   expect(notEighteen[0]).toContain('00000000000000000099');
 });
 
+// Real Supplier Golf DESADV: "9 SSCC(s) only in the supplier message" was an err
+// Transformation difference (sent to Transus), although every one of those
+// SSCCs sat in a CPS without PAC — the Transus-confirmed supplier-side
+// cause already flagged above. Now a Message check pointing there.
+test('SSCCs missing from bol only because their CPS has no PAC are a Message check, not a Transformation difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-no-pac.sup.edi'), path.join(FIX, 'sscc-no-pac.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /only in the supplier message/.test(t))).toBe(false);
+  const msg = buckets.message.filter(t => /3 SSCCs only in the supplier message/.test(t));
+  expect(msg).toHaveLength(1);
+  expect(msg[0]).toContain('all in CPS groups without PAC');
+  expect(msg[0]).toContain('see the PAC finding above');
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).not.toContain('only in the supplier message');
+
+  // A pallet that does carry PAC: still a Transformation difference.
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-only-one-side.sup.edi'), path.join(FIX, 'sscc-only-one-side.bol.edi'));
+  const b2 = await findingsByCategory(page);
+  expect(b2.diff.some(t => /22 SSCCs only in the supplier message/.test(t))).toBe(true);
+});
+
 test('both SSCC checks also fire standalone in Quick check', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'sscc-no-pac.sup.edi'));

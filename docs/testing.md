@@ -168,6 +168,10 @@ actual test fixtures, don't just keep this list as prose:
   as err because another rule on the same line is err); the action-6
   date-only amendment is info. Short headline + "More info", in Compare and
   Quick check.
+- **DESADV**: SSCCs only in the supplier message that all sit in CPS
+  groups without PAC are a Message check pointing at the PAC finding, not
+  a Transformation difference sent to Transus; with PAC present they stay
+  a Transformation difference.
 - **DESADV**: SSCCs only on one side are listed as clickable tags,
   collapsed past ~20, not one long inline list; "Pallet mapping differs"
   is headed by its SSCC and difference count, the per-item differences in
