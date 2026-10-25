@@ -209,6 +209,10 @@ actual test fixtures, don't just keep this list as prose:
   INVOIC, not DESADV, in both modes.
 - **INVOIC**: an `<?xml-stylesheet?>` instruction in bol's UBL is not
   mistaken for a second concatenated document (no false banner).
+- **INVOIC**: bol's UBL `InvoiceTypeCode` `2` is read as a credit note
+  (`1` stays an invoice), in Compare and Quick check. A supplier `BGM+381`
+  credit against a bol credit with positive amounts shows matching document
+  types and no amount differences.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with
