@@ -3171,10 +3171,17 @@ function compare(bol,sup){
   bol.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].bol++;});
   sup.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].sup++;});
 
+  // The headline verdict is about the transformation, so only Transformation
+  // differences (cat 'diff') can make it "lost in translation". A Message
+  // check, even at err level (no PAC, RFF+BM too long, an ORDRSP action
+  // rule), is about one side's own message: it gives the calmer "mapping is
+  // correct, see Message checks" verdict instead (rule 7). render() picks
+  // the wording from verdict + whether a diff issue exists.
+  const isDiff=f=>(f.cat||'diff')==='diff';
   let verdict='ok';
-  if(findings.some(f=>f.level==='err'))verdict='err';
-  else if(findings.some(f=>f.level==='warn'))verdict='warn';
-  if(!findings.some(f=>f.level==='err'||f.level==='warn'))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
+  if(findings.some(f=>isDiff(f)&&f.level==='err'))verdict='err';
+  else if(findings.some(f=>f.level==='err'||f.level==='warn'))verdict='warn';
+  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
@@ -5172,18 +5179,15 @@ function render(result,bol,sup,notes){
   // note about the message itself (cat 'message') — these need very
   // different follow-up from whoever's reading this, so the subtitle should
   // say which one it is rather than a single generic "something to check".
+  // compare() only gives 'err' for a Transformation difference; a Message
+  // check alone gives 'warn' with the "mapping is correct" subtitle below.
   const hasDiffIssue=result.findings.some(f=>(f.cat||'diff')==='diff'&&(f.level==='err'||f.level==='warn'));
-  const vmap={ok:{i:'✓',t:'Loud and clear',s:'All compared values match between the supplier message and bol output.'},
+  const isD=result.type==='DESADV';
+  const vmap={ok:{i:'✓',t:'Loud and clear',s:isD?'All compared values and pallet mappings match.':'All compared values match between the supplier message and bol output.'},
     warn:{i:'!',t:'Almost in sync',s:hasDiffIssue
-      ?'The compared values mostly match, but ECHO found something worth a closer look.'
-      :'The mapping itself is correct — nothing to fix there. ECHO just noticed something worth checking in the message data itself — see Message checks below.'},
-    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output. See findings.'}};
-  if(result.type==='DESADV'){
-    // same headline, clearer supporting copy: makes explicit that a supplier-side
-    // check and a preserved transformation are two different things
-    vmap.ok=Object.assign({},vmap.ok,{s:'All compared values and pallet mappings match.'});
-    if(hasDiffIssue)vmap.warn=Object.assign({},vmap.warn,{s:'The transformation matches, but ECHO found something to check in the supplier message.'});
-  }
+      ?'The compared values mostly match, but ECHO found something worth a closer look — see Transformation differences below.'
+      :(isD?'The transformation and pallet mappings match.':'The mapping itself is correct — nothing to fix there.')+' ECHO noticed something worth checking in the message data itself — see Message checks below.'},
+    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output — see Transformation differences below.'}};
   const v=vmap[result.verdict];
   document.getElementById('verdict').className='verdict '+result.verdict;
   // Worth-checking is computed once here (moved up from further below) so both
@@ -5338,7 +5342,7 @@ function render(result,bol,sup,notes){
     // Split findings into three plain-language buckets so a preserved
     // transformation and a supplier-message observation never blur together.
     const cats=[
-      {key:'message',title:'Message checks',hint:'Observations about the supplier\'s own message structure — not a transformation issue.'},
+      {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
       {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
       {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
     ];

@@ -876,3 +876,32 @@ test('an order number missing its leading digit is flagged once, and the header 
   await expect(page.locator('#quickOverview')).toBeVisible();
   await expect(page.locator('body')).toContainText('Order number looks incomplete');
 });
+
+// The verdict used to ignore the finding category: a Message check at err
+// level (here RFF+BM over 15 characters, the same on both sides) gave
+// "Something got lost in translation" although the transformation was
+// clean. And a DESADV with a real Transformation difference at warn level
+// (the Supplier Alfa date shift) said "The transformation matches" — inverted.
+test('the verdict is based on Transformation differences; Message checks alone get the calm verdict', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'message-checks-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => /Packing List Reference too long/.test(t))).toHaveLength(2);
+  expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+  const verdict = page.locator('#verdict');
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('The transformation and pallet mappings match.');
+  await expect(verdict).toContainText('see Message checks below');
+  await expect(verdict).not.toContainText('lost in translation');
+  await expect(page.locator('#findings li.findings-cat', { hasText: 'Message checks' }))
+    .toHaveAttribute('title', /supplier's or bol's own message/);
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('see Transformation differences below');
+  await expect(verdict).not.toContainText('The transformation and pallet mappings match');
+});
