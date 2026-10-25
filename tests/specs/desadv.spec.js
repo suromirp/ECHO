@@ -1029,3 +1029,37 @@ test('SSCCs only on one side are listed as tags, collapsed past 20', async ({ pa
   await expect(sup.locator('.wc-affected')).toContainText('008712345000001003');
   await expect(page.locator('#findings li', { hasText: '22 SSCCs only in the bol output' })).toHaveCount(1);
 });
+
+// Pallet overview (real Supplier Delta / Supplier Bravo / Supplier Alfa DESADVs): an empty
+// CPS group read "1 item" and "Match" although the other side had items for
+// that SSCC; a line with a zeroed EAN showed as "No items"; and "(1 → 2)"
+// put a per-line quantity next to the other side's SSCC total.
+test('pallet overview: empty group vs items on the other side is a Difference, zeroed EAN labelled, totals on both sides', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'pallet-overview-empty-and-zeroed.sup.edi'), path.join(FIX, 'pallet-overview-empty-and-zeroed.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await page.locator('#palletFilterToggle').uncheck();
+  const blocks = page.locator('#ssccBody .pallet-block');
+  const supA = blocks.nth(0).locator('details.pallet-det', { hasText: '008712345000000013' });
+  await expect(supA.locator('summary')).toContainText('2 items');
+  const bolA = blocks.nth(1).locator('details.pallet-det', { hasText: '008712345000000013' });
+  await expect(bolA).toHaveAttribute('data-status', 'diff');
+  await expect(bolA.locator('summary')).toContainText('0 items');
+  await expect(bolA.locator('summary')).toContainText('Difference');
+  expect(await bolA.innerHTML()).toContain('no items here; 2 on the other side');
+  const bolB = blocks.nth(1).locator('details.pallet-det', { hasText: '008712345000000020' });
+  expect(await bolB.innerHTML()).toContain('EAN zeroed');
+  expect(await bolB.innerHTML()).not.toContain('No items');
+  // Both numbers are the item's SSCC total on each side: 3 → 3, never 2 → 3.
+  const supAHtml = await supA.innerHTML();
+  expect(supAHtml).not.toMatch(/\(2 → /);
+  expect(supAHtml).not.toMatch(/\(1 → /);
+  expect(supAHtml).toContain('(3 → —)');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'pallet-overview-empty-and-zeroed.bol.edi'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const q = await page.locator('#quickOverview').innerHTML();
+  expect(q).toContain('EAN zeroed');
+  expect(q).toContain('0 items');
+});

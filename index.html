@@ -2666,8 +2666,10 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
   let blocks='';
   const statuses=[];
   relevant.forEach(p=>{
-    const items=(p.items&&p.items.length)?p.items:[{gtin:null,qty:{}}];
-    const hasItems=p.items&&p.items.length>0;
+    const hasItems=!!(p.items&&p.items.length>0);
+    // An empty group gets one placeholder row so its table isn't blank; it
+    // is never counted as an item (it used to read "1 item").
+    const items=hasItems?p.items:[{gtin:null,art:null,qty:{},__placeholder:true}];
     // Pallet-level issues describe the pallet/group as a whole (e.g. it has no
     // SSCC at all) — these belong on the summary line, not on one arbitrary
     // item's row, or it reads as if the issue were specific to that item.
@@ -2683,16 +2685,21 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     // item can legitimately appear as more than one line on the same pallet
     // (e.g. split across batches/best-before dates), so this compares the
     // item's total quantity rather than pairing individual lines by position.
-    let gtinMatch=null,allItemsDiffer=false,otherTotals=null,singlePalletOverrideKey=null;
+    let gtinMatch=null,allItemsDiffer=false,otherTotals=null,thisTotals=null,singlePalletOverrideKey=null,emptyVsOther=0;
     if(!singleMode&&p.sscc&&otherMap&&otherMap.has(p.sscc)){
       const other=otherMap.get(p.sscc);
+      // This SSCC holds no items at all on this side (every group sharing it
+      // is empty) while the other side has items under it: a mapping
+      // difference, not "Match" (real Supplier Delta DESADV: bol's output left
+      // three pallets empty and put every LIN under the fourth).
+      if(!(ownBySscc.get(p.sscc)||p).items.length&&other.items&&other.items.length)emptyVsOther=other.items.length;
       // Compare whole SSCCs (all groups sharing it), not this one group.
       const own=(ownBySscc.get(p.sscc)||p).items;
       const bItems=sideKey==='bol'?own:other.items;
       const sItems=sideKey==='bol'?other.items:own;
       const {bTot,sTot}=resolvePalletItemTotals(bItems,sItems,keyFn);
       const thisTot=sideKey==='bol'?bTot:sTot,otherTot=sideKey==='bol'?sTot:bTot;
-      otherTotals=otherTot;
+      otherTotals=otherTot;thisTotals=thisTot;
       gtinMatch=new Map();
       thisTot.forEach((entry,g)=>gtinMatch.set(g,otherTot.has(g)&&otherTot.get(g).qty===entry.qty));
       // Only meaningful once there's more than one item to compare — with a
@@ -2706,14 +2713,16 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // reused below so the per-row lookup still finds it.
       if(thisTot.has('__single-item-pallet__'))singlePalletOverrideKey='__single-item-pallet__';
     }
-    let rows='',anyDiff=false;
+    let rows='',anyDiff=emptyVsOther>0;
     const itemLevelNotesSeen=new Set(); // unique item-level notes, rolled up into the summary too
     items.forEach(it=>{
       const qv=palletQtyVal(it.qty);
       const itKey=singlePalletOverrideKey||(keyFn?keyFn(it):(it.gtin?normalizeGtin(it.gtin):null));
       let mappingPill;
-      if(!it.gtin&&!it.art){
-        mappingPill='<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
+      if(it.__placeholder){
+        mappingPill=emptyVsOther
+          ?pillDiff()+`<span class="dim" style="margin-left:6px;font-size:11px;">no items here; ${emptyVsOther} on the other side</span>`
+          :'<span class="pill warn" title="No item lines were found for this pallet.">No items</span>';
       }else if(gtinMatch){
         const ok=gtinMatch.get(itKey);
         if(!ok)anyDiff=true;
@@ -2728,8 +2737,12 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
           // Show the actual compared quantities alongside the pill, the same
           // way the Line comparison table does — a bare "Difference" pill on
           // its own doesn't say what differs.
+          // Both numbers are this item's total on this SSCC (all its lines),
+          // this side → other side. The per-line quantity used to stand on
+          // the left, so "Match (1 → 2)" put a line next to a total.
           const otherQ=otherTotals&&otherTotals.has(itKey)?otherTotals.get(itKey).qty:undefined;
-          const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;">(${esc(qv??'—')} → ${esc(otherQ??'—')})</span>`;
+          const thisQ=thisTotals&&thisTotals.has(itKey)?thisTotals.get(itKey).qty:qv;
+          const qtyTxt=`<span class="dim" style="margin-left:6px;font-size:11px;" title="Total for this item on this SSCC: this side → other side">(${esc(thisQ??'—')} → ${esc(otherQ??'—')})</span>`;
           mappingPill=(ok?pillMatch():pillDiff())+qtyTxt;
         }
       }else if(!p.sscc){
@@ -2749,7 +2762,11 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // every single row (this check almost never fires) says as little as
       // showing nothing, just with more noise.
       const checkPill=rowNotes.length?`<span class="pill warn">! ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
-      const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
+      // A real line without an EAN (blank, or all zeros) is labelled as such
+      // — it used to be indistinguishable from an empty pallet ("No items").
+      const zeroed=it.__line&&it.__line.gtinZeroed;
+      const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`
+        :(it.__placeholder?'—':`<span class="dim">${zeroed?'EAN zeroed':'EAN missing'}${it.art?' · '+esc(it.art):''}</span>`);
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
     });
     const allNotes=[...palletLevelNotes,...itemLevelNotesSeen];
@@ -2770,7 +2787,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
         <span class="mono">CPS ${esc(p.cps||'?')}</span>
         <span class="dim">Pallet EAN ${esc(p.palletGtin||'—')}</span>
         <span class="mono">SSCC ${ssccTxt}</span>
-        <span class="dim">${items.length} item${items.length===1?'':'s'}</span>
+        <span class="dim">${hasItems?p.items.length:0} item${hasItems&&p.items.length===1?'':'s'}</span>
         ${hierarchyNote}
         ${summaryBadge}
       </summary>
