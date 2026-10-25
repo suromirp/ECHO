@@ -513,3 +513,54 @@ test('a changed ORDRSP delivery date (DTM+67) is a Transformation difference; Qu
   await expect(table).toContainText('29-01-2026');
   await expect(table).toContainText('6.50');
 });
+
+// Only the supplier message has no order number (RFF+ON) anywhere, bol's
+// output has one. The only signal used to be per-item "supplier [—] vs bol
+// [PO]" Transformation differences, which went to Copy for Transus as if
+// the transformation had lost something. It's the supplier's own Message
+// check now (the same one Quick check runs), naming bol's order number;
+// no order-number difference, and the line rows are not Differences.
+test('an order number only in bol\'s output is the supplier\'s Message check, not a difference for Transus', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'order-only-on-bol.sup.edi'), path.join(FIX, 'order-only-on-bol.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const msg = buckets.message.filter(t => /No order number \(RFF\+ON\)/.test(t));
+  expect(msg).toHaveLength(1);
+  expect(msg[0]).toContain('Supplier —');
+  expect(msg[0]).toContain('PO8301');
+  expect(buckets.diff.some(t => /order number/i.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).not.toContain('PO8301');
+  expect(transus).not.toMatch(/order number/i);
+  // The line table still shows "— → PO8301", but not as a Difference.
+  await expect(page.locator('#lineTable')).toContainText('PO8301');
+  await expect(page.locator('#lineTable tr.row-diff')).toHaveCount(0);
+
+  // Quick check on the supplier file: the same check.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'order-only-on-bol.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('No order number (RFF+ON) in the header or on any line');
+});
+
+// The reverse: the supplier states an order number, bol's output has none.
+// A real transformation question, so it stays a difference — one grouped
+// finding, not one per item — next to bol's own Message check.
+test('an order number missing from bol\'s output is one grouped difference plus bol\'s Message check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'order-lost-in-bol.sup.edi'), path.join(FIX, 'order-lost-in-bol.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const diff = buckets.diff.filter(t => /No order number in bol's output/.test(t));
+  expect(diff).toHaveLength(1);
+  expect(diff[0]).toContain('3 items');
+  expect(diff[0]).toContain('PO8302');
+  expect(buckets.diff.some(t => /order numbers differ/.test(t))).toBe(false);
+  const msg = buckets.message.filter(t => /No order number \(RFF\+ON\)/.test(t));
+  expect(msg).toHaveLength(1);
+  expect(msg[0]).toContain('Bol —');
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).toContain("No order number in bol's output");
+  await expect(page.locator('#lineTable tr.row-diff')).toHaveCount(3);
+});

@@ -317,6 +317,22 @@ actual test fixtures, don't just keep this list as prose:
 - **ORDERS**: readable in Quick check; still declined in Compare.
 - **ORDERS**: Quick check runs the line-level checks too (GS1 check digit,
   all-zeros EAN, duplicate `DTM` qualifier), not only for ORDRSP/DESADV.
+- **ORDERS**: Quick check's Lines table shows the requested delivery date
+  (line `DTM+2`, else the header `DTM+2`, dimmed) and the price: net
+  (`PRI+AAA`) and gross (`PRI+AAB`) each in its own labelled column. The
+  overview fields show the header's requested delivery date, or the line
+  date "on every line" when only the lines carry one.
+- **ORDRSP/DESADV**: when only one side has no order number (`RFF+ON`)
+  anywhere, that side gets the same Message check Quick check runs. Only
+  the supplier lacking it (bol's output has one) is never a difference and
+  never reaches Copy for Transus; the line rows aren't Differences. bol's
+  output lacking it is one grouped Transformation difference ("No order
+  number in bol's output"), not one per item.
+- **DESADV**: a side with no SSCC anywhere gets one finding that lists its
+  SSCC-less pallet groups (no separate per-pallet "No SSCC found"), per side
+  in Compare and in Quick check. SSCCs only in bol's output while the
+  supplier message has none are named in the supplier's Message check, not
+  a Transformation difference; the reverse stays a difference.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

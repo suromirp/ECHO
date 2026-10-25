@@ -132,6 +132,10 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | qty × price checked per line and per side (no summed prices for an EAN on two lines), once when passed on unchanged; `PRI+INV` as net-price fallback | `invoic/arith-per-line.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ORDERS | Quick check runs the GS1 check-digit, all-zeros EAN and duplicate-DTM checks | `orders/line-checks.edi` | `specs/orders.spec.js` |
+| ORDERS | Quick check shows the requested delivery date per line (line `DTM+2`, else the header's, dimmed), net price (`PRI+AAA`) and gross price (`PRI+AAB`) in labelled columns, and the requested delivery date in the overview fields | `orders/price-and-date.edi`, `orders/line-date-only.edi` | `specs/orders.spec.js` |
+| ORDRSP/DESADV | an order number only in bol's output is the supplier's Message check (naming bol's number), not a per-item difference for Transus; Quick check runs the same check | `ordrsp/order-only-on-bol.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| ORDRSP/DESADV | an order number missing from bol's output is one grouped Transformation difference plus bol's own Message check | `ordrsp/order-lost-in-bol.{sup,bol}.edi` | `specs/ordrsp.spec.js` |
+| DESADV | SSCCs only in bol's output (supplier has none) are the supplier's Message check, not a difference for Transus; a side without any SSCC gets one finding listing its pallet groups (Compare per side and Quick check), no separate "No SSCC found" | `desadv/sscc-only-on-bol.{sup,bol}.edi`, `desadv/csv-dialect.*`, `desadv/many-pallets-missing-sscc.edi` | `specs/desadv.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |
 
 ## Adding a new regression fixture

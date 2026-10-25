@@ -9,6 +9,18 @@ complaint about a malformed test order is a real, recurring use case).
 Quick check runs the line-level checks on it (GS1 check digit, all-zeros
 EAN, duplicate `DTM` qualifier) just like ORDRSP/DESADV.
 
+ORDERS' Lines table also shows the price and the requested delivery date.
+Real Supplier Bravo ORDERS (one order, two copies): bol's own ORDERS carries
+`PRI+AAA` and `DTM+2` on every line and no `DTM+2` in the header; the
+supplier-side copy carries only a header `DTM+2` and no price at all.
+So the date column reads the line `DTM+2` first and falls back to the
+header's (shown dimmed); the overview's "Requested delivery" field shows
+the header date, or the line date "on every line" when only the lines
+state one. The price is `PRI+AAA` (net); a line with only `PRI+AAB` (gross)
+shows it in a separate "Gross price" column, never as the net price. The
+parser keeps `PRI+AAB` as `grossPrice` on every LIN group, but Compare
+only ever compares the net price.
+
 ## bol's own UBL XML (`nl-inv:Invoice` namespace)
 
 Always the "bol output" side for INVOIC. Confirmed traps:
@@ -862,8 +874,29 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   are grouped the same way now. In Compare, when neither message has any
   SSCC, one fact still gave three findings (real Supplier Golf DESADV: "Neither
   message contains an SSCC" plus a "No SSCC found" per side). It's one
-  finding now, listing each side's SSCC-less pallet groups as tags; Quick
-  check keeps its single grouped "No SSCC found".
+  finding now, listing each side's SSCC-less pallet groups as tags. Quick
+  check still showed two for the same fact ("doesn't contain an SSCC
+  anywhere" plus "No SSCC found on 9 pallet groups", real Supplier Golf files). A
+  message without any SSCC now gets one finding, `checkNoSsccAnywhere`,
+  listing its SSCC-less pallet groups, in Quick check and per side in
+  Compare when only that side lacks SSCCs (see "One side without any order
+  number or SSCC" below).
+- **One side without any order number or SSCC** (parity gap): when exactly
+  one side had no `RFF+ON` anywhere, or no SSCC anywhere, Compare's only
+  signal was cross-side — "order numbers differ: supplier [—] vs bol [X]"
+  per item, or "N SSCCs only in the bol output" — while Quick check on the
+  same file said it plainly. The side that lacks it now gets the same
+  Message check as Quick check (`checkNoOrderAnywhere`,
+  `checkNoSsccAnywhere`). Which way round matters (rule 3): a supplier
+  message without an order number or SSCC, where bol's output has one,
+  isn't a value the transformation lost, so it's named in the supplier's
+  Message check and never reaches Copy for Transus (the Line comparison
+  still shows "— → X", but not as a Difference). The supplier stating one
+  and bol's output having none is still a Transformation difference; for
+  order numbers that's one grouped "No order number in bol's output"
+  finding instead of one per item, next to bol's own Message check. The
+  synthetic fixtures model the pattern; no real pair with only the
+  supplier lacking `RFF+ON` has been seen yet.
 - **Packing reference from `RFF+DQ`/`RFF+AAS` only**: the Header fields
   table read the packing reference from `RFF+BM` alone and showed "—" for
   a supplier that only sends a despatch note reference. It falls back to
