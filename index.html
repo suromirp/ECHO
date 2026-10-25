@@ -399,7 +399,8 @@
         <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched.</span></div>
         <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side.</span></div>
         <div><span class="pill ok">OK</span><span>No structural issue found in this message.</span></div>
-        <div><span class="fi" style="color:var(--warn)">⚠</span><span>Worth a closer look — not necessarily an error.</span></div>
+        <div><span class="fi" style="color:var(--err)">⚠</span><span>Check this first.</span></div>
+        <div><span class="fi" style="color:var(--warn)">!</span><span>Worth a closer look — not necessarily an error.</span></div>
         <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
         <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
@@ -2022,7 +2023,7 @@ function leadingJunkBannerHtml(x,who){
   if(!x||!x.leadingJunk)return '';
   const s=x.leadingJunk,shown=s.length>80?s.slice(0,80)+'…':s;
   return `<div class="note-inline" style="color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-    ⚠ <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
+    ! <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
   </div>`;
 }
 /* Every "read, but with a caveat" banner for one XML file, in one place. */
@@ -2231,13 +2232,15 @@ function checkPalletStructure(facts,label,add,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
     return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
   }).join('');
-  const bodyFor=list=>{
-    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${tagsFor(list)}</ul>`;
-    return list.length>20?`<details><summary>Show ${list.length} affected pallets</summary>${tagList}</details>`:tagList;
+  // Shared tag-list shape: collapses past ~20 tags (docs/ui-conventions.md).
+  const tagListHtml=(lis,n,what)=>{
+    const tagList=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    return n>20?`<details><summary>Show ${n} affected ${what}</summary>${tagList}</details>`:tagList;
   };
+  const bodyFor=list=>tagListHtml(tagsFor(list),list.length,'pallets');
   if(flatNoSscc.length){
     const n=flatNoSscc.length;
-    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS) — ${n===1?'this':'each of these'} contains item lines, but no GIN+BJ SSCC was found. ${bodyFor(flatNoSscc)}`,'message');
+    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS). ${bodyFor(flatNoSscc)}`+moreInfo(`${n===1?'This CPS group contains':'Each of these CPS groups contains'} item lines, but no GIN+BJ SSCC was found, so the pallet can't be matched by SSCC.`),'message');
   }
   // A CPS group can wrap other CPS groups instead of carrying items
   // directly (a genuine pallet, with its actual contents nested one level
@@ -2272,39 +2275,52 @@ function checkPalletStructure(facts,label,add,jumpCall){
     const n=wrapperNoSscc.length;
     add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'}. ${bodyFor(wrapperNoSscc)}`+moreInfo(`${n===1?'This pallet wraps':'Each of these pallets wraps'} nested package(s) that carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, so this pallet has no usable SSCC. Worth confirming with whoever generates this feed that the pallet's GIN+BJ isn't being dropped.`),'message');
   }
+  // A pallet EAN (GIN+SRV) reused as an item EAN on the same pallet, and
+  // items outside every CPS group: one grouped finding each, with the
+  // affected items as tags, never one finding per item/line.
+  const repeated=[];
   facts.pallets.forEach(p=>{
-    if(p.palletGtin){
-      p.items.forEach(it=>{
-        if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin)){
-          const qv=palletQtyVal(it.qty);
-          add('warn',`${label} — pallet CPS ${esc(p.cps||'?')}: <strong>Pallet EAN repeated as item</strong>. Pallet EAN <code>${esc(p.palletGtin)}</code> also appears as a LIN item EAN${qv!==undefined?` with quantity ${esc(qv)}`:''}.`,'message');
-        }
-      });
-    }
+    if(!p.palletGtin)return;
+    p.items.forEach(it=>{
+      if(it.gtin&&normalizeGtin(it.gtin)===normalizeGtin(p.palletGtin))repeated.push({p,it,qv:palletQtyVal(it.qty)});
+    });
   });
-  // items that never ended up under any CPS group at all, in a message that otherwise uses pallet structure
-  facts.lines.forEach(l=>{
-    if(!l.__cpsRef){
-      add('warn',`${label} — item <code>${esc(l.art||l.gtin||l.lineNo||'?')}</code>: <strong>Item not linked to a pallet</strong>. Item EAN ${esc(l.gtin||'?')} could not be associated with a pallet containing an SSCC.`,'message');
-    }
-  });
+  if(repeated.length){
+    const n=repeated.length;
+    const lis=repeated.map(({p,it,qv})=>{
+      const jump=jumpCall?` onclick="${jumpCall(it.gtin)}"`:'';
+      return `<li><span class="clickable-val"${jump}>CPS ${esc(p.cps||'?')} · ${esc(it.gtin)}${qv!==undefined?` (qty ${esc(qv)})`:''}</span></li>`;
+    }).join('');
+    add('warn',`${label} — <strong>Pallet EAN repeated as item</strong> on ${n} line${n===1?'':'s'}. ${tagListHtml(lis,n,'lines')}`+moreInfo(`The pallet-level EAN (GIN+SRV) of ${n===1?'this pallet':'these pallets'} also appears as a LIN item EAN on the same pallet. A pallet EAN identifies the pallet itself, an item EAN the product on it.`),'message');
+  }
+  // Items that never ended up under any CPS group at all, in a message that
+  // otherwise uses pallet structure.
+  const unlinked=facts.lines.filter(l=>!l.__cpsRef);
+  if(unlinked.length){
+    const n=unlinked.length;
+    const lis=unlinked.map(l=>{
+      const v=l.gtin||l.art||l.lineNo||'';
+      const jump=jumpCall&&v?` onclick="${jumpCall(v)}"`:'';
+      return `<li><span class="clickable-val"${jump}>${esc(l.art||l.gtin||l.lineNo||'?')}</span></li>`;
+    }).join('');
+    add('warn',`${label} — <strong>Item not linked to a pallet</strong> on ${n} line${n===1?'':'s'}. ${tagListHtml(lis,n,'lines')}`+moreInfo(`${n===1?'This item line sits':'These item lines sit'} outside every CPS group in the message, so ${n===1?'it isn\'t':'they aren\'t'} part of any pallet.`),'message');
+  }
   // A parent CPS (e.g. the whole shipment) sometimes states its own total
   // weight (MEA+PD+AAD) alongside the individual weights of its child
   // pallets. These are the SAME message's own numbers, so they should
   // roughly reconcile — a modest gap is expected (packaging weight isn't
   // always included the same way at every level), but a large one is
   // worth a look, entirely independent of any bol comparison.
-  const byParent=new Map();
-  facts.pallets.forEach(p=>{if(p.parentCps){if(!byParent.has(p.parentCps))byParent.set(p.parentCps,[]);byParent.get(p.parentCps).push(p);}});
   facts.pallets.forEach(p=>{
     if(!p.weight||p.parentCps)return; // only a true parent (no parentCps of its own) with a stated weight
-    const children=(byParent.get(p.cps)||[]).filter(c=>c.weight&&c.weight.unit===p.weight.unit);
+    const children=(byParentCps.get(p.cps)||[]).filter(c=>c.weight&&c.weight.unit===p.weight.unit);
     if(children.length<2)return; // a single child alone isn't a meaningful sum to check
     const childSum=Math.round(children.reduce((s,c)=>s+c.weight.value,0)*1000)/1000;
     const diff=Math.round((childSum-p.weight.value)*1000)/1000;
     const relDiff=p.weight.value?Math.abs(diff)/p.weight.value:0;
     if(Math.abs(diff)<0.5||relDiff<0.15)return; // small/normal packaging-weight gap
-    add('warn',`${label}: the shipment's stated total weight (${esc(p.weight.value)} ${esc(p.weight.unit)}, CPS ${esc(p.cps)}) doesn't match the sum of its ${children.length} pallet weights (${esc(childSum)} ${esc(p.weight.unit)}) — a difference of ${esc(Math.abs(diff).toFixed(3))} ${esc(p.weight.unit)}.`,'message');
+    const u=esc(p.weight.unit);
+    add('warn',`${label} — <strong>Shipment weight doesn't match the sum of its pallet weights</strong>: ${esc(p.weight.value)} ${u} vs ${esc(childSum)} ${u}`+moreInfo(`The total weight stated on CPS ${esc(p.cps)} differs from the sum of its ${children.length} pallet weights by ${esc(Math.abs(diff).toFixed(3))} ${u}. A small gap is normal (packaging weight isn't always counted at every level); this one is over 15%. Both numbers come from this message itself.`),'message');
   });
 }
 
@@ -2724,7 +2740,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
         }
       }else if(!p.sscc){
         // Pallet-level fact (this pallet has no SSCC at all) — already shown
-        // once on the pallet's own summary badge ("⚠ Missing SSCC"), so
+        // once on the pallet's own summary badge ("! Missing SSCC"), so
         // repeating the same warning on every single item row would just be
         // noise on a large pallet. A plain dash still makes clear there's
         // nothing to compare, without shouting it hundreds of times.
@@ -2738,7 +2754,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
       // Only speak up when there's something to flag — repeating "OK" on
       // every single row (this check almost never fires) says as little as
       // showing nothing, just with more noise.
-      const checkPill=rowNotes.length?`<span class="pill warn">⚠ ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
+      const checkPill=rowNotes.length?`<span class="pill warn">! ${esc(rowNotes.join(' · '))}</span>`:'<span class="dim" title="Nothing to flag: this item\'s EAN doesn\'t repeat the pallet\'s own EAN.">—</span>';
       const eanCell=it.gtin?`<span class="clickable-val" onclick="${jumpCall(it.gtin)}">${esc(it.gtin)}</span>${summaLink(it.gtin)}`:'—';
       rows+=`<tr><td class="mono">${eanCell}</td><td class="num">${esc(qv??'—')}</td>${singleMode?'':`<td>${mappingPill}</td>`}<td>${checkPill}</td></tr>`;
     });
@@ -2746,7 +2762,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     const ssccTxt=p.sscc?`<span class="clickable-val" onclick="${jumpCall(p.sscc)}">${esc(p.sscc)}</span>`:'<span style="color:var(--warn)">— missing</span>';
     let summaryBadge,status;
     if(!singleMode&&anyDiff){summaryBadge=pillDiff();status='diff';}
-    else if(allNotes.length){summaryBadge=`<span class="pill warn">⚠ ${esc(allNotes.join(' · '))}</span>`;status='warn';}
+    else if(allNotes.length){summaryBadge=`<span class="pill warn">! ${esc(allNotes.join(' · '))}</span>`;status='warn';}
     else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
     statuses.push(status);
     const nestedUnder=palletIsNested(p,byCps)?byCps.get(p.parentCps):null;
@@ -6239,7 +6255,7 @@ async function handleZip(file){
       const banner=document.createElement('div');
       banner.className='note-inline';
       banner.style.cssText='color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;';
-      banner.innerHTML=`⚠ <strong>Switched here automatically.</strong> The ZIP you dropped only contained one message ("${esc(name)}"), not a supplier/bol pair — so there was nothing to compare. Shown here in Quick check instead.`;
+      banner.innerHTML=`! <strong>Switched here automatically.</strong> The ZIP you dropped only contained one message ("${esc(name)}"), not a supplier/bol pair — so there was nothing to compare. Shown here in Quick check instead.`;
       const ov=document.getElementById('quickOverview');
       ov.insertBefore(banner,ov.firstChild);
       quickSetStatus('');

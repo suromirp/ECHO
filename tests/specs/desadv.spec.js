@@ -952,3 +952,38 @@ test('a message with only RFF+BM is not flagged as having no packing reference',
   expect(visible).not.toContain('Check with the supplier');
   await expect(near.locator('details.f-more')).toContainText('Check with the supplier');
 });
+
+// checkPalletStructure emitted one "Pallet EAN repeated as item" finding per
+// item and one "Item not linked to a pallet" finding per line. Both are now
+// one grouped finding with tags; the weight-sum and "No SSCC" findings got
+// a short headline + More info. Warn-level pills use "!", not "⚠".
+test('pallet structure findings are grouped with tags, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'pallet-structure-grouping.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const repeated = buckets.message.filter(t => /Supplier — Pallet EAN repeated as item/.test(t));
+  expect(repeated).toHaveLength(1);
+  expect(repeated[0]).toContain('on 2 lines');
+  expect(repeated[0]).toContain('CPS 2 · 8712345000134 (qty 1)');
+  expect(repeated[0]).toContain('CPS 3 · 8712345000158 (qty 1)');
+  const unlinked = buckets.message.filter(t => /Supplier — Item not linked to a pallet/.test(t));
+  expect(unlinked).toHaveLength(1);
+  expect(unlinked[0]).toContain('on 2 lines');
+  expect(unlinked[0]).toContain('8712345000011');
+  expect(unlinked[0]).toContain('8712345000028');
+  const weight = page.locator('#findings li', { hasText: /Supplier — Shipment weight doesn't match the sum of its pallet weights/ });
+  await expect(weight).toContainText('100 KGM vs 80 KGM');
+  await expect(weight.locator('details.f-more')).toContainText('CPS 1');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const ov = page.locator('#quickOverview');
+  expect(await ov.locator('li', { hasText: 'Pallet EAN repeated as item' }).count()).toBe(1);
+  expect(await ov.locator('li', { hasText: 'Item not linked to a pallet' }).count()).toBe(1);
+  const html = await ov.innerHTML();
+  expect(html).toContain('! Repeated pallet EAN');
+  expect(html).not.toContain('⚠ Repeated pallet EAN');
+});

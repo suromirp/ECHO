@@ -730,7 +730,9 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   `wc-affected` tag-list style) — and past ~20 tags, wrapped in a collapsed
   `<details>` per the same doc's "large lists collapse past roughly 20
   items" rule, so the finding list stays scannable regardless of pallet
-  count.
+  count. The same function's "Pallet EAN repeated as item" and "Item not
+  linked to a pallet" checks still emitted one finding per item/line; both
+  are grouped the same way now.
 - **A `CPS` group nested under a pallet `CPS` (`CPS+<own>+<parent>'`) can
   legitimately carry its own SSCC** — a real, confirmed two-level GS1
   packing hierarchy (e.g. cartons each with their own SSCC, packed onto
