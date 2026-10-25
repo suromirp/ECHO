@@ -2,6 +2,11 @@
 
 - Icons: **⚠** errors, **!** warnings, **ⓘ** info, **✓** ok. Never ✕ or a
   bare "i".
+- Quick check shows its single-message checks as one **Findings** list for
+  every message type, and the ECHO signal reacts to the worst level in it.
+  INVOIC's list is split into Message checks / Good to know like Compare
+  (`quickFindingsHtml`); it used to be loose notes with ⚠ on warnings and a
+  signal that always said "all good".
 - Terminology: **"EAN"** in all visible text (internal variable/field
   names stay `gtin`); **"Packing reference"**, not "Despatch note";
   **"Distinct items"**, not "Items" — a bare "Items" count reads as a
