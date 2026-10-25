@@ -3740,8 +3740,10 @@ function parseInvoicBolXml(raw){
     inv.date=normDate(valOf(root,['IssueDate']));
     const tc=valOf(root,['InvoiceTypeCode']);
     inv.extras.invoiceTypeCode=tc;
-    /* UBL: 1/380 = factuur, 381/83 = creditnota */
-    inv.docType=(tc==='381'||tc==='83'||/credit/i.test(tc||''))?'credit':'invoice';
+    /* bol's own UBL uses 1 = invoice, 2 = credit note (confirmed on real
+       bol invoices and credit notes; a supplier BGM+381 credit came out as
+       2, with positive amounts). 381/83 kept for standard UBL code lists. */
+    inv.docType=(tc==='2'||tc==='381'||tc==='83'||/credit/i.test(tc||''))?'credit':'invoice';
     inv.currency=valOf(root,['DocumentCurrencyCode']);
     const partyMap=[['AccountingSupplierParty','SU'],['AccountingCustomerParty','BY'],
                     ['AccountingDeliveryParty','DP'],['PayeeParty','PE'],['BuyerCustomerParty','BY']];
@@ -4288,15 +4290,16 @@ function compareInvoice(sup,bol){
   const findings=[];
   const add=(level,text,cat)=>findings.push({level,text,cat:cat||'diff'});
   const cur=bol.currency||sup.currency||'';
-  /* Credit notes are a separate process: suppliers commonly send them with
-     positive quantities/amounts (EDIFACT's BGM function code — 381/384 — is
-     the authoritative signal), while bol's InvoiceTypeCode doesn't reliably
-     flag credit notes (it looks like a fixed value regardless of document
-     type) and instead represents the same credit using negative values.
-     Same real-world fact, different sign convention. Bol's negative-total
-     signal is only trusted when the supplier's own BGM already says this is
-     a credit note — otherwise a normal invoice that merely contains one
-     negative line (a return/adjustment) would be misread as a credit note. */
+  /* Credit notes are a separate process. The supplier's EDIFACT BGM code
+     (381/384) and bol's UBL InvoiceTypeCode (2 = credit note, 1 = invoice)
+     each say which document this is. The sign of the amounts doesn't: real
+     bol credit notes came with negative amounts (Supplier Juliett) and with positive
+     ones (Supplier India), and suppliers usually send positive ones. Same
+     real-world fact, different sign convention, so amounts are compared by
+     magnitude. Bol's negative-total signal is kept only as a fallback, and
+     only when the supplier's own BGM already says credit note — otherwise
+     a normal invoice with one negative line (a return/adjustment) would be
+     misread as a credit note. */
   const bolLooksNegative=(bol.totals.payable!==null&&bol.totals.payable<0)||(bol.totals.lineTotal!==null&&bol.totals.lineTotal<0);
   const bolEffectiveDocType=(sup.docType==='credit'&&bol.docType!=='credit'&&bolLooksNegative)?'credit':bol.docType;
   const isCredit=sup.docType==='credit'&&bolEffectiveDocType==='credit';

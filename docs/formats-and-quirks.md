@@ -789,11 +789,25 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   occasional detail lookup. Now a row per party (`Supplier (VAT)`,
   `Buyer (VAT)`, etc.), shown only when at least one side has one,
   clickable like the GLN rows already were.
-- **Credit notes**: EDIFACT's own BGM function code (381/384) is
-  authoritative for detecting a credit note — bol's `InvoiceTypeCode`
-  isn't reliable (looks constant regardless of document type). Bol's own
-  negative-totals signal is only trusted as *confirmation* once the
-  supplier's BGM has already said "credit note," never as the sole
-  trigger — otherwise a normal invoice with one negative/return line would
-  be misread as a credit note. Quantities/amounts are then compared by
-  absolute value, since sign convention differs between supplier and bol.
+- **Credit notes**: the supplier's EDIFACT BGM function code (381/384)
+  and bol's UBL `InvoiceTypeCode` both say which document it is. bol uses
+  **`1` = invoice, `2` = credit note**, checked on three real bol UBL files:
+  a Supplier Alfa invoice (`1`), a Supplier Juliett credit note (`2`, supplier `BGM+381`) and
+  a Supplier India credit note (`2`, supplier `BGM+381`). An earlier note here
+  said bol's `InvoiceTypeCode` "looks constant regardless of document type";
+  that was wrong. ECHO only knew the standard UBL codes `381`/`83`, so the
+  Supplier India credit read as an invoice and Compare showed "Document type
+  differs — Credit note vs Invoice". `parseInvoicBolXml` now reads `2` as a
+  credit note too (`381`/`83` kept).
+- **The sign of the amounts doesn't say whether it's a credit note.** The
+  Supplier Juliett credit note had negative quantities and amounts in bol's UBL; the
+  Supplier India one had positive amounts, the same as the supplier sent.
+  Suppliers usually send credits as positive amounts with `BGM+381`. So
+  once both sides say credit note, quantities and amounts are compared by
+  absolute value, and positive amounts on a credit note are not a
+  difference in themselves. Whether positive amounts on a credit note are
+  worth a finding of their own is an open question, deliberately not
+  flagged. Bol's negative-totals signal is still used as a fallback for
+  the document type, but only once the supplier's BGM has already said
+  "credit note," never as the sole trigger — otherwise a normal invoice
+  with one negative/return line would be misread as a credit note.

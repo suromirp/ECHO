@@ -411,3 +411,37 @@ test('an <?xml-stylesheet?> instruction is not mistaken for a second concatenate
   expect(resultsText).not.toContain('concatenated XML documents');
   expect(resultsText).toContain('Loud and clear');
 });
+
+// bol's UBL marks a credit note with InvoiceTypeCode 2 (1 = invoice),
+// confirmed on real bol invoices and credit notes. ECHO only knew 381/83, so
+// a supplier BGM+381 credit note whose bol UBL carried positive amounts read
+// as "Document type differs — Credit note vs Invoice". Positive amounts on
+// both sides are compared by magnitude, so they aren't a difference either.
+test('bol InvoiceTypeCode 2 is read as a credit note; positive amounts on both sides are no difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'credit-type-code-2.sup.edi'),
+    path.join(FIX, 'credit-type-code-2.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const docRow = page.locator('#invoiceResults tr', { hasText: 'Document type' }).first();
+  await expect(docRow).toContainText('Credit note');
+  await expect(docRow).not.toContainText('Invoice');
+  await expect(docRow.locator('.pill')).toHaveText('Match');
+
+  const buckets = await invoiceFindingsByCategory(page);
+  expect(buckets.diff.some(t => /Document type/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /differs/.test(t))).toBe(false);
+  expect(buckets.message).toHaveLength(0);
+  expect([...buckets.diff, ...buckets.info].some(t => /This is a credit note/.test(t))).toBe(true);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'credit-type-code-2.bol.ubl.xml'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('CREDIT NOTE');
+
+  // InvoiceTypeCode 1 stays an invoice.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'ubl-line-total-zero.bol.ubl.xml'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+});
