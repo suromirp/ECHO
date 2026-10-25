@@ -4909,10 +4909,14 @@ function factsOverviewHtml(facts){
     checkNoPriceAnywhere(facts,'This message',qcAdd);
     checkSplitItemPriceGap(facts,'This message',qcAdd);
   }
-  if(type==='ORDRSP'||type==='DESADV')checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
-  if(type==='ORDRSP'||type==='DESADV')checkZeroGtin(facts,'This message',qcAdd,jumpCall);
+  // Checks on the message's own LIN groups apply to ORDERS too: Quick check
+  // is the only mode that reads it, and a supplier complaint about a
+  // malformed test order is a real use case.
+  const lineChecks=type==='ORDRSP'||type==='DESADV'||type==='ORDERS';
+  if(lineChecks)checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
+  if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
-  if(type==='ORDRSP'||type==='DESADV'){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
+  if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   let h='';
   h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
   if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;

@@ -6,6 +6,8 @@ EDIFACT — ORDRSP, DESADV, INVOIC, and ORDERS (Quick check only; an
 outbound bol→supplier purchase order has nothing to compare against, so
 Compare still declines it — but Quick check reads it, since a supplier
 complaint about a malformed test order is a real, recurring use case).
+Quick check runs the line-level checks on it (GS1 check digit, all-zeros
+EAN, duplicate `DTM` qualifier) just like ORDRSP/DESADV.
 
 ## bol's own UBL XML (`nl-inv:Invoice` namespace)
 
