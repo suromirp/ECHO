@@ -3237,7 +3237,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalDescChars:[],extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalDescChars:[],blankLinCount:0,extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 /* First real EAN among a line's candidate identifiers. An all-zeros EAN is
@@ -3329,6 +3329,15 @@ function parseInvoicEdifact(raw){
   const endMsg=()=>{if(cur){cur.raw={segs:curSegs,delims};invoices.push(cur);}cur=null;curSegs=null;inMsg=false;};
 
   let curLine=null,curAlc=null,inSummary=false,curTaxPct=null;
+  // A completely blank "LIN'" (no line number, EAN, article, quantity or
+  // amount) carries no data: counted, not stored as a phantom line — the
+  // same treatment ORDRSP/DESADV give it (parity rule).
+  const pushLine=()=>{
+    if(!curLine)return;
+    const l=curLine;
+    const blank=!l.lineNo&&!l.gtin&&!l.gtinZeroed&&!l.art&&!l.desc&&l.qty===null&&l.lineAmount===null&&l.netPrice===null&&l.grossPrice===null&&!(l.charges&&l.charges.length);
+    if(blank)cur.blankLinCount++;else cur.lines.push(l);
+  };
 
   segs.forEach(seg=>{
     const el=splitEsc(seg,delims.elem,delims.rel);
@@ -3341,7 +3350,7 @@ function parseInvoicEdifact(raw){
     if(!inMsg)return;
     curSegs.push(seg);
     if(tag==='UNT'){
-      if(curLine)cur.lines.push(curLine);
+      pushLine();
       curLine=null;endMsg();return;
     }
     const comp=i=>splitEsc(el[i]||'',delims.comp,delims.rel);
@@ -3418,7 +3427,7 @@ function parseInvoicEdifact(raw){
         if(curLine)curLine.charges.push(curAlc);else cur.charges.push(curAlc);
         break;}
       case 'LIN':{
-        if(curLine)cur.lines.push(curLine);
+        pushLine();
         const g=comp(3)[0]||'';
         curLine={lineNo:el[1]||'',...invoiceGtin(g),art:null,desc:null,
           qty:null,netPrice:null,grossPrice:null,lineAmount:null,vatPct:null,
@@ -3549,13 +3558,13 @@ function parseInvoicEdifact(raw){
         }
         break;}
       case 'UNS':{
-        if(curLine){cur.lines.push(curLine);curLine=null;}
+        pushLine();curLine=null;
         curAlc=null;inSummary=true;
         break;}
       default:break;
     }
   });
-  if(cur){if(curLine)cur.lines.push(curLine);endMsg();}
+  if(cur){pushLine();endMsg();}
 
   invoices.forEach(inv=>{
     /* scope-aware order/pakbon: expliciete regelwaarde wint altijd; bij
@@ -4368,6 +4377,17 @@ function invoiceAsFacts(inv){
     orders:new Set(l.explicitOrders||[]),__inv:l}));
   return {orderRefsHeader:[...new Set([...(inv.headerOrders||[]),...(inv.orders||[])])],lines};
 }
+/* Same wording as the ORDRSP/DESADV blank-LIN finding. */
+function invoiceBlankLinText(n){
+  return `${n} blank LIN segment${n===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`);
+}
+/* Any order number at all, header or line (effective, i.e. after a single
+   header value is inherited by the lines). Exact Online and TRANSUSXML only
+   fill inv.orders. */
+function invoiceHasOrder(inv){
+  return (inv.orders||[]).length>0||inv.lines.some(l=>(l.effectiveOrders||l.orders||[]).length>0);
+}
+const INVOICE_NO_ORDER_INFO=moreInfo(`Neither the header (RFF+ON / OrderReference) nor any line carries an order number. Worth checking whether that's expected for this invoice.`);
 /* checkZeroGtin jumps to "LIN+<line>". That finds the line in an EDIFACT
    invoice; in an XML one it would land on any "1", so jump to the zeros. */
 function invoiceZeroJump(inv,base){
@@ -4437,6 +4457,18 @@ function compareInvoice(sup,bol){
   illegalDescCharFindings(bol.illegalDescChars).forEach(t=>add('warn',`Bol — ${t}`,'message'));
   {const fs=gs1CheckDigitFinding(gs1CheckDigitIssues(sup.lines.map(l=>l.gtin),[]));if(fs)add('warn','Supplier — '+fs,'message');
    const fb=gs1CheckDigitFinding(gs1CheckDigitIssues(bol.lines.map(l=>l.gtin),[]));if(fb)add('warn','Bol — '+fb,'message');}
+  // Blank LIN segments and no order number anywhere: single-message checks
+  // ORDRSP/DESADV already run (parity rule), per side here.
+  if(sup.blankLinCount)add('warn','Supplier — '+invoiceBlankLinText(sup.blankLinCount),'message');
+  if(bol.blankLinCount)add('warn','Bol — '+invoiceBlankLinText(bol.blankLinCount),'message');
+  {
+    const so=invoiceHasOrder(sup)||!sup.lines.length,bo=invoiceHasOrder(bol)||!bol.lines.length;
+    if(!so&&!bo)add('warn','<strong>Neither message has an order number</strong> anywhere.'+INVOICE_NO_ORDER_INFO,'message');
+    else{
+      if(!so)add('warn','Supplier — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
+      if(!bo)add('warn','Bol — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
+    }
+  }
   // All-zeros EAN and an order number missing its leading digit(s): the
   // same single-message checks ORDRSP/DESADV run (parity rule), per side,
   // reported once when bol's output carries the same as the supplier sent.
@@ -4670,9 +4702,11 @@ function compareInvoice(sup,bol){
       });
     }
   });
-  // one side's own message lacking an identifier: a Message check
-  if(gs.noKey.length)add('warn',`Supplier — ${gs.noKey.length} line(s) without an EAN or item number — these could not be matched.`,'message');
-  if(gb.noKey.length)add('warn',`Bol — ${gb.noKey.length} line(s) without an EAN or item number — these could not be matched.`,'message');
+  // one side's own message lacking an identifier: a Message check. An
+  // all-zeros EAN already has its own finding, so it isn't counted twice.
+  const noKeyN=g=>g.noKey.filter(l=>!l.gtinZeroed).length;
+  if(noKeyN(gs))add('warn',`Supplier — ${noKeyN(gs)} line(s) without an EAN or item number — these could not be matched.`,'message');
+  if(noKeyN(gb))add('warn',`Bol — ${noKeyN(gb)} line(s) without an EAN or item number — these could not be matched.`,'message');
 
   /* fields bol doesn't send at all: report informatively, not as an error */
   const naNotes=[];
@@ -4879,6 +4913,8 @@ function invoiceOverviewHtml(inv,opts={}){
     const note=(level,text)=>{h+=`<div class="note-inline" style="color:var(--warn)">${level==='err'?'⚠':'!'} ${text}</div>`;};
     checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
     checkOrderNearMiss(af,'',note,jumpCall);
+    if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
+    if(inv.lines.length&&!invoiceHasOrder(inv))note('warn','<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when

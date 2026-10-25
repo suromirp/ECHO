@@ -559,6 +559,13 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   "blank item line" complaints from suppliers receiving Transus-generated
   test orders. Not stored as a phantom line (would otherwise inflate the
   line count with empty rows) — counted separately and flagged plainly.
+  INVOIC's EDIFACT parser had no such guard: a blank `LIN'` became a
+  phantom invoice line (an extra unmatched row). It's now counted
+  (`blankLinCount`) and flagged with the same wording, per side in Compare
+  and in Quick check (parity rule). The same commit added INVOIC's "no order
+  number anywhere" check (header or any line, `invoiceHasOrder`; one
+  "Neither message…" finding when both sides lack it), and stopped counting
+  an all-zeros-EAN line again as "without an EAN or item number".
 - **Quantity/amount fields present but explicitly `0`** are a different,
   milder situation than the field being genuinely absent — e.g. action 5
   (fully accepted) with `QTY+12:0` reads as "worth being aware of, reads

@@ -232,6 +232,10 @@ actual test fixtures, don't just keep this list as prose:
   per-side Message checks; info notes (credit note, soft header rows, "not
   compared") sit under Good to know, not Transformation differences; a header
   field absent on both sides shows "Not applicable".
+- **INVOIC**: blank `LIN'` segments are counted and flagged, not read as
+  lines; no order number anywhere is flagged (once when neither side has
+  one); both in Compare and Quick check. An all-zeros-EAN line isn't also
+  counted as "without an EAN or item number".
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with
