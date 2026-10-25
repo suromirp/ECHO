@@ -460,6 +460,27 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   states what's observed and that this is a property of the message's own
   numbers, not something bol's transformation introduced or could fix —
   worth reporting to whoever generates the feed, not to Transus.
+- **The qty × net price check runs per line, per side, in one helper**
+  (`invoiceArithmeticEntries`/`invoiceArithmeticFindings`, shared by Quick
+  check and Compare). Compare used to run it on the supplier side only and
+  on per-EAN sums, so an EAN on two lines added its two unit prices together
+  and showed a gap that isn't there; the "Net price" cell summed prices the
+  same way (it now compares the set of distinct prices). The bol side was
+  never checked in Compare while Quick check on bol's file was. In Compare
+  the gaps are reported per side ("Supplier — ", "Bol — "), or once as
+  "Supplier (passed on unchanged to bol)" when bol's output carries exactly
+  the same gaps. A gap equal to the line's own charges minus allowances is
+  skipped (UBL `LineExtensionAmount` may include them).
+- **`PRI+INV` as net-price fallback**: a real Supplier India credit note sent
+  `PRI+AAB:16.709:::1:CS` and `PRI+INV:16.49`, no `PRI+AAA`, and bol's UBL
+  `PriceAmount` carried 16.49. Compare said "net price is only present in
+  the bol output" and was silent, while Quick check on bol's file flagged
+  100 × 16.49 ≠ 1670.90. `PRI+INV` now stands in for a missing `PRI+AAA`,
+  so the prices compare as a match and the gap shows once, as passed on
+  unchanged. The line amount there is quantity × gross price (100 × 16.709),
+  which the finding's "More info" now says when it holds. Whether
+  that line is worth the supplier's attention is for the reader to judge;
+  the finding only states the numbers.
 - **Line-level allowances (discounts) are deliberately dropped by bol's
   invoice process** — confirmed via a real Transus support ticket: bol's
   documented process (since 2015) only forwards article-level *charges*,

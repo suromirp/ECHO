@@ -224,6 +224,10 @@ actual test fixtures, don't just keep this list as prose:
 - **INVOIC**: an `MOA+203` right after a line-level `ALC` is read as the
   charge amount and doesn't overwrite the line amount (no false line-amount,
   charge, total or arithmetic findings).
+- **INVOIC**: qty × net price vs. line amount runs per line (an EAN on two
+  lines with different prices shows no gap and no summed price), per side in
+  Compare, reported once when bol carries the same gap; `PRI+INV` stands in
+  for a missing `PRI+AAA`. Same result in Quick check for either file.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

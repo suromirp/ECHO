@@ -3461,6 +3461,7 @@ function parseInvoicEdifact(raw){
         const c=comp(1);
         if(c[0]==='AAA')curLine.netPrice=num(c[1]);
         else if(c[0]==='AAB')curLine.grossPrice=num(c[1]);
+        else if(c[0]==='INV')curLine.invPrice=num(c[1]); // net-price fallback, resolved after parsing
         break;}
       case 'MOA':{
         const c=comp(1);
@@ -3560,6 +3561,12 @@ function parseInvoicEdifact(raw){
     /* scope-aware order/pakbon: expliciete regelwaarde wint altijd; bij
        ontbreken erft de regel de headerwaarde alleen als die eenduidig is */
     finalizeInvoiceRefs(inv);
+    // PRI+INV ("invoice price") stands in for a missing PRI+AAA. A real SC
+    // Supplier India credit note sent only PRI+AAB and PRI+INV:16.49, and bol's UBL
+    // PriceAmount carried 16.49: without this, Compare said "net price is
+    // only present in the bol output" while Quick check on bol's file
+    // already ran the qty × price check on that same 16.49.
+    inv.lines.forEach(l=>{if(l.netPrice===null&&l.invPrice!=null)l.netPrice=l.invPrice;});
     if(inv.totals.lineTotal===null){
       const s=inv.lines.reduce((a,l)=>a+(l.lineAmount||0),0);
       if(inv.lines.length)inv.totals.lineTotal=Math.round(s*100)/100;
@@ -4119,11 +4126,15 @@ function checkLineArithmetic(qty,netPrice,lineAmount){
   const roundingBound=Math.round((Math.abs(qty)*0.005+0.01)*100)/100;
   return {expected,diff,withinRounding:Math.abs(diff)<=roundingBound};
 }
-function lineArithmeticFindingText(label,qty,netPrice,r,cur){
+function lineArithmeticFindingText(label,qty,netPrice,r,cur,grossPrice){
   const explain=r.withinRounding
     ?"within what rounding the net price to 2 decimals could explain"
     :"larger than ordinary price rounding alone would explain — worth a second look";
-  return `Item <code>${esc(label)}</code>: <strong>line amount ${esc(fmtAmt(r.expected+r.diff,cur))}</strong>, quantity × net price gives ${esc(fmtAmt(r.expected,cur))} (difference ${esc(fmtAmt(Math.abs(r.diff),cur))})`+moreInfo(`${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}, while the stated line amount is ${esc(fmtAmt(r.expected+r.diff,cur))}. The difference is ${explain}.`);
+  // e.g. a real Supplier India line: amount = quantity × gross price (PRI+AAB),
+  // while the stated net/invoice price is lower. Saying so saves a lookup.
+  const grossHint=(grossPrice!=null&&!r.withinRounding&&!checkLineArithmetic(qty,grossPrice,r.expected+r.diff))
+    ?` Quantity × gross price (${esc(String(grossPrice))}) does give the stated line amount.`:'';
+  return `Item <code>${esc(label)}</code>: <strong>line amount ${esc(fmtAmt(r.expected+r.diff,cur))}</strong>, quantity × net price gives ${esc(fmtAmt(r.expected,cur))} (difference ${esc(fmtAmt(Math.abs(r.diff),cur))})`+moreInfo(`${esc(fmtQty(qty))} × ${esc(fmtAmt(netPrice,cur))} = ${esc(fmtAmt(r.expected,cur))}, while the stated line amount is ${esc(fmtAmt(r.expected+r.diff,cur))}. The difference is ${explain}.${grossHint}`);
 }
 /* When several/most flagged lines share almost exactly the same ratio
    between the stated line amount and quantity × net price, that isn't N
@@ -4169,6 +4180,43 @@ function uniformArithmeticGapText(g){
   const pctTxt=g.pct.toFixed(1)+'%';
   const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
   return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong>: one pattern, not ${n} separate gaps. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Looks like one uniform arrangement (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix. Worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance rather than folding it into the line amount.`);
+}
+/* qty × net price vs. line amount for every line of one invoice: the ONE
+   helper behind both Quick check and Compare (per side). Per line, never
+   per-EAN sums: an EAN on several lines would otherwise add its net prices
+   together and show a gap that isn't there. A gap that equals the line's
+   own charges minus allowances is the UBL convention of LineExtensionAmount
+   including them (docs/formats-and-quirks.md), not a gap. */
+function invoiceArithmeticEntries(inv,jumpFor){
+  const out=[];
+  inv.lines.forEach(l=>{
+    const ar=checkLineArithmetic(l.qty,l.netPrice,l.lineAmount);
+    if(!ar)return;
+    const adj=(l.charges||[]).reduce((s,c)=>c.amount==null?s:s+(c.kind==='charge'?c.amount:-c.amount),0);
+    if(adj&&Math.abs(Math.abs(ar.diff)-Math.abs(adj))<0.015)return;
+    const itemLabel=l.gtin||l.art||('line '+(l.lineNo||'?'));
+    out.push({ar,qty:l.qty,netPrice:l.netPrice,grossPrice:l.grossPrice,itemLabel,jump:jumpFor(l.gtin||l.art||itemLabel)});
+  });
+  return out;
+}
+/* Same message, same numbers: a signature to tell whether bol's output
+   carries exactly the supplier's gaps (compared by magnitude, since a
+   credit note may flip the sign). */
+function arithmeticSignature(entries){
+  return entries.map(e=>`${normalizeGtin(e.itemLabel)}|${Math.abs(e.ar.expected).toFixed(2)}|${Math.abs(e.ar.diff).toFixed(2)}`).sort().join(';');
+}
+/* Entries -> [{level,text}]: a uniform-percentage pattern grouped into one
+   finding, the rest individually, capped at 5 with a pointer to the table. */
+function invoiceArithmeticFindings(entries,cur,prefix,tableName){
+  const out=[];
+  const {grouped,rest}=groupUniformArithmeticGap(entries);
+  if(grouped)out.push({level:'warn',text:prefix+uniformArithmeticGapText(grouped)});
+  const ind=rest.map(e=>({level:e.ar.withinRounding?'info':'warn',
+    text:prefix+lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur,e.grossPrice)}));
+  const CAP=5;
+  out.push(...ind.slice(0,CAP));
+  if(ind.length>CAP)out.push({level:'info',text:`${prefix}<strong>${ind.length-CAP} more line(s) also show a quantity × price vs. line amount gap</strong> — see ${tableName} below for the full list.`});
+  return out;
 }
 /* Flattens an XML document into {tagPath: text} for its leaf elements, so
    two versions of "the same" document can be diffed field-by-field without
@@ -4493,7 +4541,6 @@ function compareInvoice(sup,bol){
   const firstOf=(arr,f)=>{for(const l of arr)if(l[f]!==null&&l[f]!==undefined&&l[f]!=='')return l[f];return null;};
 
   const rows=[];
-  const arithmeticFindings=[]; // qty×price vs. line amount — message-own arithmetic, not a mapping question
   keys.forEach(k=>{
     const S=gs.m.get(k)||null,B=gb.m.get(k)||null;
     const ref=(S&&S[0])||(B&&B[0]);
@@ -4514,8 +4561,23 @@ function compareInvoice(sup,bol){
       if(!ok)row.status='diff';
     };
     cmpField('Quantity','qty',v=>fmtQty(v),true);
-    cmpField('Net price','netPrice',v=>fmtAmt(v,cur));
-    cmpField('Gross price','grossPrice',v=>fmtAmt(v,cur));
+    // Prices are per unit: an EAN on several lines has one price per line,
+    // never a sum. Compared as the set of distinct prices (by magnitude on
+    // a credit note), shown as a list.
+    const cmpPrice=(label,f)=>{
+      const vals=arr=>[...new Set(arr.map(l=>l[f]).filter(v=>v!==null&&v!==undefined).map(v=>Math.round((isCredit?Math.abs(v):v)*100000)/100000))].sort((a,b)=>a-b);
+      const sv=vals(S),bv=vals(B);
+      const show=v=>v.length?v.map(x=>fmtAmt(x,cur)).join(', '):null;
+      if(!fieldState[f].bol||!fieldState[f].sup){
+        row.cells.push({label,sup:fieldState[f].sup?show(sv):null,bol:fieldState[f].bol?show(bv):null,status:'na'});
+        return;
+      }
+      const ok=sv.length===bv.length&&sv.every((x,i)=>amtEq(x,bv[i]));
+      row.cells.push({label,sup:show(sv),bol:show(bv),status:ok?'ok':'diff'});
+      if(!ok)row.status='diff';
+    };
+    cmpPrice('Net price','netPrice');
+    cmpPrice('Gross price','grossPrice');
     // Line amount: some formats' own "line amount" already includes
     // line-level charges (bol's own UBL LineExtensionAmount does, per
     // standard UBL semantics), while others (TRANSUSXML, EDIFACT) report
@@ -4541,19 +4603,6 @@ function compareInvoice(sup,bol){
       }
       row.cells.push({label:'Line amount',sup:fmtAmt(sv,cur),bol:fmtAmt(bv,cur),status:ok?'ok':'diff'});
       if(!ok)row.status='diff';
-    }
-    // Internal arithmetic (qty × net price vs. line amount) — the
-    // message's own numbers, not a supplier↔bol question, so this runs
-    // once per row rather than once per side: if qty/netPrice/lineAmount
-    // already matched above, both sides carry the same figures anyway.
-    if(fieldState.qty.sup&&fieldState.netPrice.sup&&fieldState.lineAmount.sup){
-      const qv=sumBy(S,'qty'),pv=sumBy(S,'netPrice'),lv=sumBy(S,'lineAmount');
-      const ar=checkLineArithmetic(qv,pv,lv);
-      if(ar){
-        const itemLabel=row.gtin||row.art||k.replace(/^[GA]:/,'');
-        arithmeticFindings.push({ar,qty:qv,netPrice:pv,itemLabel,
-          jump:`jumpToInvSource('both',${jsQuote(row.gtin||itemLabel)})`});
-      }
     }
     /* VAT% is not summed, but compared as a set */
     if(fieldState.vatPct.bol&&fieldState.vatPct.sup){
@@ -4696,18 +4745,15 @@ function compareInvoice(sup,bol){
   // — tagged 'message' (not 'diff'), so this never reaches the verdict's
   // mapping framing or the Copy for Transus text: it's a question about
   // the message's own numbers, not about what the transformation did.
-  // First split off any uniform-percentage pattern into its own grouped
-  // finding — see groupUniformArithmeticGap — then cap what's left same as
-  // before.
-  const {grouped:arithGroup,rest:arithRest}=groupUniformArithmeticGap(arithmeticFindings);
-  if(arithGroup)add('warn',uniformArithmeticGapText(arithGroup),'message');
-  const arithIndividual=arithRest.map(e=>({level:e.ar.withinRounding?'info':'warn',
-    text:lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur)}));
-  const ARITH_FINDING_CAP=5;
-  arithIndividual.slice(0,ARITH_FINDING_CAP).forEach(f=>add(f.level,f.text,'message'));
-  if(arithIndividual.length>ARITH_FINDING_CAP){
-    const rest=arithIndividual.length-ARITH_FINDING_CAP;
-    add('info',`<strong>${rest} more line(s) also show a quantity × price vs. line amount gap</strong> — see Line comparison below for the full list.`,'message');
+  // Per side, per line, through the same helper as Quick check. Reported
+  // once when bol's output carries exactly the supplier's gaps.
+  {
+    const supE=invoiceArithmeticEntries(sup,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+    const bolE=invoiceArithmeticEntries(bol,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+    const emit=(entries,prefix)=>invoiceArithmeticFindings(entries,cur,prefix,'Line comparison').forEach(f=>add(f.level,f.text,'message'));
+    if(supE.length&&arithmeticSignature(supE)===arithmeticSignature(bolE))
+      emit(invoiceArithmeticEntries(sup,v=>`jumpToInvSource('both',${jsQuote(v)})`),'Supplier (passed on unchanged to bol) — ');
+    else{emit(supE,'Supplier — ');emit(bolE,'Bol — ');}
   }
 
   /* ---- totals ---- */
@@ -4831,26 +4877,9 @@ function invoiceOverviewHtml(inv,opts={}){
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
   {
-    const arEntries=[];
-    inv.lines.forEach(l=>{
-      const ar=checkLineArithmetic(l.qty,l.netPrice,l.lineAmount);
-      if(ar){
-        const itemLabel=l.art||l.gtin||'?';
-        arEntries.push({ar,qty:l.qty,netPrice:l.netPrice,itemLabel,jump:jumpCall(l.gtin||itemLabel)});
-      }
-    });
-    const {grouped:arGroup,rest:arRest}=groupUniformArithmeticGap(arEntries);
-    if(arGroup)h+=`<div class="note-inline" style="color:var(--warn)">! ${uniformArithmeticGapText(arGroup)}</div>`;
-    const arFindings=arRest.map(e=>({level:e.ar.withinRounding?'info':'warn',
-      text:lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur)}));
-    const ARITH_CAP=5;
-    arFindings.slice(0,ARITH_CAP).forEach(f=>{
+    invoiceArithmeticFindings(invoiceArithmeticEntries(inv,jumpCall),cur,'','Invoice lines').forEach(f=>{
       h+=`<div class="note-inline" style="color:var(${f.level==='warn'?'--warn':'--info'})">${f.level==='warn'?'!':'ⓘ'} ${f.text}</div>`;
     });
-    if(arFindings.length>ARITH_CAP){
-      const rest=arFindings.length-ARITH_CAP;
-      h+=`<div class="note-inline" style="color:var(--info)">ⓘ <strong>${rest} more line(s) also show a quantity × price vs. line amount gap</strong> — see Invoice lines below for the full list.</div>`;
-    }
   }
 
   const parties=Object.keys(inv.parties).map(r=>partyHtml(r,inv.parties[r],jumpCall)).filter(Boolean).join('');
