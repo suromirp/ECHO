@@ -4424,7 +4424,7 @@ function compareInvoice(sup,bol){
   const bolLooksNegative=(bol.totals.payable!==null&&bol.totals.payable<0)||(bol.totals.lineTotal!==null&&bol.totals.lineTotal<0);
   const bolEffectiveDocType=(sup.docType==='credit'&&bol.docType!=='credit'&&bolLooksNegative)?'credit':bol.docType;
   const isCredit=sup.docType==='credit'&&bolEffectiveDocType==='credit';
-  if(isCredit)add('info','This is a <strong>credit note</strong>. Quantities and monetary totals are compared by magnitude, since the supplier and bol may express the credit using different sign conventions.');
+  if(isCredit)add('info','This is a <strong>credit note</strong>; amounts are compared without their sign.'+moreInfo(`The supplier and bol may express the same credit with different signs (bol's UBL credit notes have come with negative and with positive amounts), so quantities and monetary totals are compared by magnitude.`),'info');
   // TAX segments with a category but no rate: a data-quality issue with that
   // side's own message, not a supplier↔bol mapping difference — so it's
   // kept out of the Transus report (cat 'message') the same way a missing
@@ -4464,10 +4464,13 @@ function compareInvoice(sup,bol){
   const hdr=[];
   const hrow=(label,s,b,opts={})=>{
     const same=opts.cmp?opts.cmp(s,b):(String(s??'')===String(b??''));
-    const onlyOne=(s===null||s===undefined||s==='')!==(b===null||b===undefined||b==='');
+    const empty=v=>v===null||v===undefined||v==='';
+    const onlyOne=empty(s)!==empty(b);
     let status='ok';
     if(!same)status=opts.soft?'info':'diff';
     if(onlyOne&&opts.soft)status='info';
+    // absent on both sides: nothing was compared, so not a "Match"
+    if(empty(s)&&empty(b))status='na';
     hdr.push({label,sup:s,bol:b,status});
     return status;
   };
@@ -4499,7 +4502,7 @@ function compareInvoice(sup,bol){
 
   hdr.forEach(h=>{
     if(h.status==='diff')add('err',`<strong>${h.label}</strong> differs — supplier <span class="val-sup">${esc(h.sup??'—')}</span> vs bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
-    else if(h.status==='info')add('info',`<strong>${h.label}</strong>: supplier <span class="val-sup">${esc(h.sup??'—')}</span>, bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
+    else if(h.status==='info')add('info',`<strong>${h.label}</strong>: supplier <span class="val-sup">${esc(h.sup??'—')}</span>, bol <span class="val-bol">${esc(h.bol??'—')}</span>.`,'info');
   });
 
   /* ---- lines: match on GTIN, never guess a match ---- */
@@ -4628,7 +4631,7 @@ function compareInvoice(sup,bol){
         return {label,
           sup:sAmbig?'ambiguous (multiple message-level references)':(sVals.join(', ')||null),
           bol:bAmbig?'ambiguous (multiple message-level references)':(bVals.join(', ')||null),
-          status:'warn',ambiguous:true};
+          status:'warn',ambiguous:true,supAmbig:sAmbig,bolAmbig:bAmbig};
       }
       const ok=sameSet(sVals,bVals);
       const scopeOf=arr=>{const sc=[...new Set(arr.map(l=>l[scopeField]).filter(s=>s==='line'||s==='header'))];return sc.length===1?scopeLbl[sc[0]]:null;};
@@ -4659,13 +4662,17 @@ function compareInvoice(sup,bol){
       r.cells.filter(c=>c.status==='diff').forEach(c=>{
         add('err',`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`);
       });
+      // about one side's own message (several header references, none on
+      // the line), not about the transformation
       r.cells.filter(c=>c.ambiguous).forEach(c=>{
-        add('warn',`EAN <code>${esc(label)}</code>: the <strong>${c.label} reference is ambiguous</strong>, no automatic match made.`+moreInfo(`The message contains multiple message-level references and it can't be reliably determined which one belongs to this line.`));
+        const side=c.supAmbig&&c.bolAmbig?'Supplier and bol':(c.supAmbig?'Supplier':'Bol');
+        add('warn',`${side} — EAN <code>${esc(label)}</code>: the <strong>${c.label} reference is ambiguous</strong>, no automatic match made.`+moreInfo(`The message contains multiple message-level references and it can't be reliably determined which one belongs to this line.`),'message');
       });
     }
   });
-  if(gs.noKey.length)add('warn',`${gs.noKey.length} supplier line(s) without an EAN or item number — these could not be matched.`);
-  if(gb.noKey.length)add('warn',`${gb.noKey.length} bol line(s) without an EAN or item number — these could not be matched.`);
+  // one side's own message lacking an identifier: a Message check
+  if(gs.noKey.length)add('warn',`Supplier — ${gs.noKey.length} line(s) without an EAN or item number — these could not be matched.`,'message');
+  if(gb.noKey.length)add('warn',`Bol — ${gb.noKey.length} line(s) without an EAN or item number — these could not be matched.`,'message');
 
   /* fields bol doesn't send at all: report informatively, not as an error */
   const naNotes=[];
@@ -4674,7 +4681,7 @@ function compareInvoice(sup,bol){
     if(fieldState[f].sup&&!fieldState[f].bol)naNotes.push(`${labelOf[f]} is only present in the supplier message`);
     else if(!fieldState[f].sup&&fieldState[f].bol)naNotes.push(`${labelOf[f]} is only present in the bol output`);
   });
-  naNotes.forEach(n=>add('info',`Not compared: ${n} — this field isn't sent on the other side.`));
+  naNotes.forEach(n=>add('info',`Not compared: ${n} — this field isn't sent on the other side.`,'info'));
 
   /* ---- charges & allowances ---- */
   const chargeList=inv=>{
@@ -4766,7 +4773,7 @@ function compareInvoice(sup,bol){
     else status=(isCredit?amtEq(Math.abs(s),Math.abs(b)):amtEq(s,b))?'ok':'diff';
     totRows.push({label,sup:s,bol:b,status});
     if(status==='diff')add('err',`<strong>${label}</strong> differs — supplier <span class="val-sup">${fmtAmt(s,cur)}</span> vs bol <span class="val-bol">${fmtAmt(b,cur)}</span>.`);
-    else if(status==='na')add('info',`<strong>${label}</strong> isn't sent on one side, so it can't be compared — supplier <span class="val-sup">${s===null?'—':fmtAmt(s,cur)}</span>, bol <span class="val-bol">${b===null?'—':fmtAmt(b,cur)}</span>.`);
+    else if(status==='na')add('info',`<strong>${label}</strong> isn't sent on one side, so it can't be compared — supplier <span class="val-sup">${s===null?'—':fmtAmt(s,cur)}</span>, bol <span class="val-bol">${b===null?'—':fmtAmt(b,cur)}</span>.`,'info');
   };
   tcmp('Total line amounts','lineTotal');
   tcmp('Taxable amount','taxable');
@@ -6187,7 +6194,7 @@ function renderInvoiceCompare(res,notes){
   h+=`<div class="panel"><h2>Invoice details</h2><div class="inv-scroll"><table class="inv">
     <tr><th>Field</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
   h+=res.hdr.map(r=>{
-    const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillInfo());
+    const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():(r.status==='na'?pillNA():pillInfo()));
     const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)')||r.label.endsWith('(VAT)'));
     const isOrderRow=r.label==='Order(s)';
     const supTxt=r.sup??'—',bolTxt=r.bol??'—';
