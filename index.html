@@ -3243,9 +3243,10 @@ function compare(bol,sup){
       const m=new Map();
       facts.lines.forEach(l=>{
         const k=keyFn(l)+'|'+(l.action??'?');
-        if(!m.has(k))m.set(k,{price:null,art:l.art,gtin:l.gtin,action:l.action,dtmConflict:false});
+        if(!m.has(k))m.set(k,{price:null,date:null,art:l.art,gtin:l.gtin,action:l.action,dtmConflict:false});
         const b=m.get(k);
         if(b.price===null&&l.netPrice!==null&&l.netPrice!==undefined)b.price=l.netPrice;
+        if(b.date===null&&l.dtm&&l.dtm['67'])b.date=normDate(l.dtm['67'])||l.dtm['67'];
         if(l.dtmConflicts&&l.dtmConflicts.length)b.dtmConflict=true;
       });
       return m;
@@ -3260,9 +3261,15 @@ function compare(bol,sup){
       (s,b)=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(s.gtin||b.gtin||s.art||b.art||'')})`);
     const cascadeKeys=new Set(cascadeRuns.flatMap(run=>run.items.map(it=>it.key)));
     const priceKeys=[...new Set([...bPrice.keys(),...sPrice.keys()])];
-    const priceDiffs=[],priceMissing=[];
+    const priceDiffs=[],priceMissing=[],dateDiffs=[];
     priceKeys.forEach(k=>{
       const b=bPrice.get(k),s=sPrice.get(k);
+      // Confirmed delivery date (DTM+67), same (item, action) bucket. Only
+      // when both sides state it: missing on one side is structural.
+      if(b&&s&&b.date&&s.date&&b.date!==s.date){
+        const v=s.gtin||b.gtin||s.art||b.art||'';
+        dateDiffs.push({label:`${s.art||s.gtin||b.art||b.gtin||k.split('|')[0]} — action ${s.action||b.action||'?'}`,sup:s.date,bol:b.date,jump:`jumpToFactsSource('both',${jsQuote(v)})`});
+      }
       // A bucket entirely missing on one side is already covered by the
       // item-missing check earlier — nothing new to say about its price.
       if(!b||!s)return;
@@ -3279,6 +3286,12 @@ function compare(bol,sup){
       }
     });
     priceMissingFindings(priceMissing).forEach(t=>add('err',t,'diff'));
+    if(dateDiffs.length){
+      const n=dateDiffs.length;
+      const lis=dateDiffs.map(d=>`<li><span class="clickable-val" onclick="${d.jump}">${esc(d.label)}: ${esc(showDate(d.sup))} → ${esc(showDate(d.bol))}</span></li>`).join('');
+      const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+      add('warn',`<strong>Delivery date (DTM+67) differs</strong> on ${n} line${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The supplier's confirmed delivery date (first value) differs from the one in bol's output (second value) for the same item and action. Worth checking with Transus.`),'diff',n);
+    }
     cascadePriceShiftFindings(cascadeRuns).forEach(t=>add('err',t,'diff'));
     addCapped('err',priceDiffs,
       ({label,sup,bol})=>`Item <code>${esc(label)}</code>: net price differs — supplier <span class="val-sup">${esc(sup.toFixed(2))}</span> vs bol <span class="val-bol">${esc(bol.toFixed(2))}</span>.`,
@@ -5135,7 +5148,13 @@ function factsOverviewHtml(facts){
     if(showArt)th+=`<th>Item</th>`;
     if(showDesc)th+=`<th>Description</th>`;
     quals.forEach(q=>{th+=`<th>${esc(qname[q]||('Qty '+q))}</th>`;});
+    // ORDRSP: the confirmed delivery date (DTM+67) and net price (PRI+AAA)
+    // per line, the two line values Compare also compares.
+    const showOrdDate=type==='ORDRSP'&&facts.lines.some(l=>l.dtm&&l.dtm['67']);
+    const showOrdPrice=type==='ORDRSP'&&facts.lines.some(l=>l.netPrice!==null&&l.netPrice!==undefined);
     if(type==='ORDRSP')th+=`<th>Action</th>`;
+    if(showOrdDate)th+=`<th>Delivery date</th>`;
+    if(showOrdPrice)th+=`<th>Net price</th>`;
     if(type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length))th+=`<th>Date</th>`;
     th+=`</tr>`;
     const showLineDate=type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length);
@@ -5149,6 +5168,8 @@ function factsOverviewHtml(facts){
         const a=l.action;
         t+=`<td>${actionPillHtml(a,{confirmed:(l.qty||{})['12'],backorder:(l.qty||{})['83']})}</td>`;
       }
+      if(showOrdDate){const d=l.dtm&&l.dtm['67'];t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;}
+      if(showOrdPrice)t+=`<td class="num">${l.netPrice!==null&&l.netPrice!==undefined?esc(l.netPrice.toFixed(2)):'—'}</td>`;
       if(showLineDate){
         const d=l.dtm?Object.values(l.dtm)[0]:null;
         t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;

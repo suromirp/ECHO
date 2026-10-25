@@ -488,3 +488,28 @@ test('Copy for Transus counts left-out items, not findings, in its "and N more" 
   expect(text).toContain('7 more item(s) also show a quantity difference');
   expect(text).toContain('…and 12 more difference(s)');
 });
+
+// ORDRSP's confirmed delivery date (DTM+67) was never compared: a changed
+// date still gave "Loud and clear". Compared per (item, action) like the
+// net price; Quick check's Lines table shows date and price per line.
+test('a changed ORDRSP delivery date (DTM+67) is a Transformation difference; Quick check shows date and price', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'delivery-date-differs.sup.edi'), path.join(FIX, 'delivery-date-differs.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const d = buckets.diff.filter(t => /Delivery date \(DTM\+67\) differs/.test(t));
+  expect(d).toHaveLength(1);
+  expect(d[0]).toContain('on 1 line');
+  expect(d[0]).toContain('8712345000028');
+  expect(d[0]).toContain('22-01-2026 → 29-01-2026');
+  expect(d[0]).not.toContain('8712345000011');
+  await expect(page.locator('#verdict')).not.toContainText('Loud and clear');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'delivery-date-differs.bol.edi'));
+  const table = page.locator('#quickLinesTable');
+  await expect(table).toContainText('Delivery date');
+  await expect(table).toContainText('Net price');
+  await expect(table).toContainText('29-01-2026');
+  await expect(table).toContainText('6.50');
+});
