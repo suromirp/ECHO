@@ -5607,10 +5607,19 @@ function buildReportText(title,findings,extra){
   lines.push(new Date().toLocaleString('en-GB'));
   if(extra)lines.push(extra);
   lines.push('');
+  // Neutral marks (rule 2): "[ERROR]" on a supplier's own Message check read
+  // as "the supplier did something wrong". The mark says which section a
+  // finding belongs to instead; the level only orders findings within it.
   const order={err:0,warn:1,info:2,ok:3};
-  const mark={err:'[ERROR]',warn:'[WARNING]',info:'[INFO]',ok:'[OK]'};
-  [...findings].sort((a,b)=>order[a.level]-order[b.level]).forEach(f=>{
-    lines.push(mark[f.level]+' '+stripHtml(f.text));
+  const markOf=f=>{
+    if(f.level==='ok')return 'OK';
+    if(f.level==='info'||f.cat==='info')return 'INFO';
+    if(f.cat==='message')return 'CHECK';
+    return 'DIFFERENCE';
+  };
+  const rank={DIFFERENCE:0,CHECK:1,INFO:2,OK:3};
+  [...findings].sort((a,b)=>(rank[markOf(a)]-rank[markOf(b)])||(order[a.level]-order[b.level])).forEach(f=>{
+    lines.push('['+markOf(f)+'] '+stripHtml(f.text));
   });
   return lines.join('\n');
 }

@@ -905,3 +905,23 @@ test('the verdict is based on Transformation differences; Message checks alone g
   await expect(verdict).toContainText('see Transformation differences below');
   await expect(verdict).not.toContainText('The transformation and pallet mappings match');
 });
+
+// "Copy report" marked every err-level finding "[ERROR]", including a
+// supplier's own Message check. Marks are neutral now and name the section.
+test('Copy report uses neutral marks per section, not [ERROR]', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'message-checks-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  let report = await page.evaluate(() => lastReportText);
+  expect(report).not.toContain('[ERROR]');
+  expect(report).not.toContain('[WARNING]');
+  expect(report).toMatch(/\[CHECK\] Supplier — Packing List Reference too long/);
+  expect(report).toMatch(/\[OK\] All compared values match/);
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  report = await page.evaluate(() => lastReportText);
+  expect(report).toMatch(/\[DIFFERENCE\] Despatch date \(DTM\+11\) changed/);
+});
