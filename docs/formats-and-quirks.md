@@ -476,7 +476,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   is ambiguous" (several header references, none on the line) were
   Transformation differences and so reached "Copy for Transus", though each
   describes one side's message. They are now `cat:'message'` with a
-  "Supplier — " / "Bol — " label (CLAUDE.md taxonomy).
+  "Supplier — " / "Bol — " label (CLAUDE.md taxonomy). Ambiguous references
+  are one finding per side and field with the EANs as tags, and the per-EAN
+  "differs"/"missing" findings are capped at 5 per kind
+  (`docs/ui-conventions.md`).
 - **`PRI+INV` as net-price fallback**: a real Supplier India credit note sent
   `PRI+AAB:16.709:::1:CS` and `PRI+INV:16.49`, no `PRI+AAA`, and bol's UBL
   `PriceAmount` carried 16.49. Compare said "net price is only present in

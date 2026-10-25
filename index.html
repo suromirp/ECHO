@@ -4686,21 +4686,45 @@ function compareInvoice(sup,bol){
     rows.push(row);
   });
 
+  // Per-EAN findings capped the same way ORDRSP/DESADV cap theirs: a
+  // handful in full, the rest summarized, one list per kind of difference.
+  const FINDING_CAP=5;
+  const addCapped=(level,items,formatOne,summaryText)=>{
+    if(!items.length)return;
+    items.slice(0,FINDING_CAP).forEach(it=>add(level,formatOne(it),'diff'));
+    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff');
+  };
+  const missingRows=[],cellDiffs=new Map(),ambig=new Map();
   rows.forEach(r=>{
     const label=r.gtin||r.art||r.key.replace(/^[GA]:/,'');
-    if(r.missingBol)add('err',`EAN <code>${esc(label)}</code> is present in the supplier message but <strong>missing</strong> from the bol output.`);
-    else if(r.missingSup)add('err',`EAN <code>${esc(label)}</code> is present in the bol output but <strong>missing</strong> from the supplier message.`);
+    if(r.missingBol)missingRows.push({label,where:'supplier message but <strong>missing</strong> from the bol output'});
+    else if(r.missingSup)missingRows.push({label,where:'bol output but <strong>missing</strong> from the supplier message'});
     else{
       r.cells.filter(c=>c.status==='diff').forEach(c=>{
-        add('err',`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`);
+        if(!cellDiffs.has(c.label))cellDiffs.set(c.label,[]);
+        cellDiffs.get(c.label).push({label,c});
       });
       // about one side's own message (several header references, none on
-      // the line), not about the transformation
+      // the line), not about the transformation; grouped per side + field
       r.cells.filter(c=>c.ambiguous).forEach(c=>{
-        const side=c.supAmbig&&c.bolAmbig?'Supplier and bol':(c.supAmbig?'Supplier':'Bol');
-        add('warn',`${side} — EAN <code>${esc(label)}</code>: the <strong>${c.label} reference is ambiguous</strong>, no automatic match made.`+moreInfo(`The message contains multiple message-level references and it can't be reliably determined which one belongs to this line.`),'message');
+        const side=c.supAmbig&&c.bolAmbig?'both':(c.supAmbig?'sup':'bol');
+        const k=side+'|'+c.label;
+        if(!ambig.has(k))ambig.set(k,{side,ref:c.label,items:[]});
+        ambig.get(k).items.push(label);
       });
     }
+  });
+  addCapped('err',missingRows,
+    m=>`EAN <code>${esc(m.label)}</code> is present in the ${m.where}.`,
+    rest=>`<strong>${rest} more EAN(s) are missing on one side</strong> — see Line comparison below for the full list.`);
+  cellDiffs.forEach((items,field)=>addCapped('err',items,
+    ({label,c})=>`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`,
+    rest=>`<strong>${rest} more EAN(s) also show a ${esc(/^VAT/.test(field)?field:field.toLowerCase())} difference</strong> — see Line comparison below for the full list.`));
+  ambig.forEach(g=>{
+    const n=g.items.length;
+    const sideTxt={sup:'Supplier',bol:'Bol',both:'Supplier and bol'}[g.side];
+    const tags=g.items.map(e=>`<li><span class="clickable-val" onclick="jumpToInvSource(${jsQuote(g.side)},${jsQuote(e)})">${esc(e)}</span></li>`).join('');
+    add('warn',`${sideTxt} — <strong>${esc(g.ref)} reference is ambiguous</strong> on ${n} EAN${n===1?'':'s'}, no automatic match made. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The message has several message-level ${esc(g.ref.toLowerCase())} references and none on ${n===1?'this line':'these lines'}, so it can't be determined which one belongs to ${n===1?'it':'each line'}.`),'message');
   });
   // one side's own message lacking an identifier: a Message check. An
   // all-zeros EAN already has its own finding, so it isn't counted twice.
@@ -4887,7 +4911,7 @@ function invoiceOverviewHtml(inv,opts={}){
     const bits=[];
     if(ambigOrders)bits.push('order reference');
     if(ambigDespatch)bits.push('packing reference');
-    h+=`<div class="note-inline" style="color:var(--warn)">Note: some lines have an ambiguous ${bits.join(' and ')} (multiple message-level references in the message that can't be unambiguously linked to a line). No automatic match was made.</div>`;
+    h+=`<div class="note-inline" style="color:var(--warn)">! Some lines have an <strong>ambiguous ${bits.join(' and ')}</strong>.`+moreInfo(`The message has several message-level references and none on those lines, so it can't be determined which one belongs to each line. No automatic match was made.`)+`</div>`;
   }
   // Mirrors Compare's "N line(s) without an EAN or item number" — there,
   // it's framed as "these couldn't be matched"; standalone, the more

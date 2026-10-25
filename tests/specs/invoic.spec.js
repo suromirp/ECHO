@@ -584,7 +584,7 @@ test('one-side findings are Message checks, info notes are Good to know, absent-
   const b = await invoiceFindingsByCategory(page);
   expect(b.message.some(t => /Supplier — 1 line\(s\) without an EAN/.test(t))).toBe(true);
   expect(b.message.some(t => /Bol — 1 line\(s\) without an EAN/.test(t))).toBe(true);
-  expect(b.message.some(t => /Supplier — EAN 8710000000017: the Order reference is ambiguous/.test(t))).toBe(true);
+  expect(b.message.some(t => /Supplier — Order reference is ambiguous on 1 EAN/.test(t) && t.includes('8710000000017'))).toBe(true);
   expect(b.diff.some(t => /without an EAN|ambiguous/.test(t))).toBe(false);
   const packRow = page.locator('#invoiceResults tr', { hasText: 'Packing reference(s)' }).first();
   await expect(packRow.locator('.pill')).toHaveText('Not applicable');
@@ -635,4 +635,30 @@ test('blank LIN segments and a missing order number are flagged for INVOIC; a ze
   const z = await invoiceFindingsByCategory(page);
   expect([...z.message, ...z.diff].some(t => /without an EAN/.test(t))).toBe(false);
   expect(z.message.some(t => /no order number|Neither message has an order/.test(t))).toBe(false);
+});
+
+// INVOIC printed one "differs" finding per EAN with no cap; ORDRSP/DESADV
+// show 5 and summarize the rest. The credit-note note and the ambiguous
+// reference note were long paragraphs; now a short headline + More info.
+test('per-EAN invoice differences are capped at 5 with a summary line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'many-qty-diffs.sup.edi'),
+    path.join(FIX, 'many-qty-diffs.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.diff.filter(t => /Quantity differs/.test(t))).toHaveLength(5);
+  expect(b.diff.filter(t => /2 more EAN\(s\) also show a quantity difference/.test(t))).toHaveLength(1);
+
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'credit-type-code-2.sup.edi'),
+    path.join(FIX, 'credit-type-code-2.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const note = page.locator('#invoiceResults ul.findings li', { hasText: 'This is a credit note' });
+  await expect(note.locator('details.f-more')).toHaveCount(1);
 });
