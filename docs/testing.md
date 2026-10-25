@@ -168,6 +168,13 @@ actual test fixtures, don't just keep this list as prose:
   as err because another rule on the same line is err); the action-6
   date-only amendment is info. Short headline + "More info", in Compare and
   Quick check.
+- **DESADV**: order numbers shifted one line down in bol's output (bol line
+  i = supplier line i−1, run ≥ 3 changed lines) are one grouped
+  Transformation difference, not N per-item findings; an unrelated
+  order-number mismatch is its own finding at Difference level (row status
+  Difference, not Check). Compare-only.
+- **UI**: Copy for Transus' "…and N more" counts the items behind a capped
+  "N more item(s)" summary, not the number of left-out findings.
 - **DESADV**: pallet overview — an SSCC with no items on one side while
   the other side has items for it is a Difference ("0 items", not "1 item"
   and "Match"); a line with a zeroed EAN reads "EAN zeroed", not "No

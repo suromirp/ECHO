@@ -1966,6 +1966,40 @@ function cascadePriceShiftFindings(runs){
   });
 }
 
+/* The order-number counterpart of findCascadingPriceShiftRuns: bol's line i
+   carries the supplier's order number of line i-1. Real Supplier Delta DESADV
+   (TRANSUSXML, <OrderNumberBuyer> twice per Article): on every line where
+   the order changed, bol's RFF+ON was one line late, which ECHO reported as
+   many unrelated per-item "order numbers differ". Lines are paired by
+   position, and only when both messages have the same number of lines and
+   every pair is the same item (keyFn), so no guessing. A run continues
+   while bol[i] equals supplier[i-1]; it counts as a shift once at least 3
+   of its lines also differ from their own supplier order (a line whose
+   order didn't change reads the same either way). */
+function findOrderShiftRuns(supLines,bolLines,keyFn){
+  if(!supLines.length||supLines.length!==bolLines.length)return [];
+  if(supLines.some((l,i)=>keyFn(l)!==keyFn(bolLines[i])))return [];
+  const ord=l=>[...(l.orders||[])].sort().join(',');
+  const runs=[];let cur=[];
+  const flush=()=>{const ev=cur.filter(x=>x.changed);if(ev.length>=3)runs.push({lines:ev});cur=[];};
+  for(let i=1;i<supLines.length;i++){
+    const prev=ord(supLines[i-1]),own=ord(supLines[i]),b=ord(bolLines[i]);
+    if(b&&prev&&b===prev)cur.push({line:supLines[i],sup:own,bol:b,changed:b!==own});
+    else flush();
+  }
+  flush();
+  return runs;
+}
+function orderShiftFindings(runs){
+  return runs.map(({lines})=>{
+    const n=lines.length;
+    const lis=lines.map(x=>{const l=x.line;const v=l.gtin||l.art||l.lineNo||'';
+      return `<li><span class="clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(v)})">line ${esc(l.lineNo||'?')} · ${esc(l.art||l.gtin||'?')}: ${esc(x.sup||'—')} → ${esc(x.bol)}</span></li>`;}).join('');
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    return {n,text:`<strong>Order numbers shifted one line down in bol's output</strong> on ${n} lines. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`On each of these lines bol's order number (RFF+ON) is the one the supplier sent for the line before it, so this reads as one shift rather than ${n} separate order-number differences. Shown as supplier → bol per line.`)};
+  });
+}
+
 /* Prominent, hard-to-miss banner for the "file was actually multiple
    concatenated XML documents" case — deliberately NOT folded quietly into
    the regular findings list, since the underlying delivery to Transus
@@ -2946,7 +2980,9 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
 }
 
 function compare(bol,sup){
-  const findings=[];const add=(l,t,cat)=>findings.push({level:l,text:t,cat:cat||null});
+  // count: how many items a finding stands for (a capped "N more" summary
+  // stands for N), so Copy for Transus can say how many are left out.
+  const findings=[];const add=(l,t,cat,count)=>findings.push({level:l,text:t,cat:cat||null,count:count||1});
   if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${esc(sup.msgType||'?')}</code> vs bol <code>${esc(bol.msgType||'?')}</code>.`,'diff');
   const type=bol.msgType||sup.msgType;
   const keyFn=buildKeyResolver(bol,sup);
@@ -2997,7 +3033,9 @@ function compare(bol,sup){
     if(row.qtyDiff)anyQtyDiff=true;
     if(row.actionDiff&&type==='ORDRSP')anyActionDiff=true;
     if(row.missing)anyMissing=true;
-    row.status=row.missing?'diff':((row.qtyDiff||(row.actionDiff&&type==='ORDRSP'))?'diff':(row.orderDiff?'warn':'ok'));
+    // A different order number is a business difference (bol matches the
+    // delivery to a purchase order on it), so Difference, not "Check".
+    row.status=(row.missing||row.qtyDiff||(row.actionDiff&&type==='ORDRSP')||row.orderDiff)?'diff':'ok';
     rows.push(row);
   });
 
@@ -3010,7 +3048,7 @@ function compare(bol,sup){
   const addCapped=(level,items,formatOne,summaryText)=>{
     if(!items.length)return;
     items.slice(0,FINDING_CAP).forEach(it=>add(level,formatOne(it),'diff'));
-    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff');
+    if(items.length>FINDING_CAP)add(level,summaryText(items.length-FINDING_CAP),'diff',items.length-FINDING_CAP);
   };
 
   const missingItems=[];
@@ -3029,11 +3067,16 @@ function compare(bol,sup){
     m=>`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
     rest=>`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
 
+  // Order numbers shifted one line down (findOrderShiftRuns): one grouped
+  // finding per run; its items are left out of the per-item list below.
+  const orderShiftRuns=findOrderShiftRuns(sup.lines,bol.lines,keyFn);
+  const orderShiftKeys=new Set(orderShiftRuns.flatMap(run=>run.lines.map(x=>keyFn(x.line))));
+  orderShiftFindings(orderShiftRuns).forEach(f=>add('err',f.text,'diff',f.n));
   const qtyDiffs=[],actionDiffs=[],orderDiffs=[];
   rows.forEach(r=>{if(r.missing)return;const label=r.art||r.gtin;
     r.qtys.forEach(x=>{if(x.diff)qtyDiffs.push({label,x});});
     if(type==='ORDRSP'&&r.actionDiff)actionDiffs.push({label,r});
-    if(r.orderDiff)orderDiffs.push({label,r});});
+    if(r.orderDiff&&!orderShiftKeys.has(r.key))orderDiffs.push({label,r});});
   addCapped('err',qtyDiffs,
     ({label,x})=>`Item <code>${esc(label)}</code>: quantity (qual ${esc(x.q)}) differs — supplier <span class="val-sup">${esc(x.sup??'—')}</span> vs bol <span class="val-bol">${esc(x.bol??'—')}</span>.`,
     rest=>`<strong>${rest} more item(s) also show a quantity difference</strong> — see the Line comparison below for the full list.`);
@@ -3047,7 +3090,7 @@ function compare(bol,sup){
     const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
     add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 with no backorder or cancellation; bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference.`),'info');
   }
-  addCapped('warn',orderDiffs,
+  addCapped('err',orderDiffs,
     ({label,r})=>`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
@@ -5761,7 +5804,9 @@ function buildTransusText(findings,context,lang){
   const order={err:0,warn:1};
   const CAP=6;
   const sorted=[...relevant].sort((a,b)=>order[a.level]-order[b.level]);
-  const shown=sorted.slice(0,CAP),rest=sorted.length-shown.length;
+  // A capped "N more item(s) …" summary stands for N items (f.count), so
+  // the "…and N more" line counts items, not findings.
+  const shown=sorted.slice(0,CAP),rest=sorted.slice(CAP).reduce((n,f)=>n+(f.count||1),0);
   const lines=[];
   lines.push(wrap.greet);
   lines.push('');
