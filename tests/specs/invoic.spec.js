@@ -600,3 +600,39 @@ test('one-side findings are Message checks, info notes are Good to know, absent-
   expect(c.diff.filter(t => !/All compared values match/.test(t))).toHaveLength(0);
   expect(c.info.some(t => /This is a credit note/.test(t))).toBe(true);
 });
+
+// Parity: a blank "LIN'" became a phantom invoice line, and a message with no
+// order number anywhere said nothing; ORDRSP/DESADV flag both. An all-zeros
+// EAN line also counted as "without an EAN or item number" next to its own
+// zero-EAN finding.
+test('blank LIN segments and a missing order number are flagged for INVOIC; a zeroed EAN line is not double-counted', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'blank-lin-no-order.sup.edi'),
+    path.join(FIX, 'blank-lin-no-order.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.message.filter(t => /Supplier — 2 blank LIN segments/.test(t))).toHaveLength(1);
+  expect(b.message.filter(t => /Neither message has an order number/.test(t))).toHaveLength(1);
+  expect(b.message.some(t => /without an EAN/.test(t))).toBe(false);
+  expect(await page.locator('#invoiceResults').innerText()).toContain('2/2');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'blank-lin-no-order.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('2 blank LIN segments');
+  await expect(page.locator('#quickOverview')).toContainText('No order number');
+
+  // Zeroed EAN on both sides: one zero-EAN finding, no "without an EAN".
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'zero-ean-order-digit.sup.edi'),
+    path.join(FIX, 'zero-ean-order-digit.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const z = await invoiceFindingsByCategory(page);
+  expect([...z.message, ...z.diff].some(t => /without an EAN/.test(t))).toBe(false);
+  expect(z.message.some(t => /no order number|Neither message has an order/.test(t))).toBe(false);
+});
