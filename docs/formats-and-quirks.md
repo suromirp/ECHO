@@ -775,7 +775,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   onderdeel van de SSCC-code") — not just a checklist bullet on a different
   page about something else. Still not `err`: no message has confirmed a
   downstream failure caused by the length alone, independent of the
-  missing-PAC issue.
+  missing-PAC issue. A later Supplier Golf DESADV had nine such values, each "00"
+  + a check-digit-valid SSCC-18; the finding now says so per value (and,
+  for a 17-digit value, when it is valid with a leading 0), which points at
+  the likely difference without claiming a fix.
 - **A DESADV with many pallets and no SSCC anywhere** produced one "No SSCC
   found" finding per `CPS` group — a real message with 51 pallets on each
   side meant 102 near-identical lines, exactly what
@@ -787,7 +790,16 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   items" rule, so the finding list stays scannable regardless of pallet
   count. The same function's "Pallet EAN repeated as item" and "Item not
   linked to a pallet" checks still emitted one finding per item/line; both
-  are grouped the same way now.
+  are grouped the same way now. In Compare, when neither message has any
+  SSCC, one fact still gave three findings (real Supplier Golf DESADV: "Neither
+  message contains an SSCC" plus a "No SSCC found" per side). It's one
+  finding now, listing each side's SSCC-less pallet groups as tags; Quick
+  check keeps its single grouped "No SSCC found".
+- **Packing reference from `RFF+DQ`/`RFF+AAS` only**: the Header fields
+  table read the packing reference from `RFF+BM` alone and showed "—" for
+  a supplier that only sends a despatch note reference. It falls back to
+  that reference now and labels the source (`RFF+DQ`/`RFF+AAS`), like the
+  Packing reference stat already did.
 - **A `CPS` group nested under a pallet `CPS` (`CPS+<own>+<parent>'`) can
   legitimately carry its own SSCC** — a real, confirmed two-level GS1
   packing hierarchy (e.g. cartons each with their own SSCC, packed onto

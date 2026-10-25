@@ -1153,7 +1153,7 @@ function parseFactsEdifact(raw){
         else if(q==='11')f.despatchDate=v;}}
     else if(tag==='RFF'){const c=splitEsc(el[1]||'',delims.comp,delims.rel);
       if(c[0]==='ON'&&c[1]){if(cur)cur.orders.add(c[1]);else f.orderRefsHeader.add(c[1]);}
-      else if((c[0]==='DQ'||c[0]==='AAS')&&c[1]&&!cur){if(!f.deliveryNoteRefs.includes(c[1]))f.deliveryNoteRefs.push(c[1]);}
+      else if((c[0]==='DQ'||c[0]==='AAS')&&c[1]&&!cur){if(!f.deliveryNoteRefs.includes(c[1])){f.deliveryNoteRefs.push(c[1]);if(!f.deliveryNoteQual)f.deliveryNoteQual=c[0];}}
       else if(c[0]==='VA'&&c[1]&&lastParty&&f.parties[lastParty])f.parties[lastParty].vat=c[1];
       // Bill of lading number — per bol's own implementation guide (not
       // generic EDIFACT semantics), this is the number that must be unique
@@ -2249,7 +2249,22 @@ function palletIsNested(p,byCps){
    flow, so its absence is the normal case and isn't flagged — only its
    presence is worth a note (handled separately, as informational), and a
    pallet EAN that's incorrectly reused as an item GTIN is still flagged below. */
-function checkPalletStructure(facts,label,add,jumpCall){
+/* Pallet groups with item lines but no SSCC, and their CPS tags (collapsed
+   past ~20, docs/ui-conventions.md). Shared by checkPalletStructure and
+   Compare's "Neither message contains an SSCC" finding. */
+function noSsccPallets(facts){return (facts.pallets||[]).filter(p=>p.items&&p.items.length>0&&!p.sscc);}
+function cpsTagListHtml(list,jumpCall,what){
+  const lis=list.map(p=>{
+    const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
+    return `<li><span class="clickable-val"${jump}>CPS ${esc(p.cps||'?')}</span></li>`;
+  }).join('');
+  const tagList=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+  return list.length>20?`<details><summary>Show ${list.length} ${what||'affected pallets'}</summary>${tagList}</details>`:tagList;
+}
+/* opts.skipNoSscc: Compare already reports "Neither message contains an
+   SSCC" with these pallets listed, so the per-side "No SSCC found" would
+   repeat the same fact (real Supplier Golf DESADV: one fact, three findings). */
+function checkPalletStructure(facts,label,add,jumpCall,opts){
   if(!facts.pallets||!facts.pallets.length)return;
   // Grouped into one finding (with every affected CPS as a clickable tag)
   // rather than one line per pallet — a supplier that never sends SSCCs at
@@ -2257,18 +2272,13 @@ function checkPalletStructure(facts,label,add,jumpCall){
   // sometimes 50+ of them, per docs/ui-conventions.md's grouping rule. Past
   // ~20 tags the list itself collapses behind <details>, per the same
   // doc's "large lists collapse past roughly 20 items" rule.
-  const flatNoSscc=facts.pallets.filter(p=>p.items&&p.items.length>0&&!p.sscc);
-  const tagsFor=list=>list.map(p=>{
-    const cpsLabel=esc(p.cps||'?');
-    const jump=jumpCall?` onclick="${jumpCall('CPS+'+(p.cps||''))}"`:'';
-    return `<li><span class="clickable-val"${jump}>CPS ${cpsLabel}</span></li>`;
-  }).join('');
+  const flatNoSscc=(opts&&opts.skipNoSscc)?[]:noSsccPallets(facts);
   // Shared tag-list shape: collapses past ~20 tags (docs/ui-conventions.md).
   const tagListHtml=(lis,n,what)=>{
     const tagList=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
     return n>20?`<details><summary>Show ${n} affected ${what}</summary>${tagList}</details>`:tagList;
   };
-  const bodyFor=list=>tagListHtml(tagsFor(list),list.length,'pallets');
+  const bodyFor=list=>cpsTagListHtml(list,jumpCall);
   if(flatNoSscc.length){
     const n=flatNoSscc.length;
     add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS). ${bodyFor(flatNoSscc)}`+moreInfo(`${n===1?'This CPS group contains':'Each of these CPS groups contains'} item lines, but no GIN+BJ SSCC was found, so the pallet can't be matched by SSCC.`),'message');
@@ -2426,6 +2436,8 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
    value present on only one side is shown, not flagged: formats differ in
    what they carry (structural, rule 3). Findings for real differences come
    from their own checks; this table only shows. */
+// Source label for an RFF-based despatch note reference (DQ or AAS).
+function packRefRffQual(f){return 'RFF+'+(f.deliveryNoteQual||'DQ');}
 function headerSrcLabel(facts,ediSeg,xmlTags){
   if(facts.format==='EDIFACT')return ediSeg;
   if(facts.rawXml){const t=xmlTags.find(t=>new RegExp('<(\\w+:)?'+t+'[\\s>]').test(facts.rawXml));return t||xmlTags[0];}
@@ -2468,7 +2480,9 @@ function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
   const arrSeg=f=>f.headerDtm&&f.headerDtm['132']?'DTM+132':(f.headerDtm&&f.headerDtm['17']?'DTM+17':'DTM+2');
   const rows=[
-    isD&&['Packing reference',f=>f.billOfLadingRef,()=>'RFF+BM',['PackingSlipNumber']],
+    // RFF+BM first; a supplier with only an RFF+DQ/AAS despatch note
+    // reference showed "—" here, so that is the fallback (source labelled).
+    isD&&['Packing reference',f=>f.billOfLadingRef||(f.deliveryNoteRefs&&f.deliveryNoteRefs[0])||null,f=>f.billOfLadingRef?'RFF+BM':packRefRffQual(f),['PackingSlipNumber']],
     ['Document number',f=>f.docNumber,()=>'BGM',['DespatchAdviceNumber','OrderResponseNumber','DocumentNumber']],
     ['Order',f=>headerOrders(f).join(', ')||null,()=>'RFF+ON',['OrderNumberBuyer']],
     ['Document date',f=>f.docDate,()=>'DTM+137',['DocumentDate','DespatchAdviceDate','OrderResponseDate']],
@@ -2530,11 +2544,22 @@ function checkSsccLength(facts,label,add,jumpCall){
   const affected=facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18);
   if(!affected.length)return;
   const n=affected.length;
+  // Say what the value most likely is: "00" (the SSCC Application
+  // Identifier) + a check-digit-valid SSCC-18, or a 17-digit value that is
+  // valid with a leading 0 (dropped, e.g. by a spreadsheet). Real Supplier Golf
+  // DESADV: 20-character "00…" values.
+  const hint=v=>{
+    if(/^00\d{18}$/.test(v)&&gs1CheckDigitOk(v.slice(2)))return '"00" + a valid 18-digit SSCC';
+    if(/^\d{17}$/.test(v)&&gs1CheckDigitOk('0'+v))return 'valid as an SSCC with a leading 0';
+    return '';
+  };
+  let anyHint=false;
   const tags=affected.map(p=>{
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
-    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars)</span></li>`;
+    const h=hint(p.sscc);if(h)anyHint=true;
+    return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars${h?': '+h:''})</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".`),'message');
+  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
@@ -3153,13 +3178,18 @@ function compare(bol,sup){
     // either side. Worth stating plainly rather than leaving this silently
     // absent — a supplier-side gap ("No SSCC found" above), not something
     // Transus can fix, so kept at message level rather than sent to them.
-    add('warn',"Neither message contains an SSCC (GIN+BJ), so pallet-level mapping couldn't be checked between the two — only the item quantities were compared.",'message');
+    // One finding for one fact: the per-side "No SSCC found" is skipped
+    // below (checkPalletStructure opts.skipNoSscc), its pallets listed here.
+    const sNo=noSsccPallets(sup),bNo=noSsccPallets(bol);
+    const part=(list,who,side)=>list.length?`<div style="margin-top:6px">${who}: ${list.length} pallet group${list.length===1?'':'s'} without SSCC${cpsTagListHtml(list,v=>`jumpToFactsSource(${jsQuote(side)},${jsQuote(v)})`,`${who.toLowerCase()} pallet groups`)}</div>`:'';
+    add('warn',"<strong>Neither message contains an SSCC (GIN+BJ)</strong>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
   }
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
   if(type==='DESADV'){
-    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    const noSsccAnywhere=!bol.ssccs.length&&!sup.ssccs.length;
+    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere});
+    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere});
     checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
     checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
     compareDesadvDates(sup,bol,add);

@@ -85,7 +85,13 @@ actual test fixtures, don't just keep this list as prose:
   Application Identifier prefix bol's docs say not to send) is flagged too,
   separately, at info level.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
-  side with a collapsed tag list, not one finding per pallet.
+  side with a collapsed tag list, not one finding per pallet. In Compare,
+  when neither side has any SSCC, that is one "Neither message contains an
+  SSCC" finding listing both sides' pallets (not three findings).
+- **DESADV**: the SSCC length finding says when a value is "00" + a valid
+  SSCC-18, or a 17-digit value valid with a leading 0, in both modes.
+- **DESADV**: the Header fields table's Packing reference falls back to
+  `RFF+DQ`/`RFF+AAS` (source labelled) when there's no `RFF+BM`.
 - **DESADV**: a nested `CPS` group that carries its own SSCC is marked as
   "nested under" its parent pallet's SSCC, not shown as an independent
   pallet; a pallet overview past ~20 entries in Quick check defaults to

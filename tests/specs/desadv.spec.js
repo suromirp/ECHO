@@ -161,17 +161,26 @@ test('many pallets missing an SSCC are grouped into one finding with a collapsed
 
   const findings = page.locator('#findings li');
   const texts = await findings.allInnerTexts();
-  const groupedLines = texts.filter(t => t.includes('No SSCC found'));
-  // One grouped block per side, not one per pallet (25 pallets/side would
-  // otherwise mean 50 separate findings).
-  expect(groupedLines).toHaveLength(2);
-  groupedLines.forEach(t => expect(t).toContain('25 pallet groups'));
+  // Neither side has any SSCC: ONE finding for that one fact, listing each
+  // side's pallets (25 pallets/side would otherwise mean 50 separate
+  // findings). Deliberate change: this used to be a "No SSCC found" block
+  // per side next to a third "Neither message contains an SSCC" finding.
+  const groupedLines = texts.filter(t => t.includes('Neither message contains an SSCC'));
+  expect(groupedLines).toHaveLength(1);
+  expect(groupedLines[0]).toContain('Supplier: 25 pallet groups without SSCC');
+  expect(groupedLines[0]).toContain('Bol: 25 pallet groups without SSCC');
+  expect(texts.some(t => t.includes('No SSCC found'))).toBe(false);
 
   // Past the ~20-item threshold, the tag list collapses behind <details>.
   const details = page.locator('#findings .wc-affected').locator('xpath=ancestor::details');
   await expect(details).toHaveCount(2);
   const tagCount = await page.locator('#findings .wc-affected li').count();
   expect(tagCount).toBe(50); // 25 pallets x 2 sides
+
+  // Quick check still groups them into one "No SSCC found" finding.
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('No SSCC found on 25 pallet groups');
 });
 
 // docs/ui-conventions.md: "Distinct items", not "Items" — real user
@@ -1101,4 +1110,36 @@ test('order numbers shifted one line down in bol\'s output are one grouped findi
   const statuses = await page.evaluate(() => lastLineRows.rows.filter(r => r.orderDiff).map(r => r.status));
   expect(statuses.length).toBe(5);
   statuses.forEach(s => expect(s).toBe('diff'));
+});
+
+// Real Supplier Golf DESADV: 20-character SSCCs starting "00". The finding now says
+// when the value is "00" + a check-digit-valid SSCC-18, or a 17-digit value
+// that is valid with a leading 0.
+test('the SSCC length finding says when a value is "00" + a valid SSCC or valid with a leading 0', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'sscc-length-hints.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const f = page.locator('#findings li', { hasText: "Supplier — SSCC isn't 18 characters" });
+  await expect(f).toContainText('00008712345000000013 (20 chars: "00" + a valid 18-digit SSCC)');
+  await expect(f).toContainText('08712345000000020 (17 chars: valid as an SSCC with a leading 0)');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('"00" + a valid 18-digit SSCC');
+});
+
+// The header table's "Packing reference" row showed "—" for a supplier with
+// only an RFF+DQ despatch note reference; it falls back to it now, with the
+// source labelled.
+test('the header table packing reference falls back to RFF+DQ, labelled as such', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'packing-ref-dq-only.sup.edi'), path.join(FIX, 'packing-ref-dq-only.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const row = page.locator('#hdrFields tr', { hasText: 'Packing reference' });
+  const supCell = row.locator('td').nth(1);
+  await expect(supCell).toContainText('PS8401');
+  await expect(supCell).toContainText('RFF+DQ');
+  await expect(row.locator('td').nth(2)).toContainText('RFF+BM');
+  await expect(row).not.toHaveClass(/differ/);
 });
