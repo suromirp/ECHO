@@ -1716,26 +1716,35 @@ function aggregate(facts,keyFn){
    independent) explanation — the specific item/qty is supplied separately
    by the caller, so many lines sharing the same key can be shown as ONE
    grouped observation (explanation + a tag per affected item) instead of
-   one near-identical paragraph per line. */
+   one near-identical paragraph per line.
+   Each rule has a short neutral headline (what is observed), the detail
+   behind "More info", and its OWN level. The level used to be the line's
+   worst one, so a line tripping an err rule and a warn rule showed both
+   groups as err: a rule could read as an error because of an unrelated
+   rule on the same line. action6-no-backorder-has-confirmed is info: a
+   recognised pattern (docs/formats-and-quirks.md), not a problem. */
 const ACTION_RULE_EXPLAIN={
-  'action5-missing-confirmed':"Action 5 (fully accepted), but no confirmed quantity (QTY+12) is present — a full accept should state how much was confirmed.",
-  'action5-confirmed-zero':"Action 5 (fully accepted), but the confirmed quantity (QTY+12) is explicitly 0 — that reads more like a cancellation than a full accept. Worth being aware of, though this alone doesn't affect the mapping.",
-  'action5-missing-date':"Action 5 (fully accepted), but no delivery date (DTM+67) is present.",
-  'action5-has-backorder':"Action 5 (fully accepted), but a backorder quantity is present too — a full accept shouldn't have anything left to backorder.",
-  'action5-has-cancelled':"Action 5 (fully accepted), but a cancelled quantity is present too — a full accept shouldn't have anything cancelled.",
-  'action6-no-backorder-has-confirmed':"<strong>Action 6 used as a delivery-date-only amendment</strong>"+moreInfo("Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity already covering the full amount — reads as a delivery-date-only amendment, a recognized use of action 6."),
-  'action6-no-backorder-no-data':"Action 6 (accepted with amendment), but neither a backorder, a cancelled quantity, nor a confirmed quantity is present — there's nothing here to show what these lines are actually reporting.",
-  'action2-missing-cancelled':"Action 2 (cancelled), but no cancelled quantity (QTY+182) is present — a cancellation should state how much was cancelled.",
-  'action2-cancelled-zero':"Action 2 (cancelled), but the cancelled quantity (QTY+182) is explicitly 0 — worth being aware of, though this alone doesn't affect the mapping.",
-  'action2-has-confirmed':"Action 2 (cancelled), but a confirmed quantity is present too — a cancelled line shouldn't have anything confirmed."
+  'action5-missing-confirmed':{level:'err',h:'Action 5 without a confirmed quantity (QTY+12)',more:'Action 5 (fully accepted) normally states the confirmed quantity in QTY+12. None is present on these lines.'},
+  'action5-confirmed-zero':{level:'warn',h:'Action 5 with confirmed quantity 0',more:"Action 5 (fully accepted) with QTY+12 explicitly 0 reads more like a cancellation than a full accept. This alone doesn't affect the mapping."},
+  'action5-missing-date':{level:'warn',h:'Action 5 without a delivery date (DTM+67)',more:'These lines carry other dates, but no DTM+67, the delivery date an accepted line normally states.'},
+  'action5-has-backorder':{level:'err',h:'Action 5 with a backorder quantity (QTY+83)',more:'Action 5 means fully accepted, and these lines also carry a backorder quantity. Action 6 is the code bol uses for an accept with a backorder.'},
+  'action5-has-cancelled':{level:'err',h:'Action 5 with a cancelled quantity (QTY+182)',more:'Action 5 means fully accepted, and these lines also carry a cancelled quantity. Action 6 is the code bol uses for a partial cancellation.'},
+  'action6-no-backorder-has-confirmed':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:'Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity covering the full amount. This reads as a delivery-date-only amendment, a recognised use of action 6.'},
+  'action6-no-backorder-no-data':{level:'warn',h:'Action 6 without any quantity',more:"Action 6 (accepted with amendment), but no backorder, cancelled or confirmed quantity is present, so these lines don't show what was amended."},
+  'action2-missing-cancelled':{level:'err',h:'Action 2 without a cancelled quantity (QTY+182)',more:'Action 2 (cancelled) normally states the cancelled quantity in QTY+182. None is present on these lines.'},
+  'action2-cancelled-zero':{level:'warn',h:'Action 2 with cancelled quantity 0',more:"QTY+182 is explicitly 0 on a cancelled line. This alone doesn't affect the mapping."},
+  'action2-has-confirmed':{level:'err',h:'Action 2 with a confirmed quantity (QTY+12)',more:'Action 2 means cancelled, and these lines also carry a confirmed quantity. Action 6 is the code bol uses for a partial accept.'}
 };
-function actionRuleExplain(key){
+function actionRule(key){
   if(key.startsWith('action-unknown:')){
     const code=key.slice('action-unknown:'.length);
-    return `Action code ${esc(code)} isn't one of the codes bol/Transus maps (2, 5 or 6) — worth confirming this was handled correctly downstream.`;
+    return {level:'warn',h:`Action code ${esc(code)} isn't one bol/Transus maps`,more:'bol/Transus map action codes 2, 5 and 6. Worth confirming how this one was handled downstream.'};
   }
-  return ACTION_RULE_EXPLAIN[key]||key;
+  return ACTION_RULE_EXPLAIN[key]||{level:'warn',h:esc(key),more:''};
 }
+/* Returns the rule keys a line trips, and the line's worst rule level
+   ('ok' when none) — only used to know whether the line was flagged at
+   all; each grouped finding takes its own rule's level (actionRule). */
 function validateOrdrspLine(bgmFunc,line){
   const keys=[];let level='ok';const a=line.action;
   const has=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]!==''&&line.qty[q]!=='0';
@@ -1746,16 +1755,11 @@ function validateOrdrspLine(bgmFunc,line){
   // present, just zero.
   const isZero=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]==='0';
   const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
-  const bump=l=>{if(l==='err')level='err';else if(l==='warn'&&level!=='err')level='warn';};
   if(a==='5'){
-    if(!has('12')){
-      const zero=isZero('12');
-      keys.push(zero?'action5-confirmed-zero':'action5-missing-confirmed');
-      bump(zero?'warn':'err');
-    }
-    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67')){keys.push('action5-missing-date');bump('warn');}
-    if(has('83')){keys.push('action5-has-backorder');bump('err');}
-    if(has('182')){keys.push('action5-has-cancelled');bump('err');}
+    if(!has('12'))keys.push(isZero('12')?'action5-confirmed-zero':'action5-missing-confirmed');
+    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67'))keys.push('action5-missing-date');
+    if(has('83'))keys.push('action5-has-backorder');
+    if(has('182'))keys.push('action5-has-cancelled');
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date, OR a
     // cancelled quantity (partial cancellation is also a valid reason for
@@ -1766,19 +1770,16 @@ function validateOrdrspLine(bgmFunc,line){
     // reason for the amendment. Transus XML may express as delivered 0 + backorder.
     if(!has('83')&&!has('182')&&!(line.qty['12']==='0')){
       keys.push(line.qty['12']?'action6-no-backorder-has-confirmed':'action6-no-backorder-no-data');
-      bump('warn');
     }
   }else if(a==='2'){
-    if(!has('182')){
-      const zero=isZero('182');
-      keys.push(zero?'action2-cancelled-zero':'action2-missing-cancelled');
-      bump(zero?'warn':'err');
-    }
-    if(has('12')){keys.push('action2-has-confirmed');bump('err');}
-  }else{keys.push(`action-unknown:${a??'(none)'}`);bump('warn');}
+    if(!has('182'))keys.push(isZero('182')?'action2-cancelled-zero':'action2-missing-cancelled');
+    if(has('12'))keys.push('action2-has-confirmed');
+  }else keys.push(`action-unknown:${a??'(none)'}`);
+  const rank={ok:0,info:1,warn:2,err:3};
+  keys.forEach(k=>{const l=actionRule(k).level;if(rank[l]>rank[level])level=l;});
   return {level,keys};
 }
-/* Turns a flat list of {key,level,item,jump} entries (one per rule-violation
+/* Turns a flat list of {key,item,jump} entries (one per rule-violation
    per line) into one rendered block per distinct key — the shared
    explanation, plus every affected item as its own small clickable tag.
    This is the same "one explanation + a tag per item" shape "Worth
@@ -1787,14 +1788,14 @@ function validateOrdrspLine(bgmFunc,line){
 function groupActionFindings(entries){
   const order=[];const groups=new Map();
   entries.forEach(e=>{
-    if(!groups.has(e.key)){groups.set(e.key,{level:e.level,items:[]});order.push(e.key);}
+    if(!groups.has(e.key)){groups.set(e.key,{items:[]});order.push(e.key);}
     groups.get(e.key).items.push(e);
   });
   return order.map(key=>{
-    const g=groups.get(key);
+    const g=groups.get(key);const rule=actionRule(key);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.item)}</span></li>`).join('');
-    return {level:g.level,text:`${actionRuleExplain(key)} <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`};
+    return {level:rule.level,text:`<strong>${rule.h}</strong> <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+(rule.more?moreInfo(rule.more):'')};
   });
 }
 /* Groups {ref,taxType,category} entries from the TAX-segment "category
@@ -3074,7 +3075,7 @@ function compare(bol,sup){
           const itemKey=l.art||l.gtin||l.lineNo;
           flaggedActionItems.add(itemKey);
           const jumpVal=l.gtin||l.art||l.lineNo||'';
-          res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
+          res.keys.forEach(k=>entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
         }
       });
       groupActionFindings(entries).forEach(g=>add(g.level,`${lab} — ${g.text}`,'message'));
@@ -4865,7 +4866,7 @@ function factsOverviewHtml(facts){
         const itemKey=l.art||l.gtin||l.lineNo;
         flaggedActionItems.add(itemKey);
         const jumpVal=l.gtin||l.art||l.lineNo||'';
-        res.keys.forEach(k=>entries.push({key:k,level:res.level,item:itemKey,jump:jumpCall(jumpVal)}));
+        res.keys.forEach(k=>entries.push({key:k,item:itemKey,jump:jumpCall(jumpVal)}));
       }
     });
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
