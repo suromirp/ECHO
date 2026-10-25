@@ -562,7 +562,7 @@ test('qty x price is checked per line and per side; PRI+INV is a net-price fallb
   for (const file of ['arith-per-line.sup.edi', 'arith-per-line.bol.ubl.xml']) {
     await openApp(page);
     await runQuickFixture(page, path.join(FIX, file));
-    const notes = await page.locator('#quickOverview .note-inline').allInnerTexts();
+    const notes = await page.locator('#quickOverview ul.findings li').allInnerTexts();
     expect(notes.filter(t => /quantity × net price/.test(t))).toHaveLength(1);
     expect(notes.some(t => /8710000000093/.test(t))).toBe(true);
   }
@@ -661,4 +661,145 @@ test('per-EAN invoice differences are capped at 5 with a summary line', async ({
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const note = page.locator('#invoiceResults ul.findings li', { hasText: 'This is a credit note' });
   await expect(note.locator('details.f-more')).toHaveCount(1);
+});
+
+/** Quick check's findings list, split by its section headers. */
+async function quickFindingsByCategory(page) {
+  // Quick check renders after the file is read: wait for the list first.
+  await page.locator('#quickOverview ul.findings').first().waitFor();
+  const items = await page.locator('#quickOverview ul.findings li').evaluateAll(
+    els => els.map(el => ({
+      isCat: el.classList.contains('findings-cat'),
+      text: el.textContent,
+      icon: (el.querySelector('.fi') || {}).textContent || '',
+      level: (el.className.match(/f-(err|warn|info|ok)/) || [])[1] || null,
+    })),
+  );
+  const buckets = { message: [], info: [], all: [] };
+  let current = null;
+  const titleToKey = { 'Message checks': 'message', 'Good to know': 'info' };
+  items.forEach(it => {
+    if (it.isCat) { current = titleToKey[it.text.trim()] || null; return; }
+    buckets.all.push(it);
+    if (current) buckets[current].push(it.text);
+  });
+  return buckets;
+}
+
+// A TAX segment inside a line's ALC group (the charge's own VAT rate) used to
+// overwrite the line's VAT %: a 21% freight charge on a 9% line read as a
+// 21% line and Compare showed a false "VAT % differs" against bol's 9%.
+test('a TAX segment after a line-level ALC belongs to the charge, not the line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'alc-tax-line-vat.sup.edi'),
+    path.join(FIX, 'alc-tax-line-vat.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect([...b.diff, ...b.message].some(t => /VAT/.test(t))).toBe(false);
+  // MOA+131 matches the one ALC amount: no charge-total finding either.
+  expect(b.message.some(t => /MOA\+131/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'alc-tax-line-vat.sup.edi'));
+  const row = page.locator('#quickOverview table.inv tr', { hasText: '8710000001106' });
+  await expect(row).toContainText('9%');
+  await expect(row).not.toContainText('21%');
+  await expect(page.locator('#quickOverview .chg', { hasText: 'FC' })).toContainText('VAT 21%');
+});
+
+// INVOIC Quick check printed loose notes (⚠ on warnings) and the ECHO
+// signal always reacted "all good". It is now a Findings list like
+// ORDRSP/DESADV Quick check, with Message checks / Good to know sections,
+// "!" for warnings (⚠ only for errors), and the worst level drives the signal.
+test('INVOIC Quick check shows a Findings list with sections, warn icons, and a matching signal', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'tax-missing-rate.sup.edi'));
+  await expect(page.locator('#quickOverview ul.findings')).toBeVisible();
+  const q = await quickFindingsByCategory(page);
+  expect(q.message.some(t => /rate/i.test(t))).toBe(true);
+  expect(q.all.filter(f => f.level === 'warn').every(f => f.icon === '!')).toBe(true);
+  expect(q.all.some(f => f.icon === '⚠' && f.level !== 'err')).toBe(false);
+  expect(await page.evaluate('pendingEyeReaction')).not.toBe('blink');
+
+  // A clean message: no findings list, the calm signal.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'alc-tax-line-vat.sup.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+  await expect(page.locator('#quickOverview ul.findings')).toHaveCount(0);
+  expect(await page.evaluate('pendingEyeReaction')).toBe('blink');
+});
+
+// The illegal XML control character check only looked at IMD descriptions;
+// the XML conversion fails on one in any field (NAD name, FTX text, …).
+// One grouped finding, one tag per segment, in both modes.
+test('an illegal control character in any free-text segment is flagged once, segments as tags', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'illegal-chars-free-text.sup.edi'),
+    path.join(FIX, 'illegal-chars-free-text.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const f = b.message.filter(t => /illegal control character/.test(t));
+  expect(f).toHaveLength(1);
+  expect(f[0]).toContain('Supplier —');
+  expect(f[0]).toContain('3 segments');
+  for (const ref of ['NAD+SU', 'FTX+AAI', 'IMD+F · line 2', '0x16', '0x01']) expect(f[0]).toContain(ref);
+  expect(f[0]).not.toContain('line 1');
+  expect(b.diff.some(t => /illegal control character/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'illegal-chars-free-text.sup.edi'));
+  const q = await quickFindingsByCategory(page);
+  const qf = q.message.filter(t => /illegal control character/.test(t));
+  expect(qf).toHaveLength(1);
+  for (const ref of ['NAD+SU', 'FTX+AAI', 'IMD+F · line 2']) expect(qf[0]).toContain(ref);
+});
+
+// Real Supplier Juliett credit note: summary MOA+131 (total charges/allowances) 3.38,
+// while its line-level ALC amounts add up to 3.41. A single-message check:
+// both modes, per side in Compare, once when bol's output carries the same.
+test('MOA+131 not matching the sum of the ALC amounts is a Message check, in both modes', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'charge-total-mismatch.sup.edi'),
+    path.join(FIX, 'charge-total-mismatch.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const f = b.message.filter(t => /MOA\+131/.test(t));
+  expect(f).toHaveLength(1);
+  expect(f[0]).toContain('Supplier —');
+  expect(f[0]).toContain('0.57');
+  expect(f[0]).toContain('0.60');
+  expect(b.diff.some(t => /MOA\+131/.test(t))).toBe(false);
+
+  // Same EDIFACT on both sides: reported once, as passed on unchanged.
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'charge-total-mismatch.sup.edi'),
+    path.join(FIX, 'charge-total-mismatch.sup.edi'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const d = await invoiceFindingsByCategory(page);
+  const df = d.message.filter(t => /MOA\+131/.test(t));
+  expect(df).toHaveLength(1);
+  expect(df[0]).toContain('Supplier (passed on unchanged to bol)');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'charge-total-mismatch.sup.edi'));
+  const q = await quickFindingsByCategory(page);
+  expect(q.message.filter(t => /MOA\+131/.test(t))).toHaveLength(1);
+  expect(await page.evaluate('pendingEyeReaction')).not.toBe('blink');
+
+  // MOA+131 equal to the ALC amount (alc-moa-203): nothing flagged.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'alc-moa-203.sup.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('MOA+131');
 });

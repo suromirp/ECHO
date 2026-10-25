@@ -1854,18 +1854,21 @@ function factsGs1Finding(facts,jumpCall){
   return gs1CheckDigitFinding(gs1CheckDigitIssues(facts.lines.map(l=>l.gtin),(facts.pallets||[]).map(p=>p.sscc).concat(facts.ssccs||[])),jumpCall);
 }
 
-/* Groups {ref,code} entries from the IMD-description illegal-XML-character
-   check into one block — same one-explanation-many-refs shape as
-   taxIssueFindings above. Grouped by nothing more specific than "this
-   message" since these are typically one-off data-quality glitches, not a
-   pattern repeated identically across many lines the way a missing tax
-   rate is. */
-function illegalDescCharFindings(issues){
+/* Groups the {ref,codes,jump} entries of the illegal-XML-character scan
+   (one per EDIFACT segment, any field: NAD, FTX, IMD, …) into one block
+   with a tag per segment — same one-explanation-many-refs shape as
+   taxIssueFindings above. jumpCall (optional) makes each tag jump to the
+   field's text in the original message. */
+function illegalTextCharFindings(issues,jumpCall){
   if(!issues||!issues.length)return [];
   const n=issues.length;
-  const codes=[...new Set(issues.map(i=>'0x'+i.code.toString(16).toUpperCase().padStart(2,'0')))].join(', ');
-  const refs=issues.map(i=>i.ref).join(', ');
-  return [`<strong>${n} item description${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}): ${esc(refs)}.`+moreInfo(`Perfectly valid in EDIFACT free text, but not inside XML: any XML parser (including the one converting this to an invoice document) refuses to parse the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file".`)];
+  const hex=c=>'0x'+c.toString(16).toUpperCase().padStart(2,'0');
+  const codes=[...new Set(issues.flatMap(i=>i.codes||[i.code]).map(hex))].join(', ');
+  const tags=issues.map(i=>{
+    const jump=jumpCall&&i.jump?` onclick="${jumpCall(i.jump)}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(i.ref)}</span></li>`;
+  }).join('');
+  return [`<strong>${n} segment${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}). <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Valid in EDIFACT text, but not inside XML: an XML parser (including the one converting this message to bol's invoice document) refuses the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file". Every field is checked: item descriptions (IMD), names and addresses (NAD), free text (FTX) and the rest.`)];
 }
 /* A message can state the VAT rate at the standard TAX-segment position on
    its line-level segments, but at a different position on its summary-level
@@ -3427,7 +3430,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalDescChars:[],blankLinCount:0,extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalTextChars:[],blankLinCount:0,extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 /* First real EAN among a line's candidate identifiers. An all-zeros EAN is
@@ -3544,6 +3547,33 @@ function parseInvoicEdifact(raw){
       curLine=null;endMsg();return;
     }
     const comp=i=>splitEsc(el[i]||'',delims.comp,delims.rel);
+    // An ASCII control character is legal in EDIFACT but illegal in XML, so
+    // it breaks the conversion to bol's UBL invoice ("Couldn't parse XML
+    // content of the file"), whichever field it sits in. First seen in an
+    // IMD description; a NAD name/address or FTX text breaks it just the
+    // same, so every element of every segment is scanned (after splitting,
+    // so a delimiter itself is never mistaken for one).
+    {
+      const codes=new Set();let jump=null;
+      for(let i=1;i<el.length;i++){
+        comp(i).forEach(part=>{
+          const c=findIllegalXmlChar(part);
+          if(c===null)return;
+          codes.add(c);
+          if(jump===null){
+            // the longest clean run of text in that field, to find it again
+            const runs=part.split(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]+/).map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
+            jump=runs[0]||'';
+          }
+        });
+      }
+      if(codes.size){
+        const segRef=tag+(el[1]&&/^[A-Z0-9]{1,3}$/.test(el[1])?'+'+el[1]:'');
+        const lineNo=tag==='LIN'?(el[1]||'?'):((curLine&&!inSummary)?(curLine.lineNo||'?'):null);
+        const ref=segRef+(lineNo!==null?` · line ${lineNo}`:'');
+        cur.illegalTextChars.push({ref,codes:[...codes],jump:jump||segRef});
+      }
+    }
 
     switch(tag){
       case 'BGM':{
@@ -3640,12 +3670,6 @@ function parseInvoicEdifact(raw){
         const c=comp(3);
         const txt=c.filter(Boolean).join(' ').trim();
         if(txt)curLine.desc=curLine.desc?curLine.desc+' '+txt:txt;
-        // Confirmed real cause of a "Couldn't parse XML content of the
-        // file" delivery failure: this byte is perfectly legal in EDIFACT
-        // free text but illegal in XML, so it breaks bol's generated UBL
-        // invoice the moment this description is carried through into it.
-        const illegalCode=findIllegalXmlChar(txt);
-        if(illegalCode!==null)cur.illegalDescChars.push({ref:`line ${curLine.lineNo||'?'}`,code:illegalCode});
         break;}
       case 'QTY':{
         const c=comp(1);
@@ -3702,7 +3726,7 @@ function parseInvoicEdifact(raw){
         else if(q==='128')cur.totals.lineTotal=v;
         else if(q==='79')cur.totals.lineTotal=v;
         else if(q==='129')cur.totals.discountBase=v;
-        else if(q==='131')cur.totals.charges=v;
+        else if(q==='131'){cur.totals.charges=v;cur.extras.moa131=v;}
         else if(q==='260'||q==='52')cur.totals.allowances=v;
         else if(q==='21'&&cur.paymentTerms.amount===null)cur.paymentTerms.amount=v;
         else{cur.extras.moa=cur.extras.moa||{};cur.extras.moa[q]=v;}
@@ -3717,7 +3741,17 @@ function parseInvoicEdifact(raw){
           if(c[3]!==undefined&&num(c[3])!==null){pct=num(c[3]);pctPrimaryPos=(i===5);return;}
           for(const part of c){const n=num(part);if(n!==null){pct=n;break;}}
         });
-        if(curLine){if(pct!==null)curLine.vatPct=pct;}
+        // A TAX segment after an ALC belongs to that charge/allowance
+        // (EANCOM's ALC group carries its own TAX), never to the line: a
+        // 21% surcharge on a 9% line used to overwrite the line's VAT % and
+        // show a false "VAT % differs" against bol's output. Kept on the
+        // ALC. A message-level ALC's rate still counts as one of the
+        // message's VAT rates, as it did before.
+        if(curAlc){
+          if(pct!==null)curAlc.vatPct=pct;
+          if(!curLine&&pct!==null)uniqPush(cur.taxRates,pct);
+        }
+        else if(curLine){if(pct!==null)curLine.vatPct=pct;}
         else if(pct!==null)uniqPush(cur.taxRates,pct);
         // A duty/tax/fee segment that names a category (e.g. "S"/"E") but
         // has no rate at all is a common, silent cause of validation
@@ -3728,7 +3762,8 @@ function parseInvoicEdifact(raw){
         const taxType=(el[2]||'').trim();
         const category=(comp(6)[0]||'').trim();
         if(pct===null&&taxType&&category){
-          const ref=curLine?`line ${curLine.lineNo||'?'}`:'the invoice summary';
+          const alcRef=curAlc?`${curAlc.kind}${curAlc.code?' '+curAlc.code:''}`:'';
+          const ref=curLine?`line ${curLine.lineNo||'?'}${alcRef?` (${alcRef})`:''}`:(alcRef?`message-level ${alcRef}`:'the invoice summary');
           cur.taxIssues.push({ref,taxType,category});
         }
         // A message can state the identical VAT rate at the standard C243
@@ -4380,6 +4415,38 @@ function uniformArithmeticGapText(g){
   const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
   return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong>: one pattern, not ${n} separate gaps. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Looks like one uniform arrangement (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix. Worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance rather than folding it into the line amount.`);
 }
+/* EDIFACT summary MOA+131 ("total charges/allowances") vs. the ALC amounts
+   the same message lists (message and line level). A real Supplier Juliett credit note
+   stated MOA+131:3.38 while its seven line-level ALCs add up to 3.41 (one
+   0.03 charge counted nowhere else either). A single-message observation,
+   so both modes and per side in Compare (parity rule). Deliberately
+   generous (rule 7): only EDIFACT (other dialects' charge totals mean other
+   things, e.g. UBL's ChargeTotalAmount is message-level charges only),
+   only when at least one ALC states an amount and none is left without
+   one (a percentage-only ALC can't be summed), magnitudes only (credit
+   notes), and a match on charges − allowances, charges + allowances or
+   either way round of signs counts. Tolerance: just over one cent. */
+function invoiceChargeTotalIssue(inv){
+  if(!inv||inv.source!=='EDIFACT')return null;
+  const stated=inv.extras&&inv.extras.moa131;
+  if(stated===null||stated===undefined)return null;
+  const alcs=[...(inv.charges||[]),...inv.lines.flatMap(l=>l.charges||[])];
+  if(!alcs.length||alcs.some(c=>c.amount===null||c.amount===undefined))return null;
+  const sumOf=k=>Math.round(alcs.filter(c=>c.kind===k).reduce((s,c)=>s+c.amount,0)*100)/100;
+  const ch=sumOf('charge'),al=sumOf('allowance');
+  const cands=[ch-al,ch+al,Math.abs(ch)+Math.abs(al),Math.abs(ch)-Math.abs(al)].map(v=>Math.abs(v));
+  const TOL=0.015;
+  if(cands.some(v=>Math.abs(v-Math.abs(stated))<TOL))return null;
+  const sum=Math.round((ch-al)*100)/100;
+  return {stated,sum,charges:ch,allowances:al,hasCharges:alcs.some(c=>c.kind==='charge'),hasAllowances:alcs.some(c=>c.kind==='allowance'),n:alcs.length};
+}
+function invoiceChargeTotalText(issue,cur,jumpCall){
+  const a=v=>fmtAmt(Math.abs(v),cur);
+  const st=jumpCall?`<span class="clickable-val" onclick="${jumpCall('MOA+131')}">${esc(a(issue.stated))}</span>`:esc(a(issue.stated));
+  const parts=issue.hasCharges&&issue.hasAllowances?` (charges ${esc(a(issue.charges))}, allowances ${esc(a(issue.allowances))})`:'';
+  const diff=fmtAmt(Math.abs(Math.abs(issue.stated)-Math.abs(issue.sum)),cur);
+  return `<strong>Total charges/allowances (MOA+131) differs from the ALC amounts</strong>: stated ${st}, the ALC segments add up to <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary MOA+131 states the total of the message's charges and allowances. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure, ${esc(diff)} apart. The payable, taxable and line amounts are separate figures and are compared on their own. Which of the two is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
+}
 /* qty × net price vs. line amount for every line of one invoice: the ONE
    helper behind both Quick check and Compare (per side). Per line, never
    per-EAN sums: an EAN on several lines would otherwise add its net prices
@@ -4643,8 +4710,19 @@ function compareInvoice(sup,bol){
   taxIssueFindings(bol.taxIssues).forEach(t=>add('warn',`Bol — ${t}`,'message'));
   if(sup.taxRateEncodingMismatch)add('warn',`Supplier — ${taxRateEncodingMismatchText()}`,'message');
   if(bol.taxRateEncodingMismatch)add('warn',`Bol — ${taxRateEncodingMismatchText()}`,'message');
-  illegalDescCharFindings(sup.illegalDescChars).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
-  illegalDescCharFindings(bol.illegalDescChars).forEach(t=>add('warn',`Bol — ${t}`,'message'));
+  illegalTextCharFindings(sup.illegalTextChars,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
+  illegalTextCharFindings(bol.illegalTextChars,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`).forEach(t=>add('warn',`Bol — ${t}`,'message'));
+  // MOA+131 vs the ALC amounts: one side's own numbers, per side, once when
+  // bol's output carries the same (only EDIFACT states MOA+131).
+  {
+    const si=invoiceChargeTotalIssue(sup),bi=invoiceChargeTotalIssue(bol);
+    const sig=i=>i?`${Math.abs(i.stated).toFixed(2)}|${Math.abs(i.sum).toFixed(2)}`:'';
+    if(si&&bi&&sig(si)===sig(bi))add('warn','Supplier (passed on unchanged to bol) — '+invoiceChargeTotalText(si,cur,v=>`jumpToInvSource('both',${jsQuote(v)})`),'message');
+    else{
+      if(si)add('warn','Supplier — '+invoiceChargeTotalText(si,cur,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`),'message');
+      if(bi)add('warn','Bol — '+invoiceChargeTotalText(bi,cur,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`),'message');
+    }
+  }
   {const fs=gs1CheckDigitFinding(gs1CheckDigitIssues(sup.lines.map(l=>l.gtin),[]));if(fs)add('warn','Supplier — '+fs,'message');
    const fb=gs1CheckDigitFinding(gs1CheckDigitIssues(bol.lines.map(l=>l.gtin),[]));if(fb)add('warn','Bol — '+fb,'message');}
   // Blank LIN segments and no order number anywhere: single-message checks
@@ -5066,6 +5144,33 @@ function partyHtml(role,p,jumpCall){
   return `<div class="party"><div class="role">${esc(NAD_ROLE[role]||role)}</div>${bits.join('')}</div>`;
 }
 
+/* Quick check's Findings list, shared by the INVOIC overview: same markup,
+   order and icons as ORDRSP/DESADV Quick check (⚠ err, ! warn, ⓘ info,
+   ✓ ok — docs/ui-conventions.md). When the findings carry a cat, they are
+   split into the same Message checks / Good to know sections Compare uses
+   (Quick check has no Transformation differences: nothing to compare). */
+function quickFindingsHtml(findings){
+  if(!findings||!findings.length)return '';
+  const order={err:0,warn:1,info:2,ok:3};const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
+  const li=f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`;
+  const sorted=list=>[...list].sort((a,b)=>order[a.level]-order[b.level]);
+  let body='';
+  if(findings.some(f=>f.cat)){
+    [{key:'message',title:'Message checks',hint:'Observations about this message\'s own structure and numbers.'},
+     {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}].forEach(c=>{
+      const items=findings.filter(f=>(f.cat||'message')===c.key);
+      if(!items.length)return;
+      body+=`<li class="findings-cat" title="${esc(c.hint)}">${esc(c.title)}</li>`+sorted(items).map(li).join('');
+    });
+  }else body=sorted(findings).map(li).join('');
+  return `<div class="sec-h">Findings</div><ul class="findings">${body}</ul>`;
+}
+function worstFindingLevel(findings){
+  if(findings.some(f=>f.level==='err'))return 'err';
+  if(findings.some(f=>f.level==='warn'))return 'warn';
+  return 'ok';
+}
+
 /* ---- INVOIC overview ---- */
 function invoiceOverviewHtml(inv,opts={}){
   const cur=inv.currency||'';
@@ -5093,15 +5198,21 @@ function invoiceOverviewHtml(inv,opts={}){
   if(inv.taxRates.length)f.push(fieldHtml('VAT rate',inv.taxRates.join(', ')+' %'));
   f.push(fieldHtml('Number of lines',inv.lines.length||null));
   const fh=f.filter(Boolean).join('');
-  if(fh)h+=`<div class="fields">${fh}</div>`;
 
+  // Single-message checks, collected into one Findings list rendered the
+  // same way as ORDRSP/DESADV Quick check (quickFindingsHtml), split into
+  // Message checks / Good to know like Compare. The worst level drives the
+  // ECHO signal below; it used to be a row of loose notes and the signal
+  // always said "all good".
+  const qcFindings=[];
+  const qcAdd=(level,text,cat)=>qcFindings.push({level,text,cat:cat||'message'});
   const ambigOrders=inv.lines.some(l=>l.orderScope==='ambiguous');
   const ambigDespatch=inv.lines.some(l=>l.despatchScope==='ambiguous');
   if(ambigOrders||ambigDespatch){
     const bits=[];
     if(ambigOrders)bits.push('order reference');
     if(ambigDespatch)bits.push('packing reference');
-    h+=`<div class="note-inline" style="color:var(--warn)">! Some lines have an <strong>ambiguous ${bits.join(' and ')}</strong>.`+moreInfo(`The message has several message-level references and none on those lines, so it can't be determined which one belongs to each line. No automatic match was made.`)+`</div>`;
+    qcAdd('warn',`Some lines have an <strong>ambiguous ${bits.join(' and ')}</strong>.`+moreInfo(`The message has several message-level references and none on those lines, so it can't be determined which one belongs to each line. No automatic match was made.`));
   }
   // Mirrors Compare's "N line(s) without an EAN or item number" — there,
   // it's framed as "these couldn't be matched"; standalone, the more
@@ -5109,35 +5220,34 @@ function invoiceOverviewHtml(inv,opts={}){
   // reference at all.
   // (an all-zeros EAN has its own note below, so it isn't counted twice)
   const noIdLines=inv.lines.filter(l=>!l.gtinZeroed&&!(l.gtin&&String(l.gtin).trim())&&!(l.art&&String(l.art).trim())).length;
-  if(noIdLines)h+=`<div class="note-inline" style="color:var(--warn)">${noIdLines} line(s) have no EAN or item number at all.</div>`;
-  taxIssueFindings(inv.taxIssues).forEach(t=>{
-    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
-  });
-  if(inv.taxRateEncodingMismatch){
-    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${taxRateEncodingMismatchText()}</div>`;
-  }
-  illegalDescCharFindings(inv.illegalDescChars).forEach(t=>{
-    h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
-  });
-  {const f=gs1CheckDigitFinding(gs1CheckDigitIssues(inv.lines.map(l=>l.gtin),[]));if(f)h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${f}</div>`;}
+  if(noIdLines)qcAdd('warn',`${noIdLines} line(s) have no EAN or item number at all.`);
+  taxIssueFindings(inv.taxIssues).forEach(t=>qcAdd('warn',t));
+  if(inv.taxRateEncodingMismatch)qcAdd('warn',taxRateEncodingMismatchText());
+  illegalTextCharFindings(inv.illegalTextChars,jumpCall).forEach(t=>qcAdd('warn',t));
+  {const f=gs1CheckDigitFinding(gs1CheckDigitIssues(inv.lines.map(l=>l.gtin),[]),jumpCall);if(f)qcAdd('warn',f);}
   // Same all-zeros-EAN and incomplete-order-number checks as ORDRSP/DESADV
   // Quick check and INVOIC Compare (parity rule).
   {
     const af=invoiceAsFacts(inv);
-    const note=(level,text)=>{h+=`<div class="note-inline" style="color:var(--warn)">${level==='err'?'⚠':'!'} ${text}</div>`;};
+    const note=(level,text)=>qcAdd(level,text);
     checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn','<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
+  // MOA+131 vs the ALC amounts (EDIFACT only), same check as Compare.
+  {const ci=invoiceChargeTotalIssue(inv);if(ci)qcAdd('warn',invoiceChargeTotalText(ci,cur,jumpCall));}
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
-  {
-    invoiceArithmeticFindings(invoiceArithmeticEntries(inv,jumpCall),cur,'','Invoice lines').forEach(f=>{
-      h+=`<div class="note-inline" style="color:var(${f.level==='warn'?'--warn':'--info'})">${f.level==='warn'?'!':'ⓘ'} ${f.text}</div>`;
-    });
-  }
+  invoiceArithmeticFindings(invoiceArithmeticEntries(inv,jumpCall),cur,'','Invoice lines').forEach(f=>qcAdd(f.level,f.text));
+  // Findings first, then the header fields: same order as ORDRSP/DESADV.
+  // Inside Compare's per-side overview (opts.side) every one of these
+  // already sits in Compare's own Findings, per side, so it isn't
+  // repeated there.
+  if(!opts.side)h+=quickFindingsHtml(qcFindings);
+  else if(qcFindings.length)h+=`<div class="note-inline">${qcFindings.length} check${qcFindings.length===1?'':'s'} on this message, listed under Findings above.</div>`;
+  if(fh)h+=`<div class="fields">${fh}</div>`;
 
   const parties=Object.keys(inv.parties).map(r=>partyHtml(r,inv.parties[r],jumpCall)).filter(Boolean).join('');
   if(parties)h+=`<div class="sec-h">Parties</div><div class="party-grid">${parties}</div>`;
@@ -5173,9 +5283,9 @@ function invoiceOverviewHtml(inv,opts={}){
     // opts.side is only set when this function is reused inside Compare's
     // "show invoice overview" detail — the signal already reacted once for
     // the comparison result there, so it shouldn't react again here.
-    if(!opts.side)pendingEyeReaction=echoReactionFor('ok',wcNotices.length>0);
+    if(!opts.side)pendingEyeReaction=echoReactionFor(worstFindingLevel(qcFindings),wcNotices.length>0);
   }else if(!opts.side){
-    pendingEyeReaction=null;
+    pendingEyeReaction=qcFindings.length?echoReactionFor(worstFindingLevel(qcFindings),false):null;
   }
 
   const allCharges=[...inv.charges];
@@ -5189,6 +5299,7 @@ function invoiceOverviewHtml(inv,opts={}){
       if(c.code)bits.push(`<span class="dim">code ${esc(c.code)}</span>`);
       if(c.amount!==null&&c.amount!==undefined)bits.push(`<strong>${esc(fmtAmt(c.amount,cur))}</strong>`);
       if(c.pct!==null&&c.pct!==undefined)bits.push(`${esc(c.pct)}%`);
+      if(c.vatPct!==null&&c.vatPct!==undefined)bits.push(`<span class="dim">VAT ${esc(c.vatPct)}%</span>`);
       bits.push(`<span class="dim">${c.level==='line'?'line level'+(c.lineRef?' '+esc(c.lineRef):''):'message level'}</span>`);
       return `<span class="chg">${bits.join(' ')}</span>`;
     }).join('');
