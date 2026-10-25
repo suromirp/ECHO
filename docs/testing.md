@@ -249,6 +249,8 @@ actual test fixtures, don't just keep this list as prose:
   column, and shows the same banner in Quick check, rather than an empty
   result or a wall of "missing" findings.
 - **ORDERS**: readable in Quick check; still declined in Compare.
+- **ORDERS**: Quick check runs the line-level checks too (GS1 check digit,
+  all-zeros EAN, duplicate `DTM` qualifier), not only for ORDRSP/DESADV.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 
