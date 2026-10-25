@@ -85,7 +85,17 @@ actual test fixtures, don't just keep this list as prose:
   Application Identifier prefix bol's docs say not to send) is flagged too,
   separately, at info level.
 - **DESADV**: many pallets missing an SSCC are grouped into one finding per
-  side with a collapsed tag list, not one finding per pallet.
+  side with a collapsed tag list, not one finding per pallet. In Compare,
+  when neither side has any SSCC, that is one "Neither message contains an
+  SSCC" finding listing both sides' pallets (not three findings).
+- **ORDRSP/DESADV**: Worth checking's "EANs appear a different number of
+  times" counts per EAN + order (a multi-order message isn't flagged just
+  for repeating an EAN once per order) and labels by EAN, not article code;
+  an order list past ~20 collapses in the Compare strip and header table.
+- **DESADV**: the SSCC length finding says when a value is "00" + a valid
+  SSCC-18, or a 17-digit value valid with a leading 0, in both modes.
+- **DESADV**: the Header fields table's Packing reference falls back to
+  `RFF+DQ`/`RFF+AAS` (source labelled) when there's no `RFF+BM`.
 - **DESADV**: a nested `CPS` group that carries its own SSCC is marked as
   "nested under" its parent pallet's SSCC, not shown as an independent
   pallet; a pallet overview past ~20 entries in Quick check defaults to
@@ -112,6 +122,8 @@ actual test fixtures, don't just keep this list as prose:
   all) is read correctly — items, quantities, order number and pallets
   with their SSCCs — rather than silently producing zero supplier lines
   and showing every item as "missing," in both Compare and Quick check.
+- **DESADV**: the CSV dialect's `HDR` arrival date is read (Header fields
+  table and Quick check), matching bol's `DTM+132`.
 - **ORDRSP**: the same supplier's CSV dialect, ORDRSP variant, is routed to
   its own parser (not the DESADV one) based on the `HDR` record's own
   document-type field, in both Compare and Quick check — rather than
@@ -158,6 +170,63 @@ actual test fixtures, don't just keep this list as prose:
   pallet level", in either mode.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
+- **ORDRSP/DESADV**: the Compare verdict is driven by Transformation
+  differences only. A Message check alone, even at err level (RFF+BM too
+  long, no PAC, an ORDRSP action rule), gives the calm "mapping is correct
+  … see Message checks" verdict, never "lost in translation"; a DESADV with
+  a Transformation difference at warn level never says "the transformation
+  matches".
+- **ORDRSP**: each action rule keeps its own level (a warn rule never shows
+  as err because another rule on the same line is err); the action-6
+  date-only amendment is info. Short headline + "More info", in Compare and
+  Quick check.
+- **DESADV**: order numbers shifted one line down in bol's output (bol line
+  i = supplier line i−1, run ≥ 3 changed lines) are one grouped
+  Transformation difference, not N per-item findings; an unrelated
+  order-number mismatch is its own finding at Difference level (row status
+  Difference, not Check). Compare-only.
+- **UI**: Copy for Transus' "…and N more" counts the items behind a capped
+  "N more item(s)" summary, not the number of left-out findings.
+- **DESADV**: pallet overview — an SSCC with no items on one side while
+  the other side has items for it is a Difference ("0 items", not "1 item"
+  and "Match"); a line with a zeroed EAN reads "EAN zeroed", not "No
+  items"; the quantities next to the pill are SSCC totals on both sides.
+  Quick check shows the same labels.
+- **DESADV**: SSCCs only in the supplier message that all sit in CPS
+  groups without PAC are a Message check pointing at the PAC finding, not
+  a Transformation difference sent to Transus; with PAC present they stay
+  a Transformation difference.
+- **DESADV**: SSCCs only on one side are listed as clickable tags,
+  collapsed past ~20, not one long inline list; "Pallet mapping differs"
+  is headed by its SSCC and difference count, the per-item differences in
+  More info.
+- **DESADV**: "Pallet EAN repeated as item" and "Item not linked to a
+  pallet" are one grouped finding each (tags per item), not one per line;
+  the shipment-weight and "No SSCC found" findings have a short headline +
+  More info; warn-level pallet pills use "!" (⚠ is for errors), in both
+  modes.
+- **DESADV**: a message with only `RFF+BM` (empty BGM number) is not
+  flagged "no packing reference", in either mode. The near-miss finding is
+  headed "Packing reference almost matches the document number" with both
+  values visible and the advice in More info; the header table row is
+  "Packing reference".
+- **ORDRSP**: a changed confirmed delivery date (`DTM+67`) is a grouped
+  Transformation difference, compared per (item, action) bucket like the
+  net price, only when both sides state it (Compare-only). Quick check's
+  Lines table shows the delivery date and net price per line.
+- **ORDRSP**: supplier action 6 used as a date-only amendment that bol's
+  output carries as action 5 (same `QTY+12`, same `DTM+67`, no
+  backorder/cancel) is one grouped Good-to-know note, not N "action codes
+  differ" errors; a line whose `DTM+67` changed is still an action
+  difference. Compare-only (needs both sides).
+- **ORDRSP**: "Worth checking" counts any of QTY+12/83/182 as a quantity,
+  so a cancelled line (action 2, QTY+182 only) isn't "Quantity missing".
+- **ORDRSP/DESADV**: message values in Compare findings (article code,
+  quantity, action, order number) are HTML-escaped — `ART<b>1` shows as
+  text, never as markup.
+- **UI**: "Copy report" marks each finding by section — `[DIFFERENCE]`,
+  `[CHECK]` (Message checks), `[INFO]`, `[OK]` — never `[ERROR]`, which read
+  as "you did something wrong" on a supplier's own message check.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable
   total (both the TRANSUSXML-style and bol's-own-UBL-style aggregation).
 - **INVOIC**: TAX segment missing rate detected and grouped.
@@ -246,6 +315,8 @@ actual test fixtures, don't just keep this list as prose:
   column, and shows the same banner in Quick check, rather than an empty
   result or a wall of "missing" findings.
 - **ORDERS**: readable in Quick check; still declined in Compare.
+- **ORDERS**: Quick check runs the line-level checks too (GS1 check digit,
+  all-zeros EAN, duplicate `DTM` qualifier), not only for ORDRSP/DESADV.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

@@ -161,17 +161,26 @@ test('many pallets missing an SSCC are grouped into one finding with a collapsed
 
   const findings = page.locator('#findings li');
   const texts = await findings.allInnerTexts();
-  const groupedLines = texts.filter(t => t.includes('No SSCC found'));
-  // One grouped block per side, not one per pallet (25 pallets/side would
-  // otherwise mean 50 separate findings).
-  expect(groupedLines).toHaveLength(2);
-  groupedLines.forEach(t => expect(t).toContain('25 pallet groups'));
+  // Neither side has any SSCC: ONE finding for that one fact, listing each
+  // side's pallets (25 pallets/side would otherwise mean 50 separate
+  // findings). Deliberate change: this used to be a "No SSCC found" block
+  // per side next to a third "Neither message contains an SSCC" finding.
+  const groupedLines = texts.filter(t => t.includes('Neither message contains an SSCC'));
+  expect(groupedLines).toHaveLength(1);
+  expect(groupedLines[0]).toContain('Supplier: 25 pallet groups without SSCC');
+  expect(groupedLines[0]).toContain('Bol: 25 pallet groups without SSCC');
+  expect(texts.some(t => t.includes('No SSCC found'))).toBe(false);
 
   // Past the ~20-item threshold, the tag list collapses behind <details>.
   const details = page.locator('#findings .wc-affected').locator('xpath=ancestor::details');
   await expect(details).toHaveCount(2);
   const tagCount = await page.locator('#findings .wc-affected li').count();
   expect(tagCount).toBe(50); // 25 pallets x 2 sides
+
+  // Quick check still groups them into one "No SSCC found" finding.
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('No SSCC found on 25 pallet groups');
 });
 
 // docs/ui-conventions.md: "Distinct items", not "Items" — real user
@@ -357,7 +366,7 @@ test('a flat quoted-CSV DESADV dialect is read, not silently treated as an empty
   // parsed: the supplier's own pallets each carry an SSCC, but bol's output
   // flattens everything into one CPS with none at all.
   const buckets = await findingsByCategory(page);
-  expect(buckets.diff.some(t => /2 SSCC\(s\) only in the supplier message/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /2 SSCCs only in the supplier message/.test(t))).toBe(true);
   expect(buckets.message.some(t => /No SSCC found on 1 pallet group/.test(t))).toBe(true);
 });
 
@@ -372,6 +381,22 @@ test('the CSV DESADV dialect is also recognized in Quick check', async ({ page }
   const overviewText = await page.locator('#quickOverview').innerText();
   expect(overviewText).toContain('9000001'); // order number read from the CSV
   expect(overviewText).toContain('3'); // 3 items
+});
+
+// The CSV dialect's HDR arrival date (field after the despatch date) wasn't
+// read, so the header table only showed bol's DTM+132.
+test('the CSV DESADV dialect\'s arrival date is read and matches bol\'s DTM+132', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'csv-dialect.sup.des'), path.join(FIX, 'csv-dialect.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const row = page.locator('#hdrFields tr', { hasText: 'Expected delivery' });
+  await expect(row).toContainText('02-01-2026');
+  await expect(row).not.toHaveClass(/differ/);
+  expect((await row.locator('td').nth(1).innerText()).trim()).not.toBe('—');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'csv-dialect.sup.des'));
+  await expect(page.locator('#quickOverview')).toContainText('02-01-2026');
 });
 
 // A real DESADV failed delivery outright with "Packing List Reference must
@@ -435,6 +460,30 @@ test('an SSCC without a PAC segment is flagged as a confirmed cause of the SSCC 
   expect(notEighteen).toHaveLength(1);
   expect(notEighteen[0]).toContain('1 pallet group');
   expect(notEighteen[0]).toContain('00000000000000000099');
+});
+
+// Real Supplier Golf DESADV: "9 SSCC(s) only in the supplier message" was an err
+// Transformation difference (sent to Transus), although every one of those
+// SSCCs sat in a CPS without PAC — the Transus-confirmed supplier-side
+// cause already flagged above. Now a Message check pointing there.
+test('SSCCs missing from bol only because their CPS has no PAC are a Message check, not a Transformation difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-no-pac.sup.edi'), path.join(FIX, 'sscc-no-pac.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /only in the supplier message/.test(t))).toBe(false);
+  const msg = buckets.message.filter(t => /3 SSCCs only in the supplier message/.test(t));
+  expect(msg).toHaveLength(1);
+  expect(msg[0]).toContain('all in CPS groups without PAC');
+  expect(msg[0]).toContain('see the PAC finding above');
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).not.toContain('only in the supplier message');
+
+  // A pallet that does carry PAC: still a Transformation difference.
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-only-one-side.sup.edi'), path.join(FIX, 'sscc-only-one-side.bol.edi'));
+  const b2 = await findingsByCategory(page);
+  expect(b2.diff.some(t => /22 SSCCs only in the supplier message/.test(t))).toBe(true);
 });
 
 test('both SSCC checks also fire standalone in Quick check', async ({ page }) => {
@@ -588,7 +637,7 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /Pallet mapping differs|pallet mapping difference/.test(t))).toBe(false);
   // Same values on both sides: reported once, about the supplier's message.
-  const near = buckets.message.filter(t => /Packing slip number may be wrong/.test(t));
+  const near = buckets.message.filter(t => /Packing reference almost matches the document number/.test(t));
   expect(near).toHaveLength(1);
   expect(near[0]).toContain('passed on unchanged');
   expect(near[0]).toContain('PKB1000A');
@@ -596,7 +645,7 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'repeated-sscc-units.sup.xml'));
   await expect(page.locator('#quickOverview')).toBeVisible();
-  await expect(page.locator('body')).toContainText('Packing slip number may be wrong');
+  await expect(page.locator('body')).toContainText('Packing reference almost matches the document number');
 });
 
 // Findings stay short: explanation sits behind a collapsed "More info"
@@ -836,7 +885,7 @@ test('the header fields table shows each value with its source field, and opens 
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'repeated-sscc-units.sup.xml'), path.join(FIX, 'repeated-sscc-units.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
-  const row = page.locator('#hdrFields tr', { hasText: 'Packing slip number' });
+  const row = page.locator('#hdrFields tr', { hasText: 'Packing reference' });
   await expect(row).toContainText('PackingSlipNumber');
   await expect(row).toContainText('RFF+BM');
   expect(await page.locator('#hdrFields details.hdr-fields').evaluate(e => e.open)).toBe(false);
@@ -853,6 +902,10 @@ test('an article moved to another pallet in bol\'s output is flagged as a pallet
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /387000000000000019/.test(t) && /missing on the bol side/.test(t))).toBe(true);
   expect(buckets.diff.some(t => /387000000000000026/.test(t) && /missing on the supplier side/.test(t))).toBe(true);
+  // Headline names the SSCC and the count; the per-item diffs sit in More info.
+  const mapping = page.locator('#findings li', { hasText: /Pallet mapping differs for SSCC 387000000000000019/ });
+  await expect(mapping).toContainText('(1 difference)');
+  await expect(mapping.locator('details.f-more')).toContainText('missing on the bol side');
 });
 
 // Real Supplier Foxtrot DESADV: RFF+ON:310467 on two lines next to 9310467, delivery
@@ -875,4 +928,239 @@ test('an order number missing its leading digit is flagged once, and the header 
   await runQuickFixture(page, path.join(FIX, 'order-number-missing-digit.sup.edi'));
   await expect(page.locator('#quickOverview')).toBeVisible();
   await expect(page.locator('body')).toContainText('Order number looks incomplete');
+});
+
+// The verdict used to ignore the finding category: a Message check at err
+// level (here RFF+BM over 15 characters, the same on both sides) gave
+// "Something got lost in translation" although the transformation was
+// clean. And a DESADV with a real Transformation difference at warn level
+// (the Supplier Alfa date shift) said "The transformation matches" — inverted.
+test('the verdict is based on Transformation differences; Message checks alone get the calm verdict', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'message-checks-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => /Packing List Reference too long/.test(t))).toHaveLength(2);
+  expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+  const verdict = page.locator('#verdict');
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('The transformation and pallet mappings match.');
+  await expect(verdict).toContainText('see Message checks below');
+  await expect(verdict).not.toContainText('lost in translation');
+  await expect(page.locator('#findings li.findings-cat', { hasText: 'Message checks' }))
+    .toHaveAttribute('title', /supplier's or bol's own message/);
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('see Transformation differences below');
+  await expect(verdict).not.toContainText('The transformation and pallet mappings match');
+});
+
+// "Copy report" marked every err-level finding "[ERROR]", including a
+// supplier's own Message check. Marks are neutral now and name the section.
+test('Copy report uses neutral marks per section, not [ERROR]', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'message-checks-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  let report = await page.evaluate(() => lastReportText);
+  expect(report).not.toContain('[ERROR]');
+  expect(report).not.toContain('[WARNING]');
+  expect(report).toMatch(/\[CHECK\] Supplier — Packing List Reference too long/);
+  expect(report).toMatch(/\[OK\] All compared values match/);
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  report = await page.evaluate(() => lastReportText);
+  expect(report).toMatch(/\[DIFFERENCE\] Despatch date \(DTM\+11\) changed/);
+});
+
+// "No packing reference" ignored RFF+BM (the leading source), so a message
+// with only RFF+BM and an empty BGM number was told it had none.
+// Terminology is "packing reference" throughout (docs/ui-conventions.md).
+test('a message with only RFF+BM is not flagged as having no packing reference', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'packing-ref-bm-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#findings')).not.toContainText('no packing reference');
+  await expect(page.locator('.stat', { hasText: 'Packing reference' }).first()).toContainText('PKREF7401');
+  await expect(page.locator('#hdrFields tr', { hasText: 'Packing reference' })).toContainText('PKREF7401');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText(/no packing reference/i);
+
+  // The near-miss finding: neutral headline with both values, advice in More info.
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'repeated-sscc-units.sup.xml'), path.join(FIX, 'repeated-sscc-units.bol.edi'));
+  const near = page.locator('#findings li', { hasText: 'Packing reference almost matches the document number' });
+  await expect(near).toContainText('PKB1000A');
+  const visible = await near.evaluate(el => { const c = el.cloneNode(true); c.querySelectorAll('details').forEach(d => d.remove()); return c.textContent; });
+  expect(visible).not.toContain('Check with the supplier');
+  await expect(near.locator('details.f-more')).toContainText('Check with the supplier');
+});
+
+// checkPalletStructure emitted one "Pallet EAN repeated as item" finding per
+// item and one "Item not linked to a pallet" finding per line. Both are now
+// one grouped finding with tags; the weight-sum and "No SSCC" findings got
+// a short headline + More info. Warn-level pills use "!", not "⚠".
+test('pallet structure findings are grouped with tags, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'pallet-structure-grouping.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const repeated = buckets.message.filter(t => /Supplier — Pallet EAN repeated as item/.test(t));
+  expect(repeated).toHaveLength(1);
+  expect(repeated[0]).toContain('on 2 lines');
+  expect(repeated[0]).toContain('CPS 2 · 8712345000134 (qty 1)');
+  expect(repeated[0]).toContain('CPS 3 · 8712345000158 (qty 1)');
+  const unlinked = buckets.message.filter(t => /Supplier — Item not linked to a pallet/.test(t));
+  expect(unlinked).toHaveLength(1);
+  expect(unlinked[0]).toContain('on 2 lines');
+  expect(unlinked[0]).toContain('8712345000011');
+  expect(unlinked[0]).toContain('8712345000028');
+  const weight = page.locator('#findings li', { hasText: /Supplier — Shipment weight doesn't match the sum of its pallet weights/ });
+  await expect(weight).toContainText('100 KGM vs 80 KGM');
+  await expect(weight.locator('details.f-more')).toContainText('CPS 1');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const ov = page.locator('#quickOverview');
+  expect(await ov.locator('li', { hasText: 'Pallet EAN repeated as item' }).count()).toBe(1);
+  expect(await ov.locator('li', { hasText: 'Item not linked to a pallet' }).count()).toBe(1);
+  const html = await ov.innerHTML();
+  expect(html).toContain('! Repeated pallet EAN');
+  expect(html).not.toContain('⚠ Repeated pallet EAN');
+});
+
+// "N SSCC(s) only in …" listed every SSCC inline in one <code> run. They are
+// clickable tags now, collapsed behind a toggle past ~20.
+test('SSCCs only on one side are listed as tags, collapsed past 20', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-only-one-side.sup.edi'), path.join(FIX, 'sscc-only-one-side.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const sup = page.locator('#findings li', { hasText: '22 SSCCs only in the supplier message' });
+  await expect(sup).toHaveCount(1);
+  await expect(sup.locator('details > summary')).toContainText('Show 22 SSCCs');
+  expect(await sup.locator('.wc-affected li').count()).toBe(22);
+  await expect(sup.locator('.wc-affected')).toContainText('008712345000001003');
+  await expect(page.locator('#findings li', { hasText: '22 SSCCs only in the bol output' })).toHaveCount(1);
+});
+
+// Pallet overview (real Supplier Delta / Supplier Bravo / Supplier Alfa DESADVs): an empty
+// CPS group read "1 item" and "Match" although the other side had items for
+// that SSCC; a line with a zeroed EAN showed as "No items"; and "(1 → 2)"
+// put a per-line quantity next to the other side's SSCC total.
+test('pallet overview: empty group vs items on the other side is a Difference, zeroed EAN labelled, totals on both sides', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'pallet-overview-empty-and-zeroed.sup.edi'), path.join(FIX, 'pallet-overview-empty-and-zeroed.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await page.locator('#palletFilterToggle').uncheck();
+  const blocks = page.locator('#ssccBody .pallet-block');
+  const supA = blocks.nth(0).locator('details.pallet-det', { hasText: '008712345000000013' });
+  await expect(supA.locator('summary')).toContainText('2 items');
+  const bolA = blocks.nth(1).locator('details.pallet-det', { hasText: '008712345000000013' });
+  await expect(bolA).toHaveAttribute('data-status', 'diff');
+  await expect(bolA.locator('summary')).toContainText('0 items');
+  await expect(bolA.locator('summary')).toContainText('Difference');
+  expect(await bolA.innerHTML()).toContain('no items here; 2 on the other side');
+  const bolB = blocks.nth(1).locator('details.pallet-det', { hasText: '008712345000000020' });
+  expect(await bolB.innerHTML()).toContain('EAN zeroed');
+  expect(await bolB.innerHTML()).not.toContain('No items');
+  // Both numbers are the item's SSCC total on each side: 3 → 3, never 2 → 3.
+  const supAHtml = await supA.innerHTML();
+  expect(supAHtml).not.toMatch(/\(2 → /);
+  expect(supAHtml).not.toMatch(/\(1 → /);
+  expect(supAHtml).toContain('(3 → —)');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'pallet-overview-empty-and-zeroed.bol.edi'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const q = await page.locator('#quickOverview').innerHTML();
+  expect(q).toContain('EAN zeroed');
+  expect(q).toContain('0 items');
+});
+
+// Real Supplier Delta DESADV: bol's line n carried the supplier's order number
+// of line n-1, reported as many unrelated per-item "order numbers differ"
+// warnings (status "Check"). Now one grouped shift finding; an unrelated
+// order-number mismatch is still its own finding, at Difference level.
+test('order numbers shifted one line down in bol\'s output are one grouped finding; an order mismatch is a Difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'order-shift.sup.edi'), path.join(FIX, 'order-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const shift = buckets.diff.filter(t => /Order numbers shifted one line down in bol's output/.test(t));
+  expect(shift).toHaveLength(1);
+  expect(shift[0]).toContain('on 4 lines');
+  expect(shift[0]).toContain('line 2 · 8712345000028: 9100002 → 9100001');
+  expect(shift[0]).toContain('line 5 · 8712345000059: 9100005 → 9100004');
+  const perItem = buckets.diff.filter(t => /order numbers differ/.test(t));
+  expect(perItem).toHaveLength(1);
+  expect(perItem[0]).toContain('8712345000066');
+  expect(await page.locator('#findings li.f-err', { hasText: 'order numbers differ' }).count()).toBe(1);
+  const statuses = await page.evaluate(() => lastLineRows.rows.filter(r => r.orderDiff).map(r => r.status));
+  expect(statuses.length).toBe(5);
+  statuses.forEach(s => expect(s).toBe('diff'));
+});
+
+// Real Supplier Golf DESADV: 20-character SSCCs starting "00". The finding now says
+// when the value is "00" + a check-digit-valid SSCC-18, or a 17-digit value
+// that is valid with a leading 0.
+test('the SSCC length finding says when a value is "00" + a valid SSCC or valid with a leading 0', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'sscc-length-hints.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const f = page.locator('#findings li', { hasText: "Supplier — SSCC isn't 18 characters" });
+  await expect(f).toContainText('00008712345000000013 (20 chars: "00" + a valid 18-digit SSCC)');
+  await expect(f).toContainText('08712345000000020 (17 chars: valid as an SSCC with a leading 0)');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('"00" + a valid 18-digit SSCC');
+});
+
+// The header table's "Packing reference" row showed "—" for a supplier with
+// only an RFF+DQ despatch note reference; it falls back to it now, with the
+// source labelled.
+test('the header table packing reference falls back to RFF+DQ, labelled as such', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'packing-ref-dq-only.sup.edi'), path.join(FIX, 'packing-ref-dq-only.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const row = page.locator('#hdrFields tr', { hasText: 'Packing reference' });
+  const supCell = row.locator('td').nth(1);
+  await expect(supCell).toContainText('PS8401');
+  await expect(supCell).toContainText('RFF+DQ');
+  await expect(row.locator('td').nth(2)).toContainText('RFF+BM');
+  await expect(row).not.toHaveClass(/differ/);
+});
+
+// "EANs appear a different number of times" keyed on the EAN alone, so it
+// fired on every multi-order DESADV (one EAN legitimately once per order).
+// It keys on EAN + order now. A long order list (past ~20) collapses in the
+// strip and the header table.
+test('Worth checking counts EAN repeats per order; a long order list collapses', async ({ page }) => {
+  const fixture = path.join(FIX, 'many-orders.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText('appear a different number of times');
+
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#wcBody').innerHTML()).not.toContain('different number of times');
+  const strip = page.locator('.stat', { hasText: /order/i }).first();
+  await expect(strip.locator('details.order-list > summary')).toContainText('22 orders');
+  const hdr = page.locator('#hdrFields tr', { hasText: 'Order' }).first();
+  await expect(hdr.locator('details > summary').first()).toContainText('22 orders');
 });
