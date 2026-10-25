@@ -456,3 +456,22 @@ test('a cancelled ORDRSP line with only QTY+182 is not reported as "Quantity mis
   await expect(page.locator('#results')).toBeVisible();
   expect(await page.locator('#wcBody').innerHTML()).not.toContain('Quantity missing');
 });
+
+// Real Supplier Hotel ORDRSP: 66 lines of supplier action 6 used as a date-only
+// amendment, carried as action 5 by bol's output with the same QTY+12 and
+// DTM+67. ECHO reported 66 "action codes differ" errors while its own
+// message check called the pattern recognised. Now one Good-to-know note;
+// a line whose DTM+67 changed too is still an action difference.
+test('a date-only action 6 carried as action 5 in bol\'s output is one Good-to-know note, not an action difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'action6-remapped-to-5.sup.edi'), path.join(FIX, 'action6-remapped-to-5.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const actionDiffs = buckets.diff.filter(t => /action codes differ/.test(t));
+  expect(actionDiffs).toHaveLength(1);
+  expect(actionDiffs[0]).toContain('8712345000042');
+  const note = buckets.info.filter(t => /Action 6 date-only amendment carried as action 5/.test(t));
+  expect(note).toHaveLength(1);
+  expect(note[0]).toContain('on 3 items');
+  expect(note[0]).not.toContain('8712345000042');
+});

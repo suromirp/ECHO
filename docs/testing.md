@@ -182,6 +182,11 @@ actual test fixtures, don't just keep this list as prose:
   headed "Packing reference almost matches the document number" with both
   values visible and the advice in More info; the header table row is
   "Packing reference".
+- **ORDRSP**: supplier action 6 used as a date-only amendment that bol's
+  output carries as action 5 (same `QTY+12`, same `DTM+67`, no
+  backorder/cancel) is one grouped Good-to-know note, not N "action codes
+  differ" errors; a line whose `DTM+67` changed is still an action
+  difference. Compare-only (needs both sides).
 - **ORDRSP**: "Worth checking" counts any of QTY+12/83/182 as a quantity,
   so a cancelled line (action 2, QTY+182 only) isn't "Quantity missing".
 - **ORDRSP/DESADV**: message values in Compare findings (article code,
