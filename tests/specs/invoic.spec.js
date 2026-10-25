@@ -803,3 +803,33 @@ test('MOA+131 not matching the sum of the ALC amounts is a Message check, in bot
   await runQuickFixture(page, path.join(FIX, 'alc-moa-203.sup.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('MOA+131');
 });
+
+// Real Supplier Juliett credit note: the supplier's only order reference was RFF+CO
+// (UNCL 1153: buyer's order number), and ECHO said "Neither message has an
+// order number". RFF+CO is now read as an order reference (qualifier kept);
+// bol's output not carrying it is Good to know, not a difference.
+test('RFF+CO is read as an order reference; bol not carrying it is Good to know', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'rff-co-order.sup.edi'),
+    path.join(FIX, 'rff-co-order.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.message.some(t => /Neither message has an order number|Supplier — no order number/.test(t))).toBe(false);
+  expect(b.message.some(t => /Bol — no order number/.test(t))).toBe(true);
+  expect(b.diff.some(t => /Order/.test(t))).toBe(false);
+  const info = b.info.filter(t => /Order\(s\)/.test(t));
+  expect(info).toHaveLength(1);
+  expect(info[0]).toContain('ABCD10000001');
+  expect(info[0]).toContain('RFF+CO');
+  const orderRow = page.locator('#invoiceResults tr', { hasText: 'Order(s)' }).first();
+  await expect(orderRow.locator('.pill')).toHaveText('Info');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'rff-co-order.sup.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('CREDIT NOTE');
+  await expect(page.locator('#quickOverview')).not.toContainText('No order number');
+  await expect(page.locator('#quickOverview .field', { hasText: 'Order(s)' })).toContainText(/ABCD10000001.*RFF\+CO/);
+});

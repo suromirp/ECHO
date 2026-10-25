@@ -133,6 +133,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | Quick check Findings list with Message checks section, `!` for warn, signal follows the worst level | `invoic/tax-missing-rate.sup.edi`, `invoic/alc-tax-line-vat.sup.edi` | `specs/invoic.spec.js` |
 | INVOIC | illegal control character in any field (NAD, FTX, IMD) grouped into one finding with a tag per segment, both modes | `invoic/illegal-chars-free-text.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | INVOIC | `MOA+131` ≠ sum of ALC amounts flagged per side / once when passed on unchanged / in Quick check; matching `MOA+131` silent | `invoic/charge-total-mismatch.{sup.edi,bol.ubl.xml}`, `invoic/alc-moa-203.sup.edi` | `specs/invoic.spec.js` |
+| INVOIC | `RFF+CO` read as an order reference (no false "no order number"); bol carrying none is Good to know, labelled RFF+CO, in Compare and Quick check | `invoic/rff-co-order.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | INVOIC | qty × price checked per line and per side (no summed prices for an EAN on two lines), once when passed on unchanged; `PRI+INV` as net-price fallback | `invoic/arith-per-line.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ORDERS | Quick check runs the GS1 check-digit, all-zeros EAN and duplicate-DTM checks | `orders/line-checks.edi` | `specs/orders.spec.js` |
