@@ -1349,9 +1349,8 @@ function emptyXmlFacts(raw){
    characters stripped, concatenated documents reduced to the last
    parseable one — each flagged with a banner — and, when the XML still
    can't be read, facts.xmlError instead of a silently empty message (which
-   used to show every bol line as "missing from the supplier message"). */
-function parseFactsTransusXml(raw){return parseFactsTransusXmlList(raw)[0];}
-/* One facts object per <Message> in a <Messages> envelope. All messages
+   used to show every bol line as "missing from the supplier message").
+   One facts object per <Message> in a <Messages> envelope. All messages
    used to be read as ONE: every Article pooled under the first message's
    header, and a DespatchUnitReference reused by a later message linked
    its Articles to the first message's unit (wrong SSCC). Now split the
@@ -1544,19 +1543,6 @@ function factsFromXmlDoc(doc,raw,scope){
   return f;
 }
 
-/* Single-message reading (first <Message> only for XML, whole interchange
-   merged for EDIFACT) \u2014 Compare and Quick check use parseFactsList. */
-function parseFacts(raw){
-  const head=raw.replace(/^[\s\uFEFF]+/,'');
-  // Any leading '<' is XML — EDIFACT never starts with one. A TRANSUSXML
-  // DESADV (<Messages><Message>, no <?xml declaration) used to fall through
-  // to the EDIFACT parser here and silently produce zero lines. isXmlText
-  // also accepts a <?xml declaration after leading whitespace/text.
-  if(isXmlText(raw)) return parseFactsTransusXml(raw);
-  if(/^"ENV"/.test(head)) return parseFactsCsv(raw);
-  return parseFactsEdifact(raw);
-}
-
 /* An EDIFACT interchange can bundle more than one UNH...UNT message (e.g. a
    supplier batching several despatch advices into one transmission). Split
    it into one raw-text snippet per message — reusing the interchange's own
@@ -1582,7 +1568,11 @@ function splitEdifactMessages(raw){
 
 /* Returns an array of facts objects: one per message for a multi-message
    EDIFACT interchange or a <Messages> XML file with several <Message>
-   elements, or a single-element array otherwise. */
+   elements, or a single-element array otherwise. Any leading '<' is XML —
+   EDIFACT never starts with one. A TRANSUSXML DESADV (<Messages><Message>,
+   no <?xml declaration) used to fall through to the EDIFACT parser and
+   silently produce zero lines. isXmlText also accepts a <?xml declaration
+   after leading whitespace/text. */
 function parseFactsList(raw){
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(isXmlText(raw)) return parseFactsTransusXmlList(raw);
@@ -1901,17 +1891,8 @@ function priceMissingFindings(entries){
     return `<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
   });
 }
-/* Renders each detected run from findCascadingPriceShiftRuns (see compare())
-   as one finding — a run of consecutive lines where bol's price for line i
-   exactly equals the supplier's own price for line i-1 reads as a single
-   off-by-one shift, not N independent price differences. Confirmed against
-   a real 11-line cascade traced back to one earlier line closing early
-   (see checkDtmDuplicateQualifier) — every line after it inherited the
-   previous line's price instead of its own, and the last line in the
-   message lost its own price entirely with nothing left to shift it to.
-   Same one-explanation-many-tags shape as priceMissingFindings above. */
 /* Detects the run(s) of consecutive lines described by
-   cascadePriceShiftFindings above. Walks the item+action keys in the
+   cascadePriceShiftFindings below. Walks the item+action keys in the
    supplier's own line order (not bol's — a corrupted bol sequence is
    exactly the thing being detected, so it can't be trusted as the
    reference order) and looks for bol's price on line i matching the
@@ -1961,6 +1942,15 @@ function findCascadingPriceShiftRuns(supLines,sPrice,bPrice,keyFn,jumpValFor){
   flush();
   return runs;
 }
+/* Renders each detected run from findCascadingPriceShiftRuns (see compare())
+   as one finding — a run of consecutive lines where bol's price for line i
+   exactly equals the supplier's own price for line i-1 reads as a single
+   off-by-one shift, not N independent price differences. Confirmed against
+   a real 11-line cascade traced back to one earlier line closing early
+   (see checkDtmDuplicateQualifier) — every line after it inherited the
+   previous line's price instead of its own, and the last line in the
+   message lost its own price entirely with nothing left to shift it to.
+   Same one-explanation-many-tags shape as priceMissingFindings above. */
 function cascadePriceShiftFindings(runs){
   if(!runs||!runs.length)return [];
   return runs.map(({origin,items})=>{
@@ -2049,7 +2039,6 @@ function palletQtyVal(qty){
 }
 function palletQtyEff(v){if(v===undefined||v===null||v==='')return 0;const n=parseInt(v,10);return isNaN(n)?v:n;}
 
-/* index a facts object's pallets by SSCC, for cross-side lookup */
 /* Findings stay short in the panel: headline + affected values up front,
    the why/what-to-do behind a "More info" toggle (docs/ui-conventions.md). */
 function moreInfo(html){return `<details class="f-more"><summary>More info</summary><div>${html}</div></details>`;}
@@ -2424,14 +2413,14 @@ function orderNearMisses(facts){
   });
   return out;
 }
-function checkOrderNearMiss(facts,label,add,jumpCall,cat){
+function checkOrderNearMiss(facts,label,add,jumpCall){
   const hits=orderNearMisses(facts);
   if(!hits.length)return;
   const tags=hits.map(h=>{
     const jump=jumpCall?` onclick="${jumpCall(h.short)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(h.short)} → ${esc(h.full)}?${h.lines.length?' (line '+esc(h.lines.join(', '))+')':''}</span></li>`;
   }).join('');
-  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),cat||'message');
+  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),'message');
 }
 function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
@@ -6371,8 +6360,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
-document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';});
-document.getElementById('resetBtn').addEventListener('click',()=>{cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
+document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>
 </body>

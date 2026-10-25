@@ -127,7 +127,7 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
   boxes/pallets with an `<SSCC>`, `<Article>` lines) has its own confirmed
   quirks:
   - **No `<?xml` declaration** — the file starts straight at `<Messages>`.
-    `parseFacts`/`parseFactsList` used to route only `<?xml`/`<Order(s)>`
+    `parseFactsList` used to route only `<?xml`/`<Order(s)>`
     starts to the XML parser, so this went to the EDIFACT parser and
     produced zero supplier lines (every item "missing from the supplier
     message", every SSCC "only in bol's output"). Any leading `<` now means
@@ -156,7 +156,7 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     bol's own system, reading `RFF+BM`, is what counts.
   - **Header vs line fields must be told apart by position, not by name.**
     The same tag names occur at both levels (`<OrderNumberBuyer>`,
-    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and `parseFactsTransusXml`
+    `<DeliveryDate>`, `<LineNumber>`, `<SSCC>`), and the XML facts reader (`factsFromXmlDoc`)
     used `querySelector`, which returns the first match anywhere. Three
     effects: a header-only `<OrderNumberBuyer>` wasn't applied to Articles
     without their own (and the first Article's order became the "header"
@@ -309,7 +309,7 @@ Handling:
 
 ## Reading XML safely (every dialect)
 
-All XML paths, ORDRSP/DESADV (`parseFactsTransusXml`) as well as INVOIC
+All XML paths, ORDRSP/DESADV (`parseFactsTransusXmlList`) as well as INVOIC
 (`parseInvoices`), go through the same preparation (`prepareXmlText`)
 before `DOMParser` sees the text:
 
