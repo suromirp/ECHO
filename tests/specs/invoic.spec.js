@@ -567,3 +567,36 @@ test('qty x price is checked per line and per side; PRI+INV is a net-price fallb
     expect(notes.some(t => /8710000000093/.test(t))).toBe(true);
   }
 });
+
+// Findings about one side's own message (a line without any identifier, an
+// ambiguous header reference) were Transformation differences, and info
+// notes (credit note, soft header rows, "not compared", a total sent on one
+// side only) fell into that bucket too, so they reached Copy for Transus.
+// A header field absent on both sides read "Match".
+test('one-side findings are Message checks, info notes are Good to know, absent-on-both header rows are not applicable', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'finding-categories.sup.edi'),
+    path.join(FIX, 'finding-categories.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.message.some(t => /Supplier — 1 line\(s\) without an EAN/.test(t))).toBe(true);
+  expect(b.message.some(t => /Bol — 1 line\(s\) without an EAN/.test(t))).toBe(true);
+  expect(b.message.some(t => /Supplier — EAN 8710000000017: the Order reference is ambiguous/.test(t))).toBe(true);
+  expect(b.diff.some(t => /without an EAN|ambiguous/.test(t))).toBe(false);
+  const packRow = page.locator('#invoiceResults tr', { hasText: 'Packing reference(s)' }).first();
+  await expect(packRow.locator('.pill')).toHaveText('Not applicable');
+
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'credit-type-code-2.sup.edi'),
+    path.join(FIX, 'credit-type-code-2.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const c = await invoiceFindingsByCategory(page);
+  expect(c.diff.filter(t => !/All compared values match/.test(t))).toHaveLength(0);
+  expect(c.info.some(t => /This is a credit note/.test(t))).toBe(true);
+});

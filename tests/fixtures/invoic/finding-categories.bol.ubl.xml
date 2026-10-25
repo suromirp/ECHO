@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<nl-inv:Invoice xmlns:nl-inv="http://www.nltaxonomie.nl/ubl/2.0/NL/1.0/xsd/maindoc/UBL-NL-Invoice" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.0</cbc:UBLVersionID>
+  <cbc:ID>INV9001</cbc:ID>
+  <cbc:IssueDate>2026-10-12</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>1</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party><cac:PartyIdentification><cbc:ID>0000000000001</cbc:ID></cac:PartyIdentification></cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party><cac:PartyIdentification><cbc:ID>0000000000002</cbc:ID></cac:PartyIdentification></cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">3.15</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">15.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">3.15</cbc:TaxAmount>
+      <cbc:Percent>21</cbc:Percent>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">15.00</cbc:LineExtensionAmount>
+    <cbc:PayableAmount currencyID="EUR">18.15</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">10.00</cbc:LineExtensionAmount>
+    <cac:OrderLineReference><cac:OrderReference><cbc:ID>4410001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">10.00</cbc:TaxableAmount><cbc:Percent>21</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item>
+      <cbc:Name>Item one</cbc:Name>
+      <cac:BuyersItemIdentification><cbc:ID>8710000000017</cbc:ID></cac:BuyersItemIdentification>
+      <cac:SellersItemIdentification><cbc:ID>8710000000017</cbc:ID></cac:SellersItemIdentification>
+    </cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="EUR">10.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">5.00</cbc:LineExtensionAmount>
+    <cac:OrderLineReference><cac:OrderReference><cbc:ID>4410001</cbc:ID></cac:OrderReference></cac:OrderLineReference>
+    <cac:TaxTotal><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">5.00</cbc:TaxableAmount><cbc:Percent>21</cbc:Percent></cac:TaxSubtotal></cac:TaxTotal>
+    <cac:Item>
+      <cbc:Name>Item without identifier</cbc:Name>
+    </cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="EUR">5.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</nl-inv:Invoice>

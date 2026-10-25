@@ -80,6 +80,13 @@ Keep these six meanings distinct and don't blur them:
 - **OK** — no structural issue found (used for single-message checks with
   nothing to compare against).
 
+A field absent on both sides is **Not applicable**, never **Match** (INVOIC's
+Invoice details table used to show "Match" for, e.g., a packing reference
+neither side sent). Info-level findings pass `cat:'info'` explicitly:
+`compareInvoice`'s `add()` defaults to `'diff'`, and an info note left there
+ended up in "Copy for Transus" (credit-note note, soft header rows, "not
+compared", a total sent on one side only).
+
 ## Emotional register
 
 The tool has a light, dry sense of humor in its rotating micro-copy (empty

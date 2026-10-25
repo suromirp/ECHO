@@ -108,6 +108,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | INVOIC | all-zeros EAN only in bol's output: Transformation difference, paired by position across different line numbering, no knock-on findings; standalone in Quick check | `invoic/zero-ean-bol-output.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | INVOIC | all-zeros EAN and order number missing its leading digit, passed on unchanged: each reported once in Compare, shown in Quick check for both files | `invoic/zero-ean-order-digit.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | INVOIC | `MOA+203` right after `ALC` read as the charge amount, not the line amount | `invoic/alc-moa-203.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
+| INVOIC | one-side findings (no identifier, ambiguous reference) are Message checks; info notes under Good to know; header field absent on both sides is Not applicable | `invoic/finding-categories.{sup.edi,bol.ubl.xml}`, `invoic/credit-type-code-2.*` | `specs/invoic.spec.js` |
 | INVOIC | qty × price checked per line and per side (no summed prices for an EAN on two lines), once when passed on unchanged; `PRI+INV` as net-price fallback | `invoic/arith-per-line.{sup.edi,bol.ubl.xml}` | `specs/invoic.spec.js` |
 | ORDERS | readable in Quick check; still declined in Compare | `orders/simple-orders.edi` (same file both sides) | `specs/orders.spec.js` |
 | ZIP | single usable file switches to Quick check with an explanation | `zip/single-file.zip` (packs `zip/lonely-message.edi`) | `specs/zip.spec.js` |

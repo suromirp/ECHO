@@ -228,6 +228,10 @@ actual test fixtures, don't just keep this list as prose:
   lines with different prices shows no gap and no summed price), per side in
   Compare, reported once when bol carries the same gap; `PRI+INV` stands in
   for a missing `PRI+AAA`. Same result in Quick check for either file.
+- **INVOIC**: lines without an identifier and ambiguous references are
+  per-side Message checks; info notes (credit note, soft header rows, "not
+  compared") sit under Good to know, not Transformation differences; a header
+  field absent on both sides shows "Not applicable".
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

@@ -471,6 +471,12 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   "Supplier (passed on unchanged to bol)" when bol's output carries exactly
   the same gaps. A gap equal to the line's own charges minus allowances is
   skipped (UBL `LineExtensionAmount` may include them).
+- **INVOIC findings about one side's own message are Message checks.**
+  "N line(s) without an EAN or item number" and "the Order/Packing reference
+  is ambiguous" (several header references, none on the line) were
+  Transformation differences and so reached "Copy for Transus", though each
+  describes one side's message. They are now `cat:'message'` with a
+  "Supplier — " / "Bol — " label (CLAUDE.md taxonomy).
 - **`PRI+INV` as net-price fallback**: a real Supplier India credit note sent
   `PRI+AAB:16.709:::1:CS` and `PRI+INV:16.49`, no `PRI+AAA`, and bol's UBL
   `PriceAmount` carried 16.49. Compare said "net price is only present in
