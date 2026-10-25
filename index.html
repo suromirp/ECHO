@@ -2617,10 +2617,13 @@ function comparePalletMapping(bol,sup,add,keyFn){
     // every pallet individually.
     const DETAIL_CAP=5,DIFF_CAP=6;
     mismatches.slice(0,DETAIL_CAP).forEach(m=>{
+      // Headline: SSCC + count. The per-item differences go behind More
+      // info (still in "Copy report"; "Copy for Transus" sends the headline).
       const shown=m.diffs.slice(0,DIFF_CAP);
       const extra=m.diffs.length-shown.length;
-      const text=shown.join('; ')+(extra>0?`; and ${extra} more difference(s) on this pallet`:'');
-      add('err',`SSCC <code>${esc(m.sscc)}</code>: <strong>Pallet mapping differs</strong> — ${text}.`,'diff');
+      const n=m.diffs.length;
+      const list=`<ul>${shown.map(d=>`<li>${d};</li>`).join(' ')}${extra>0?` <li>and ${extra} more on this pallet — see the Pallet / SSCC overview</li>`:''}</ul>`;
+      add('err',`<strong>Pallet mapping differs</strong> for SSCC <code>${esc(m.sscc)}</code> (${n} difference${n===1?'':'s'})`+moreInfo(list),'diff');
     });
     if(mismatches.length>DETAIL_CAP){
       const rest=mismatches.length-DETAIL_CAP;
@@ -3042,8 +3045,16 @@ function compare(bol,sup){
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
   const ssccResult={onlyBol:[...bSscc].filter(x=>!sSscc.has(x)),onlySup:[...sSscc].filter(x=>!bSscc.has(x)),common:[...bSscc].filter(x=>sSscc.has(x))};
   if(bol.ssccs.length||sup.ssccs.length){
-    if(ssccResult.onlyBol.length)add('err',`${ssccResult.onlyBol.length} SSCC(s) only in the bol output: <code>${ssccResult.onlyBol.join(', ')}</code>.`,'diff');
-    if(ssccResult.onlySup.length)add('err',`${ssccResult.onlySup.length} SSCC(s) only in the supplier message: <code>${ssccResult.onlySup.join(', ')}</code>.`,'diff');
+    // Affected SSCCs as clickable tags, collapsed past ~20
+    // (docs/ui-conventions.md), instead of one long inline list.
+    const ssccTags=(list,side)=>{
+      const lis=list.map(s=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote(side)},${jsQuote(s)})">${esc(s)}</span></li>`).join('');
+      const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+      return list.length>20?`<details><summary>Show ${list.length} SSCCs</summary>${ul}</details>`:ul;
+    };
+    const ssccHead=(n,where)=>`<strong>${n} SSCC${n===1?'':'s'} only in the ${where}</strong>`;
+    if(ssccResult.onlyBol.length)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol'),'diff');
+    if(ssccResult.onlySup.length)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
     if(!ssccResult.onlyBol.length&&!ssccResult.onlySup.length)add('ok',`All ${ssccResult.common.length} SSCCs are present in both messages.`,'diff');
   }else if(type==='DESADV'&&(sup.lines.length||bol.lines.length)){
     // Neither side has any SSCC at all — "Quantities: Match" only means the
