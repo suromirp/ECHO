@@ -1685,13 +1685,14 @@ function aggregate(facts,keyFn){
   const usesPallets=!!(facts.pallets&&facts.pallets.length);
   facts.lines.forEach(l=>{
     const key=keyFn(l);
-    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),count:0,noSscc:false});
+    if(!map.has(key))map.set(key,{key,art:l.art,gtin:l.gtin,qty:{},actions:new Set(),orders:new Set(),dtm67:new Set(),count:0,noSscc:false});
     const a=map.get(key);a.count++;
     for(const q in l.qty){const n=parseInt(l.qty[q],10);if(!isNaN(n))a.qty[q]=(a.qty[q]||0)+n;}
     if(l.action)a.actions.add(l.action);
     l.orders.forEach(o=>a.orders.add(o));
     if(!a.gtin&&l.gtin)a.gtin=l.gtin;
     if(!a.art&&l.art)a.art=l.art;
+    if(l.dtm&&l.dtm['67'])a.dtm67.add(normDate(l.dtm['67'])||l.dtm['67']);
     // Track whether this item's own pallet (in a message that uses pallet
     // structure at all) actually had an SSCC. If it never had one, the other
     // side couldn't have received it regardless of how the transformation
@@ -1786,7 +1787,8 @@ function groupActionFindings(entries){
     const g=groups.get(key);const rule=actionRule(key);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.item)}</span></li>`).join('');
-    return {level:rule.level,text:`<strong>${rule.h}</strong> <span class="dim">(${n} line${n===1?'':'s'})</span><ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+(rule.more?moreInfo(rule.more):'')};
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+    return {level:rule.level,text:`<strong>${rule.h}</strong> <span class="dim">(${n} line${n===1?'':'s'})</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+(rule.more?moreInfo(rule.more):'')};
   });
 }
 /* Groups {ref,taxType,category} entries from the TAX-segment "category
@@ -2956,6 +2958,22 @@ function compare(bol,sup){
     // up as a difference rather than being silently ignored.
     const bucketOrRaw=arr=>[...new Set(arr.map(a=>actionBucket(a)||('raw:'+a)))].sort().join(',');
     row.actionDiff=(bucketOrRaw(row.bolActions)!==bucketOrRaw(row.supActions));
+    // Action 6 used as a delivery-date-only amendment (no backorder, no
+    // cancellation) that bol's output carries as action 5 with the same
+    // confirmed quantity and the same DTM+67: Transus remaps this on
+    // purpose (real Supplier Hotel ORDRSP, 66 lines; docs/formats-and-quirks.md).
+    // Structural, not an action difference — one grouped Good-to-know note.
+    row.dateOnlyRemap=false;
+    if(type==='ORDRSP'&&row.actionDiff&&b&&s){
+      const only=(arr,code)=>arr.length>0&&arr.every(a=>a===code);
+      const noBackCancel=x=>effVal(x.qty['83'])===0&&effVal(x.qty['182'])===0;
+      const conf=effVal(s.qty['12']);
+      const dates=x=>[...x.dtm67].sort().join(',');
+      if(only(row.supActions,'6')&&only(row.bolActions,'5')&&noBackCancel(s)&&noBackCancel(b)
+        &&typeof conf==='number'&&conf>0&&conf===effVal(b.qty['12'])&&!row.qtyDiff&&dates(s)===dates(b)){
+        row.actionDiff=false;row.dateOnlyRemap=true;
+      }
+    }
     row.bolOrders=b?[...b.orders]:[];row.supOrders=s?[...s.orders]:[];
     row.orderDiff=(row.bolOrders.slice().sort().join(',')!==row.supOrders.slice().sort().join(','));
     row.missing=!b||!s;
@@ -3005,6 +3023,13 @@ function compare(bol,sup){
   addCapped('err',actionDiffs,
     ({label,r})=>`Item <code>${esc(label)}</code>: action codes differ — supplier [${esc(r.supActions.join(', ')||'—')}] vs bol [${esc(r.bolActions.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an action code difference</strong> — see the Line comparison below for the full list.`);
+  const remapped=rows.filter(r=>r.dateOnlyRemap);
+  if(remapped.length){
+    const n=remapped.length;
+    const lis=remapped.map(r=>{const v=r.gtin||r.art||'';return `<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(v)})">${esc(r.art||r.gtin||'?')}</span></li>`;}).join('');
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 with no backorder or cancellation; bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference.`),'info');
+  }
   addCapped('warn',orderDiffs,
     ({label,r})=>`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
@@ -3209,7 +3234,7 @@ function compare(bol,sup){
   else if(findings.some(f=>f.level==='err'||f.level==='warn'))verdict='warn';
   if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
 
-  return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,
+  return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
       qtyMatch:!anyQtyDiff&&!anyMissing,actionMatch:type==='ORDRSP'?(!anyActionDiff&&!anyMissing):null},
     fmtBol:bol.format,fmtSup:sup.format};
@@ -5293,8 +5318,13 @@ function render(result,bol,sup,notes){
     togglePanel.classList.remove('hidden');
     const m=result.actionMatrix;
     const seen=[];if(m.accept.sup>0)seen.push('accept');if(m.cancel.sup>0)seen.push('cancel');if(m.backorder.sup>0)seen.push('amendment');
-    const allMatch=m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup;
-    sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(allMatch?' · match':' · DIFFERENCE');
+    const exact=m.accept.bol===m.accept.sup&&m.cancel.bol===m.cancel.sup&&m.backorder.bol===m.backorder.sup;
+    // Counts differ only because date-only action-6 lines were carried as
+    // action 5 (see dateOnlyRemap in compare()): not a difference.
+    const shift=m.accept.bol-m.accept.sup;
+    const remapOnly=!exact&&result.dateOnlyRemaps>0&&st.actionMatch&&shift>0&&shift===m.backorder.sup-m.backorder.bol&&m.cancel.bol===m.cancel.sup;
+    const allMatch=exact||remapOnly;
+    sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(exact?' · match':(remapOnly?' · match (date-only 6 → 5)':' · DIFFERENCE'));
     sumBadge.style.color=allMatch?'var(--ok)':'var(--err)';
     renderActionMatrix();
     const boLines=result.rows.filter(r=>actionBucket((r.supActions||[])[0])==='backorder'||(r.supActions||[]).includes('6')).map(r=>{

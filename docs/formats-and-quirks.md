@@ -645,6 +645,16 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   line's action from 6 to 5 in the bol-facing output, keeping `BGM+29`
   internally consistent. Both cases show Transus's mapping treating this
   as a known, gracefully-handled pattern, not something it stumbles on.
+  **Compare follows that remapping (Transus maps 6 → 5).** On the real
+  Quoted CSV ORDRSP (66 lines, all action 6 with confirmed = ordered, no
+  backorder/cancel; bol's output action 5 with the same `QTY+12`, `PRI`
+  and `DTM+67`) Compare reported 66 "action codes differ" errors while its
+  own Message check called the pattern recognised. An item whose supplier
+  side is only action 6 with no `QTY+83`/`QTY+182`, and whose bol side is
+  only action 5 with the same non-zero `QTY+12` and the same `DTM+67`, is
+  no longer an action difference (`dateOnlyRemap` in `compare()`); it gets
+  one grouped Good-to-know note instead, and the action summary badge reads
+  "match (date-only 6 → 5)". A changed `DTM+67` or quantity still counts.
   bol's own documentation only partially reflects this: the "Betekenis"
   column for action 6 already names two distinct sub-cases ("in backorder
   geplaatst *of* voorzien van een nieuwe leverdatum"), but the "Verplichte
