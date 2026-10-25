@@ -320,6 +320,10 @@ actual test fixtures, don't just keep this list as prose:
   the sum of the message's ALC amounts (beyond a cent) is a Message check,
   per side in Compare and once when passed on unchanged, and in Quick
   check; a matching `MOA+131` is silent.
+- **INVOIC**: `RFF+CO` (buyer's order number) counts as an order reference,
+  so a message carrying only `RFF+CO` isn't "no order number" (either
+  mode); bol's output carrying no order reference at all is a Good-to-know
+  note naming `RFF+CO`, not a Transformation difference.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

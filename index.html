@@ -3430,7 +3430,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalTextChars:[],blankLinCount:0,extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalTextChars:[],blankLinCount:0,orderQuals:{},extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 /* First real EAN among a line's candidate identifiers. An all-zeros EAN is
@@ -3596,7 +3596,15 @@ function parseInvoicEdifact(raw){
       case 'RFF':{
         const c=comp(1);const q=c[0],val=c[1];
         if(!val)break;
-        if(q==='ON'){if(curLine)uniqPush(curLine.explicitOrders,val);else uniqPush(cur.headerOrders,val);}
+        // RFF+CO (UNCL 1153: buyer's/customer order number) is an order
+        // reference too. A real Supplier Juliett credit note carried only RFF+CO, and
+        // ECHO said "no order number anywhere". Which qualifier each value
+        // came from is kept (ON wins when both state the same value), so
+        // the overview and Compare can say so.
+        if(q==='ON'||q==='CO'){
+          if(curLine)uniqPush(curLine.explicitOrders,val);else uniqPush(cur.headerOrders,val);
+          if(q==='ON'||!cur.orderQuals[val])cur.orderQuals[val]=q;
+        }
         else if(q==='DQ'){if(curLine)uniqPush(curLine.explicitDespatch,val);else uniqPush(cur.headerDespatchNotes,val);}
         else if(q==='VA'){cur.extras.lastVat=val;
           /* VAT hoort bij de laatst genoemde partij */
@@ -4771,7 +4779,7 @@ function compareInvoice(sup,bol){
     if(onlyOne&&opts.soft)status='info';
     // absent on both sides: nothing was compared, so not a "Match"
     if(empty(s)&&empty(b))status='na';
-    hdr.push({label,sup:s,bol:b,status});
+    hdr.push({label,sup:s,bol:b,status,infoText:opts.infoText||null});
     return status;
   };
 
@@ -4779,7 +4787,17 @@ function compareInvoice(sup,bol){
   hrow('Invoice number',sup.number,bol.number);
   hrow('Invoice date',showDate(sup.date),showDate(bol.date));
   hrow('Currency',sup.currency,bol.currency);
-  hrow('Order(s)',sup.orders.join(', ')||null,bol.orders.join(', ')||null,{cmp:()=>sameSet(sup.orders,bol.orders)});
+  // Order references only stated as RFF+CO (buyer's order number) on the
+  // supplier side, none at all in bol's output: observed, but whether bol's
+  // output is expected to carry an RFF+CO reference isn't known, so it's
+  // Good to know rather than a Transformation difference. Any other order
+  // mismatch stays a difference.
+  {
+    const coOnly=inv=>inv.orders.length>0&&inv.orders.every(o=>(inv.orderQuals||{})[o]==='CO');
+    const softCo=!bol.orders.length&&coOnly(sup);
+    const infoText=softCo?`<strong>Order(s)</strong>: supplier <span class="val-sup">${esc(sup.orders.join(', '))}</span> (RFF+CO), bol <span class="val-bol">—</span>.`+moreInfo(`The supplier states ${sup.orders.length===1?'this reference':'these references'} as RFF+CO (buyer's order number), not RFF+ON, and bol's output carries no order reference at all. Whether bol's output is expected to carry an RFF+CO reference can't be told from these two messages.`):null;
+    hrow('Order(s)',sup.orders.join(', ')||null,bol.orders.join(', ')||null,{cmp:()=>sameSet(sup.orders,bol.orders),soft:softCo,infoText});
+  }
   hrow('Packing reference(s)',sup.despatchNotes.join(', ')||null,bol.despatchNotes.join(', ')||null,{cmp:()=>sameSet(sup.despatchNotes,bol.despatchNotes)});
   hrow('Delivery date',showDate(sup.deliveryDate),showDate(bol.deliveryDate),{soft:true});
   ['SU','BY','IV','DP'].forEach(role=>{
@@ -4802,6 +4820,7 @@ function compareInvoice(sup,bol){
 
   hdr.forEach(h=>{
     if(h.status==='diff')add('err',`<strong>${h.label}</strong> differs — supplier <span class="val-sup">${esc(h.sup??'—')}</span> vs bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
+    else if(h.status==='info'&&h.infoText)add('info',h.infoText,'info');
     else if(h.status==='info')add('info',`<strong>${h.label}</strong>: supplier <span class="val-sup">${esc(h.sup??'—')}</span>, bol <span class="val-bol">${esc(h.bol??'—')}</span>.`,'info');
   });
 
@@ -5189,7 +5208,7 @@ function invoiceOverviewHtml(inv,opts={}){
   f.push(fieldHtml('Invoice number',inv.number));
   f.push(fieldHtml('Invoice date',showDate(inv.date)));
   f.push(fieldHtml('Currency',cur));
-  const orderVal=inv.orders.length?inv.orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}`).join(', '):'';
+  const orderVal=inv.orders.length?inv.orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}${(inv.orderQuals||{})[o]==='CO'?' <span class="dim">RFF+CO</span>':''}`).join(', '):'';
   f.push(fieldHtml('Order(s)',orderVal,null,true));
   f.push(fieldHtml('Packing reference(s)',inv.despatchNotes.join(', ')));
   f.push(fieldHtml('Delivery date',showDate(inv.deliveryDate)));

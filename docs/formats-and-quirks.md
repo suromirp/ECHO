@@ -587,6 +587,19 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   charges + allowances both accepted, and a gap of a cent ignored. bol's own
   INVOIC spec lists `MOA+259` (total charges) rather than 131; ECHO doesn't
   read 259 yet, since no real message has carried it.
+- **`RFF+CO` as the only order reference** (same real Supplier Juliett credit note):
+  the header carried `RFF+CO:<value>` (UNCL 1153 CO = buyer's/customer
+  order number) and no `RFF+ON`. `parseInvoicEdifact` only read `ON`, so
+  Compare and Quick check said "no order number anywhere". bol's UBL for
+  that credit has no `OrderReference` and the value appears nowhere in it.
+  `RFF+CO` is now an order reference like `ON` (header or line), with the
+  qualifier kept per value in `inv.orderQuals` (`ON` wins when both state
+  the same value). Quick check labels such a value "RFF+CO". In Compare,
+  when the supplier's orders all come from `RFF+CO` and bol's output has no
+  order reference at all, the Order(s) row is Info and a Good-to-know note
+  says so: whether bol's output is expected to carry an `RFF+CO` reference
+  isn't known. Any other order mismatch is still a difference. bol's output
+  still gets its own "no order number" Message check, which is true there.
 - **A `TAX` segment stating the VAT rate at a different position than the
   rest of the message's own `TAX` segments** is a separate, real, confirmed
   cause of Transus rejecting a message ("VAT percentage/amount is
