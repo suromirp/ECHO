@@ -3240,6 +3240,15 @@ function emptyInvoice(source){
     taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalDescChars:[],extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
+/* First real EAN among a line's candidate identifiers. An all-zeros EAN is
+   normalized to '' (never a match key, docs/matching.md) but remembered as
+   gtinZeroed, so the "EAN is all zeros" check can still see it — the same
+   flag the ORDRSP/DESADV parsers set. */
+function invoiceGtin(...cands){
+  const isZero=c=>!!(c&&/^0+$/.test(String(c).trim()));
+  const real=cands.find(c=>c&&String(c).trim()&&!isZero(c));
+  return real?{gtin:real,gtinZeroed:false}:{gtin:'',gtinZeroed:cands.some(isZero)};
+}
 /* A raw ASCII control character (anything below 0x20 other than tab/LF/CR)
    is illegal inside XML 1.0 text content — any XML parser, including
    Transus's own, refuses to parse the WHOLE document because of it, not
@@ -3411,7 +3420,7 @@ function parseInvoicEdifact(raw){
       case 'LIN':{
         if(curLine)cur.lines.push(curLine);
         const g=comp(3)[0]||'';
-        curLine={lineNo:el[1]||'',gtin:(g&&/^0+$/.test(g))?'':g,art:null,desc:null,
+        curLine={lineNo:el[1]||'',...invoiceGtin(g),art:null,desc:null,
           qty:null,netPrice:null,grossPrice:null,lineAmount:null,vatPct:null,
           orders:[],despatch:[],charges:[],dtm:{},explicitOrders:[],explicitDespatch:[]};
         curAlc=null;
@@ -3421,7 +3430,10 @@ function parseInvoicEdifact(raw){
         for(let i=2;i<el.length;i++){
           const c=comp(i);
           if(c[1]==='SA')curLine.art=c[0];
-          else if(c[1]==='EN'&&!curLine.gtin)curLine.gtin=c[0];
+          else if(c[1]==='EN'&&!curLine.gtin){
+            const r=invoiceGtin(c[0]);
+            if(r.gtin)Object.assign(curLine,r);else if(r.gtinZeroed)curLine.gtinZeroed=true;
+          }
         }
         break;}
       case 'IMD':{
@@ -3626,7 +3638,7 @@ function parseInvoicExactOnlineXml(raw){
   lineEls.forEach((ln,i)=>{
     const lg=name=>{const c=childByName(ln,name);const t=c?textOf(c):null;return t||null;};
     const lineNo=lg('LineNumber')||String(i+1);
-    inv.lines.push({lineNo,gtin:lg('GTIN'),art:lg('ItemCode'),desc:lg('ItemDescription')||lg('Description'),
+    inv.lines.push({lineNo,...invoiceGtin(lg('GTIN')),art:lg('ItemCode'),desc:lg('ItemDescription')||lg('Description'),
       qty:num(lg('Quantity')),netPrice:num(lg('NetPrice')),grossPrice:null,
       lineAmount:num(lg('AmountDC'))??num(lg('AmountFC')),
       vatPct:num(lg('VATPercentage')),orders:[],despatch:[],charges:[]});
@@ -3697,7 +3709,7 @@ function parseInvoicTransusMessageXml(raw){
       const priceUnit=num(ag('ArticleQuantityPerPriceUnit'))||1;
       const rawPrice=num(ag('ArticleNetPrice'));
       const lineNo=ag('LineNumber')||String(i+1);
-      const line={lineNo,gtin:ag('GTIN'),art:ag('ArticleCodeSupplier'),desc:ag('ArticleDescription'),
+      const line={lineNo,...invoiceGtin(ag('GTIN')),art:ag('ArticleCodeSupplier'),desc:ag('ArticleDescription'),
         qty:num(ag('InvoicedQuantity')),
         netPrice:rawPrice!==null?Math.round((rawPrice/priceUnit)*100000)/100000:null,
         grossPrice:null,
@@ -3803,10 +3815,13 @@ function parseInvoicBolXml(raw){
     /* lines */
     childrenByName(root,'InvoiceLine').forEach(ln=>{
       const item=childByName(ln,'Item');
+      const sellersId=valOf(item||ln,['SellersItemIdentification','ID']);
       const line={
         lineNo:valOf(ln,['ID']),
-        gtin:(valOf(item||ln,['SellersItemIdentification','ID'])||valOf(item||ln,['BuyersItemIdentification','ID'])||valOf(item||ln,['StandardItemIdentification','ID'])||''),
-        art:valOf(item||ln,['SellersItemIdentification','ID']),
+        // bol fills Sellers and Buyers ID with the same EAN; an all-zeros
+        // one in either is no identifier (and no article code) at all.
+        ...invoiceGtin(sellersId,valOf(item||ln,['BuyersItemIdentification','ID']),valOf(item||ln,['StandardItemIdentification','ID'])),
+        art:(sellersId&&!/^0+$/.test(sellersId.trim()))?sellersId:null,
         desc:valOf(item||ln,['Description'])||valOf(item||ln,['Name']),
         qty:num(valOf(ln,['InvoicedQuantity'])),
         netPrice:num(valOf(ln,['Price','PriceAmount'])),
@@ -3814,9 +3829,6 @@ function parseInvoicBolXml(raw){
         lineAmount:num(valOf(ln,['LineExtensionAmount'])),
         vatPct:null,orders:[],despatch:[],charges:[],dtm:{},explicitOrders:[],explicitDespatch:[]
       };
-      const buyersId=valOf(item||ln,['BuyersItemIdentification','ID']);
-      if(line.gtin&&/^0+$/.test(line.gtin))line.gtin='';
-      if(!line.gtin&&buyersId)line.gtin=buyersId;
       const lt=childByName(ln,'TaxTotal');
       if(lt){
         const sub=childByName(lt,'TaxSubtotal');
@@ -3930,7 +3942,7 @@ function parseInvoicTransusXml(raw){
     lineEls.forEach(ln=>{
       const line={
         lineNo:pick(ln,['LineNumber','ID','LineNo']),
-        gtin:pick(ln,['GTIN','EAN','StandardItemIdentification'])||'',
+        ...invoiceGtin(pick(ln,['GTIN','EAN','StandardItemIdentification'])),
         art:pick(ln,['ArticleCodeSupplier','SupplierItemCode','ArticleNumber']),
         desc:pick(ln,['Description','ItemDescription','Name']),
         qty:num(pick(ln,['InvoicedQuantity','Quantity','DeliveredQuantity'])),
@@ -3942,7 +3954,6 @@ function parseInvoicTransusXml(raw){
       };
       const lo=pick(ln,['OrderNumberBuyer','OrderNumber']);if(lo)uniqPush(line.explicitOrders,lo);
       const ld=pick(ln,['DespatchAdviceNumber','DeliveryNoteNumber']);if(ld)uniqPush(line.explicitDespatch,ld);
-      if(line.gtin&&/^0+$/.test(line.gtin))line.gtin='';
       inv.lines.push(line);
     });
     inv.totals.taxable=num(pick(root,['TaxableAmount','TotalNetAmount','TaxExclusiveAmount']));
@@ -4286,6 +4297,56 @@ function matchInvoicePair(supList,bolList){
   return {pairs,notes};
 }
 
+/* Invoice lines in the shape the shared single-message checks expect
+   (checkZeroGtin, orderNearMisses/checkOrderNearMiss — written for the
+   ORDRSP/DESADV facts model): lineNo, art, gtinZeroed, orders as a Set,
+   header orders as orderRefsHeader. Exact Online and TRANSUSXML only fill
+   inv.orders (no header/line split); those count as header orders. Each
+   adapted line keeps its invoice line as __inv. */
+function invoiceAsFacts(inv){
+  const lines=inv.lines.map(l=>({lineNo:l.lineNo||'',art:l.art||null,gtinZeroed:!!l.gtinZeroed,
+    orders:new Set(l.explicitOrders||[]),__inv:l}));
+  return {orderRefsHeader:[...new Set([...(inv.headerOrders||[]),...(inv.orders||[])])],lines};
+}
+/* checkZeroGtin jumps to "LIN+<line>". That finds the line in an EDIFACT
+   invoice; in an XML one it would land on any "1", so jump to the zeros. */
+function invoiceZeroJump(inv,base){
+  const xml=!!(inv.raw&&inv.raw.xml);
+  return v=>base(xml?'00000000':v);
+}
+/* bol lines whose EAN is all zeros, each paired with the supplier line it
+   stands for — but only when that pairing is unambiguous (same idea as the
+   DESADV zero-EAN borrow in docs/matching.md): the same number of lines on
+   both sides, and either (a) the same unique set of line numbers, paired
+   by line number, or (b) every other line carries the same EAN at the same
+   position, paired by position. (b) exists because invoice dialects number
+   lines differently (supplier 10/20/30, bol UBL 1/2/3), so (a) almost never
+   holds for INVOIC. No similarity guessing beyond that. Map: bol line ->
+   supplier line (which has a real EAN). */
+function invoiceZeroPairs(sup,bol){
+  const pairs=new Map();
+  const S=sup.lines,B=bol.lines;
+  if(!B.some(l=>l.gtinZeroed)||S.length!==B.length)return pairs;
+  const sn=S.map(l=>l.lineNo||''),bn=B.map(l=>l.lineNo||'');
+  const uniq=a=>a.every(v=>v)&&new Set(a).size===a.length;
+  let partner=null;
+  if(uniq(sn)&&uniq(bn)&&sn.slice().sort().join('|')===bn.slice().sort().join('|')){
+    const byNo=new Map(S.map(l=>[l.lineNo,l]));
+    partner=b=>byNo.get(b.lineNo);
+  }else{
+    const g=l=>l.gtin?normalizeGtin(l.gtin):'';
+    const inOrder=B.every((b,i)=>b.gtinZeroed||(g(b)&&g(b)===g(S[i])));
+    if(inOrder)partner=b=>S[B.indexOf(b)];
+  }
+  if(!partner)return pairs;
+  B.forEach(b=>{
+    if(!b.gtinZeroed)return;
+    const s=partner(b);
+    if(s&&s.gtin&&!s.gtinZeroed)pairs.set(b,s);
+  });
+  return pairs;
+}
+
 function compareInvoice(sup,bol){
   const findings=[];
   const add=(level,text,cat)=>findings.push({level,text,cat:cat||'diff'});
@@ -4316,6 +4377,28 @@ function compareInvoice(sup,bol){
   illegalDescCharFindings(bol.illegalDescChars).forEach(t=>add('warn',`Bol — ${t}`,'message'));
   {const fs=gs1CheckDigitFinding(gs1CheckDigitIssues(sup.lines.map(l=>l.gtin),[]));if(fs)add('warn','Supplier — '+fs,'message');
    const fb=gs1CheckDigitFinding(gs1CheckDigitIssues(bol.lines.map(l=>l.gtin),[]));if(fb)add('warn','Bol — '+fb,'message');}
+  // All-zeros EAN and an order number missing its leading digit(s): the
+  // same single-message checks ORDRSP/DESADV run (parity rule), per side,
+  // reported once when bol's output carries the same as the supplier sent.
+  const zeroPairs=invoiceZeroPairs(sup,bol);
+  {
+    const supF=invoiceAsFacts(sup),bolF=invoiceAsFacts(bol);
+    const jSup=invoiceZeroJump(sup,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+    const jBol=invoiceZeroJump(bol,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+    if(zeroPairs.size){
+      const n=zeroPairs.size;
+      const tags=[...zeroPairs].map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToInvSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo||'?')} · ${esc(s.gtin)}</span></li>`).join('');
+      add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as bol's line · supplier's EAN), but bol's output says 0000000000000 on the same line, so the item can't be identified by EAN there. The lines are still compared using the supplier's EAN. On DESADV this was a setting in Transus's data source for that supplier.`),'diff');
+    }
+    const bolSkip=new Set(bolF.lines.filter(l=>zeroPairs.has(l.__inv)));
+    const supZ=supF.lines.filter(l=>l.gtinZeroed).length;
+    const bolZ=bolF.lines.filter(l=>l.gtinZeroed&&!bolSkip.has(l)).length;
+    if(supZ&&supZ===bolZ)checkZeroGtin(supF,'Supplier (passed on unchanged to bol)',add,()=>`jumpToInvSource('both',${jsQuote('00000000')})`);
+    else{checkZeroGtin(supF,'Supplier',add,jSup);checkZeroGtin(bolF,'Bol',add,jBol,bolSkip);}
+    const sm=orderNearMisses(supF).map(h=>h.short).join('|'),bm=orderNearMisses(bolF).map(h=>h.short).join('|');
+    if(sm&&sm===bm)checkOrderNearMiss(supF,'Supplier (passed on unchanged to bol)',add,v=>`jumpToInvSource('both',${jsQuote(v)})`);
+    else{checkOrderNearMiss(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNearMiss(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
+  }
 
   /* ---- header ---- */
   const hdr=[];
@@ -4361,6 +4444,10 @@ function compareInvoice(sup,bol){
 
   /* ---- lines: match on GTIN, never guess a match ---- */
   const keyOf=l=>{
+    // a zeroed bol EAN paired with its supplier line (invoiceZeroPairs)
+    // borrows that EAN, so it isn't also "missing" plus "no EAN" here
+    const borrowed=zeroPairs.get(l);
+    if(borrowed)return 'G:'+normalizeGtin(borrowed.gtin);
     if(l.gtin&&String(l.gtin).trim())return 'G:'+normalizeGtin(l.gtin);
     if(l.art&&String(l.art).trim())return 'A:'+String(l.art).trim();
     return null;
@@ -4543,7 +4630,8 @@ function compareInvoice(sup,bol){
     // sides (the line still matches fine) makes the exact same charge
     // key differently per side and show up as "only on the supplier"
     // and "only on bol" at once instead of matching.
-    inv.lines.forEach(l=>(l.charges||[]).forEach(c=>all.push({...c,lineGtin:(l.gtin?normalizeGtin(l.gtin):null)||l.art||null})));
+    inv.lines.forEach(l=>{const g=zeroPairs.has(l)?zeroPairs.get(l).gtin:l.gtin;
+      (l.charges||[]).forEach(c=>all.push({...c,lineGtin:(g?normalizeGtin(g):null)||l.art||null}));});
     return all;
   };
   const sc=chargeList(sup),bc=chargeList(bol);
@@ -4706,7 +4794,8 @@ function invoiceOverviewHtml(inv,opts={}){
   // it's framed as "these couldn't be matched"; standalone, the more
   // useful framing is simply that the line has no identifiable product
   // reference at all.
-  const noIdLines=inv.lines.filter(l=>!(l.gtin&&String(l.gtin).trim())&&!(l.art&&String(l.art).trim())).length;
+  // (an all-zeros EAN has its own note below, so it isn't counted twice)
+  const noIdLines=inv.lines.filter(l=>!l.gtinZeroed&&!(l.gtin&&String(l.gtin).trim())&&!(l.art&&String(l.art).trim())).length;
   if(noIdLines)h+=`<div class="note-inline" style="color:var(--warn)">${noIdLines} line(s) have no EAN or item number at all.</div>`;
   taxIssueFindings(inv.taxIssues).forEach(t=>{
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
@@ -4718,6 +4807,14 @@ function invoiceOverviewHtml(inv,opts={}){
     h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${t}</div>`;
   });
   {const f=gs1CheckDigitFinding(gs1CheckDigitIssues(inv.lines.map(l=>l.gtin),[]));if(f)h+=`<div class="note-inline" style="color:var(--warn)">⚠ ${f}</div>`;}
+  // Same all-zeros-EAN and incomplete-order-number checks as ORDRSP/DESADV
+  // Quick check and INVOIC Compare (parity rule).
+  {
+    const af=invoiceAsFacts(inv);
+    const note=(level,text)=>{h+=`<div class="note-inline" style="color:var(--warn)">${level==='err'?'⚠':'!'} ${text}</div>`;};
+    checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
+    checkOrderNearMiss(af,'',note,jumpCall);
+  }
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
