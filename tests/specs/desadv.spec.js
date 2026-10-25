@@ -177,10 +177,15 @@ test('many pallets missing an SSCC are grouped into one finding with a collapsed
   const tagCount = await page.locator('#findings .wc-affected li').count();
   expect(tagCount).toBe(50); // 25 pallets x 2 sides
 
-  // Quick check still groups them into one "No SSCC found" finding.
+  // Quick check: one finding too. Deliberate change: this used to be a
+  // "doesn't contain an SSCC anywhere" note plus a separate "No SSCC found
+  // on 25 pallet groups" — one fact, two findings.
   await openApp(page);
   await runQuickFixture(page, fixture);
-  await expect(page.locator('#quickOverview')).toContainText('No SSCC found on 25 pallet groups');
+  const qc = page.locator('#quickOverview ul.findings li', { hasText: 'SSCC' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toContainText('No SSCC (GIN+BJ) anywhere in the message');
+  await expect(qc).toContainText('25 pallet groups without SSCC');
 });
 
 // docs/ui-conventions.md: "Distinct items", not "Items" — real user
@@ -367,7 +372,12 @@ test('a flat quoted-CSV DESADV dialect is read, not silently treated as an empty
   // flattens everything into one CPS with none at all.
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /2 SSCCs only in the supplier message/.test(t))).toBe(true);
-  expect(buckets.message.some(t => /No SSCC found on 1 pallet group/.test(t))).toBe(true);
+  // bol's own Message check: no SSCC anywhere, listing its pallet group
+  // (deliberately one finding now, replacing the per-pallet "No SSCC found").
+  const bolNoSscc = buckets.message.filter(t => /Bol — No SSCC \(GIN\+BJ\) anywhere/.test(t));
+  expect(bolNoSscc).toHaveLength(1);
+  expect(bolNoSscc[0]).toContain('1 pallet group without SSCC');
+  expect(buckets.message.some(t => /No SSCC found/.test(t))).toBe(false);
 });
 
 // Same fixture, Quick check on the supplier file alone — parity for format
@@ -1163,4 +1173,34 @@ test('Worth checking counts EAN repeats per order; a long order list collapses',
   await expect(strip.locator('details.order-list > summary')).toContainText('22 orders');
   const hdr = page.locator('#hdrFields tr', { hasText: 'Order' }).first();
   await expect(hdr.locator('details > summary').first()).toContainText('22 orders');
+});
+
+// Only bol's output has SSCCs; the supplier message has none. That used to
+// be "2 SSCCs only in the bol output", a Transformation difference sent to
+// Transus, although nothing was lost. It's the supplier's own Message check
+// now (the same one Quick check runs), listing its SSCC-less pallet groups
+// and bol's SSCCs, with no per-pallet "No SSCC found" next to it.
+test('SSCCs only in bol\'s output are the supplier\'s Message check, not a difference for Transus', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-only-on-bol.sup.edi'), path.join(FIX, 'sscc-only-on-bol.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const msg = buckets.message.filter(t => /No SSCC \(GIN\+BJ\) anywhere/.test(t));
+  expect(msg).toHaveLength(1);
+  expect(msg[0]).toContain('Supplier —');
+  expect(msg[0]).toContain('2 pallet groups without SSCC');
+  expect(msg[0]).toContain('087123457000000010');
+  expect(msg[0]).toContain('087123457000000027');
+  expect(buckets.message.some(t => /No SSCC found/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /SSCC/.test(t))).toBe(false);
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).not.toContain('087123457000000010');
+  await expect(page.locator('#verdict')).toContainText('No transformation differences found');
+
+  // Quick check on the supplier file: the same check.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'sscc-only-on-bol.sup.edi'));
+  const qc = page.locator('#quickOverview ul.findings li', { hasText: 'SSCC' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toContainText('No SSCC (GIN+BJ) anywhere in the message');
 });
