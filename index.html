@@ -2352,6 +2352,12 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall){
    slip. Values that differ completely are left alone: some suppliers
    legitimately use unrelated numbers for the two. Single-message
    observation, so both modes (parity rule). */
+/* Any source ECHO shows as the packing reference: RFF+BM first, then the
+   BGM document number, then an RFF+DQ/AAS reference. RFF+BM used to be
+   left out here, so a message with only RFF+BM was told it had none. */
+function hasPackingRef(facts){
+  return !!(facts.billOfLadingRef||facts.docNumber||(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length));
+}
 function packingRefNearMiss(facts){
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   if(!ref||!doc||ref===doc)return false;
@@ -2362,7 +2368,7 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   if(!packingRefNearMiss(facts))return;
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
-  add('warn',`${label?label+' — ':''}<strong>Packing slip number may be wrong</strong>: ${v(ref)} vs document number ${v(doc)}. Check with the supplier which one is on the packing slip.`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing slip number, so it must be exactly what's printed on the physical packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing slip number = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
+  add('warn',`${label?label+' — ':''}<strong>Packing reference almost matches the document number</strong>: ${v(ref)} vs ${v(doc)}`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing reference, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is on the packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing reference = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
 }
 
 /* Header fields side by side: what the supplier sent, what bol's output
@@ -2415,7 +2421,7 @@ function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
   const arrSeg=f=>f.headerDtm&&f.headerDtm['132']?'DTM+132':(f.headerDtm&&f.headerDtm['17']?'DTM+17':'DTM+2');
   const rows=[
-    isD&&['Packing slip number',f=>f.billOfLadingRef,()=>'RFF+BM',['PackingSlipNumber']],
+    isD&&['Packing reference',f=>f.billOfLadingRef,()=>'RFF+BM',['PackingSlipNumber']],
     ['Document number',f=>f.docNumber,()=>'BGM',['DespatchAdviceNumber','OrderResponseNumber','DocumentNumber']],
     ['Order',f=>headerOrders(f).join(', ')||null,()=>'RFF+ON',['OrderNumberBuyer']],
     ['Document date',f=>f.docDate,()=>'DTM+137',['DocumentDate','DespatchAdviceDate','OrderResponseDate']],
@@ -3057,8 +3063,8 @@ function compare(bol,sup){
     // than silently not appearing anywhere in the comparison — but BGM's
     // document number often already serves as the packing reference for
     // DESADV, so only flag this when that's ALSO missing
-    if(sup.lines.length&&!(sup.deliveryNoteRefs&&sup.deliveryNoteRefs.length)&&!sup.docNumber)add('info','Supplier — no packing reference (despatch note) found in this message.','message');
-    if(bol.lines.length&&!(bol.deliveryNoteRefs&&bol.deliveryNoteRefs.length)&&!bol.docNumber)add('info','Bol — no packing reference (despatch note) found in this message.','message');
+    if(sup.lines.length&&!hasPackingRef(sup))add('info','Supplier — no packing reference found in this message.','message');
+    if(bol.lines.length&&!hasPackingRef(bol))add('info','Bol — no packing reference found in this message.','message');
   }
 
   // ORDRSP rule validation (validate supplier + bol lines). Grouped by which
@@ -4846,7 +4852,7 @@ function factsOverviewHtml(facts){
     if(!hasAnyOrder)qcAdd('warn',"This message doesn't reference an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.");
   }
   if(type==='DESADV'){
-    if(facts.lines.length&&!(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)&&!facts.docNumber)qcAdd('info','No packing reference (despatch note) found in this message.');
+    if(facts.lines.length&&!hasPackingRef(facts))qcAdd('info','No packing reference found in this message.');
     // Mirrors the Compare-mode "neither message contains an SSCC" note —
     // checkPalletStructure below only speaks up per-pallet, so a message
     // with items but literally zero SSCCs anywhere (not even a single

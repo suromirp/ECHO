@@ -588,7 +588,7 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /Pallet mapping differs|pallet mapping difference/.test(t))).toBe(false);
   // Same values on both sides: reported once, about the supplier's message.
-  const near = buckets.message.filter(t => /Packing slip number may be wrong/.test(t));
+  const near = buckets.message.filter(t => /Packing reference almost matches the document number/.test(t));
   expect(near).toHaveLength(1);
   expect(near[0]).toContain('passed on unchanged');
   expect(near[0]).toContain('PKB1000A');
@@ -596,7 +596,7 @@ test('several groups sharing one SSCC are compared as one pallet, and a near-mis
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'repeated-sscc-units.sup.xml'));
   await expect(page.locator('#quickOverview')).toBeVisible();
-  await expect(page.locator('body')).toContainText('Packing slip number may be wrong');
+  await expect(page.locator('body')).toContainText('Packing reference almost matches the document number');
 });
 
 // Findings stay short: explanation sits behind a collapsed "More info"
@@ -836,7 +836,7 @@ test('the header fields table shows each value with its source field, and opens 
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'repeated-sscc-units.sup.xml'), path.join(FIX, 'repeated-sscc-units.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
-  const row = page.locator('#hdrFields tr', { hasText: 'Packing slip number' });
+  const row = page.locator('#hdrFields tr', { hasText: 'Packing reference' });
   await expect(row).toContainText('PackingSlipNumber');
   await expect(row).toContainText('RFF+BM');
   expect(await page.locator('#hdrFields details.hdr-fields').evaluate(e => e.open)).toBe(false);
@@ -924,4 +924,31 @@ test('Copy report uses neutral marks per section, not [ERROR]', async ({ page })
   await expect(page.locator('#results')).toBeVisible();
   report = await page.evaluate(() => lastReportText);
   expect(report).toMatch(/\[DIFFERENCE\] Despatch date \(DTM\+11\) changed/);
+});
+
+// "No packing reference" ignored RFF+BM (the leading source), so a message
+// with only RFF+BM and an empty BGM number was told it had none.
+// Terminology is "packing reference" throughout (docs/ui-conventions.md).
+test('a message with only RFF+BM is not flagged as having no packing reference', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'packing-ref-bm-only.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#findings')).not.toContainText('no packing reference');
+  await expect(page.locator('.stat', { hasText: 'Packing reference' }).first()).toContainText('PKREF7401');
+  await expect(page.locator('#hdrFields tr', { hasText: 'Packing reference' })).toContainText('PKREF7401');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText(/no packing reference/i);
+
+  // The near-miss finding: neutral headline with both values, advice in More info.
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'repeated-sscc-units.sup.xml'), path.join(FIX, 'repeated-sscc-units.bol.edi'));
+  const near = page.locator('#findings li', { hasText: 'Packing reference almost matches the document number' });
+  await expect(near).toContainText('PKB1000A');
+  const visible = await near.evaluate(el => { const c = el.cloneNode(true); c.querySelectorAll('details').forEach(d => d.remove()); return c.textContent; });
+  expect(visible).not.toContain('Check with the supplier');
+  await expect(near.locator('details.f-more')).toContainText('Check with the supplier');
 });
