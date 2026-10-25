@@ -236,6 +236,8 @@ actual test fixtures, don't just keep this list as prose:
   lines; no order number anywhere is flagged (once when neither side has
   one); both in Compare and Quick check. An all-zeros-EAN line isn't also
   counted as "without an EAN or item number".
+- **INVOIC**: per-EAN differences are capped at 5 per kind with an "N more"
+  line; the credit-note note is a short headline with More info.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

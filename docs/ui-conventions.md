@@ -65,7 +65,10 @@ explanation with N tags, not a wall of near-identical paragraphs.
 
 Where grouping isn't natural (e.g. a list of genuinely distinct charge
 differences), cap-and-summarize instead: show the first handful in full,
-then `"N more — see [table] below for the full list."`
+then `"N more — see [table] below for the full list."` INVOIC's per-EAN
+findings (missing on one side, and each "<field> differs" kind) use the same
+`addCapped` pattern as ORDRSP/DESADV; they used to print one finding per EAN
+uncapped. Ambiguous references are grouped per side and field, EANs as tags.
 
 ## Pill / status vocabulary
 
