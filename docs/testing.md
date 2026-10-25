@@ -158,6 +158,12 @@ actual test fixtures, don't just keep this list as prose:
   pallet level", in either mode.
 - **ORDRSP/DESADV**: the "Distinct items" stat is labeled and explained via
   tooltip, not a bare "Items" count that reads as a total-units figure.
+- **ORDRSP/DESADV**: the Compare verdict is driven by Transformation
+  differences only. A Message check alone, even at err level (RFF+BM too
+  long, no PAC, an ORDRSP action rule), gives the calm "mapping is correct
+  … see Message checks" verdict, never "lost in translation"; a DESADV with
+  a Transformation difference at warn level never says "the transformation
+  matches".
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable
   total (both the TRANSUSXML-style and bol's-own-UBL-style aggregation).
 - **INVOIC**: TAX segment missing rate detected and grouped.
