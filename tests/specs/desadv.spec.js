@@ -1143,3 +1143,24 @@ test('the header table packing reference falls back to RFF+DQ, labelled as such'
   await expect(row.locator('td').nth(2)).toContainText('RFF+BM');
   await expect(row).not.toHaveClass(/differ/);
 });
+
+// "EANs appear a different number of times" keyed on the EAN alone, so it
+// fired on every multi-order DESADV (one EAN legitimately once per order).
+// It keys on EAN + order now. A long order list (past ~20) collapses in the
+// strip and the header table.
+test('Worth checking counts EAN repeats per order; a long order list collapses', async ({ page }) => {
+  const fixture = path.join(FIX, 'many-orders.edi');
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText('appear a different number of times');
+
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#wcBody').innerHTML()).not.toContain('different number of times');
+  const strip = page.locator('.stat', { hasText: /order/i }).first();
+  await expect(strip.locator('details.order-list > summary')).toContainText('22 orders');
+  const hdr = page.locator('#hdrFields tr', { hasText: 'Order' }).first();
+  await expect(hdr.locator('details > summary').first()).toContainText('22 orders');
+});
