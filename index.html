@@ -3068,7 +3068,17 @@ function compare(bol,sup){
     };
     const ssccHead=(n,where)=>`<strong>${n} SSCC${n===1?'':'s'} only in the ${where}</strong>`;
     if(ssccResult.onlyBol.length)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol'),'diff');
-    if(ssccResult.onlySup.length)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
+    // When every one of these SSCCs sits in a CPS group without PAC, the
+    // cause is already flagged (checkMissingPacWithSscc, Transus-confirmed:
+    // without PAC the SSCC never reaches bol). That's the supplier's own
+    // message, not a mapping question, so it's a Message check pointing
+    // there rather than a Transformation difference sent to Transus (real
+    // Supplier Golf DESADV, 9 SSCCs). A PAC-carrying pallet still counts as a diff.
+    const pacLess=new Set((sup.pallets||[]).filter(p=>p.sscc&&!p.hasPac).map(p=>p.sscc));
+    if(ssccResult.onlySup.length&&ssccResult.onlySup.every(s=>pacLess.has(s))){
+      add('warn',`Supplier — ${ssccHead(ssccResult.onlySup.length,'supplier message')}, all in CPS groups without PAC`+ssccTags(ssccResult.onlySup,'sup')+moreInfo(`Each of these SSCCs sits in a CPS group that has no PAC segment (see the PAC finding above). Transus support confirmed that without PAC the SSCC doesn't reach bol, so their absence from bol's output follows from the supplier message.`),'message');
+    }
+    else if(ssccResult.onlySup.length)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
     if(!ssccResult.onlyBol.length&&!ssccResult.onlySup.length)add('ok',`All ${ssccResult.common.length} SSCCs are present in both messages.`,'diff');
   }else if(type==='DESADV'&&(sup.lines.length||bol.lines.length)){
     // Neither side has any SSCC at all — "Quantities: Match" only means the
@@ -3232,7 +3242,7 @@ function compare(bol,sup){
   let verdict='ok';
   if(findings.some(f=>isDiff(f)&&f.level==='err'))verdict='err';
   else if(findings.some(f=>f.level==='err'||f.level==='warn'))verdict='warn';
-  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)?" and SSCCs":'')+'.','diff');
+  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+', order numbers'+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
@@ -5241,7 +5251,7 @@ function render(result,bol,sup,notes){
   const vmap={ok:{i:'✓',t:'Loud and clear',s:isD?'All compared values and pallet mappings match.':'All compared values match between the supplier message and bol output.'},
     warn:{i:'!',t:'Almost in sync',s:hasDiffIssue
       ?'The compared values mostly match, but ECHO found something worth a closer look — see Transformation differences below.'
-      :(isD?'The transformation and pallet mappings match.':'The mapping itself is correct — nothing to fix there.')+' ECHO noticed something worth checking in the message data itself — see Message checks below.'},
+      :(isD?(result.ssccResult.onlyBol.length||result.ssccResult.onlySup.length?'No transformation differences found.':'The transformation and pallet mappings match.'):'The mapping itself is correct — nothing to fix there.')+' ECHO noticed something worth checking in the message data itself — see Message checks below.'},
     err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output — see Transformation differences below.'}};
   const v=vmap[result.verdict];
   document.getElementById('verdict').className='verdict '+result.verdict;
