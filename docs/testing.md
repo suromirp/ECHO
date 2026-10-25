@@ -164,6 +164,10 @@ actual test fixtures, don't just keep this list as prose:
   … see Message checks" verdict, never "lost in translation"; a DESADV with
   a Transformation difference at warn level never says "the transformation
   matches".
+- **ORDRSP**: each action rule keeps its own level (a warn rule never shows
+  as err because another rule on the same line is err); the action-6
+  date-only amendment is info. Short headline + "More info", in Compare and
+  Quick check.
 - **ORDRSP/DESADV**: message values in Compare findings (article code,
   quantity, action, order number) are HTML-escaped — `ART<b>1` shows as
   text, never as markup.

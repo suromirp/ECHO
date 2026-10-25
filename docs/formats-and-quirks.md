@@ -652,7 +652,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   read "worth confirming these weren't meant to be action 5 instead",
   which reads as an accusation for a pattern that's demonstrably fine in
   practice; reworded to describe the pattern neutrally instead
-  (`action6-no-backorder-has-confirmed` in `ACTION_RULE_EXPLAIN`). Per
+  (`action6-no-backorder-has-confirmed` in `ACTION_RULE_EXPLAIN`), and it
+  is shown at info level. Every rule there carries its own level; a group
+  used to take the worst level of its first line, so this rule could show
+  as an error next to an unrelated err rule on the same line. Per
   CLAUDE.md rule 7: a finding that reads as "you did something wrong"
   needs either a generous tolerance or shouldn't exist — this is a case
   where real evidence turned up proving the tolerance was warranted. Since

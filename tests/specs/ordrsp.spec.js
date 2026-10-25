@@ -411,3 +411,33 @@ test('message values in Compare findings are escaped, not rendered as HTML', asy
   expect(text).toContain('action codes differ');
   expect(text).toContain('supplier [PO<i>1] vs bol [PO<i>2]');
 });
+
+// Each ORDRSP action rule used to inherit the worst level of its line, so
+// "no DTM+67" showed as an error only because the same line also had a
+// backorder on action 5. Each rule now has its own level; the action-6
+// date-only amendment (a recognised pattern) is info. Message checks only,
+// so the verdict stays calm.
+test('each ORDRSP action rule keeps its own level, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'rule-levels.edi');
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const levelOf = async (root, re) => page.locator(`${root} li`, { hasText: re }).first().getAttribute('class');
+  expect(await levelOf('#findings', /Supplier — Action 5 without a delivery date \(DTM\+67\)/)).toBe('f-warn');
+  expect(await levelOf('#findings', /Supplier — Action 5 with a backorder quantity/)).toBe('f-err');
+  expect(await levelOf('#findings', /Supplier — Action 6 used as a delivery-date-only amendment/)).toBe('f-info');
+  // Short headline visible, the explanation behind "More info".
+  const dateRule = page.locator('#findings li', { hasText: /Supplier — Action 5 without a delivery date/ }).first();
+  await expect(dateRule.locator('details.f-more')).toContainText('normally states');
+  const verdict = page.locator('#verdict');
+  await expect(verdict).toContainText('Almost in sync');
+  await expect(verdict).toContainText('The mapping itself is correct');
+  await expect(verdict).not.toContainText('lost in translation');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  expect(await levelOf('#quickOverview', /Action 5 without a delivery date/)).toBe('f-warn');
+  expect(await levelOf('#quickOverview', /Action 5 with a backorder quantity/)).toBe('f-err');
+  expect(await levelOf('#quickOverview', /delivery-date-only amendment/)).toBe('f-info');
+});
