@@ -441,3 +441,18 @@ test('each ORDRSP action rule keeps its own level, in Compare and Quick check', 
   expect(await levelOf('#quickOverview', /Action 5 with a backorder quantity/)).toBe('f-err');
   expect(await levelOf('#quickOverview', /delivery-date-only amendment/)).toBe('f-info');
 });
+
+// "Worth checking" only looked at QTY+12, so a cancelled line (action 2,
+// QTY+182 only) showed as "Quantity missing on 1 of 5 lines".
+test('a cancelled ORDRSP line with only QTY+182 is not reported as "Quantity missing"', async ({ page }) => {
+  await openApp(page);
+  const fixture = path.join(FIX, 'cancelled-line-quantity.edi');
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText('Quantity missing');
+
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await page.locator('#wcBody').innerHTML()).not.toContain('Quantity missing');
+});

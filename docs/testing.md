@@ -168,6 +168,8 @@ actual test fixtures, don't just keep this list as prose:
   as err because another rule on the same line is err); the action-6
   date-only amendment is info. Short headline + "More info", in Compare and
   Quick check.
+- **ORDRSP**: "Worth checking" counts any of QTY+12/83/182 as a quantity,
+  so a cancelled line (action 2, QTY+182 only) isn't "Quantity missing".
 - **ORDRSP/DESADV**: message values in Compare findings (article code,
   quantity, action, order number) are HTML-escaped — `ART<b>1` shows as
   text, never as markup.

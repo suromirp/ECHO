@@ -2867,7 +2867,10 @@ function wcConfigOrdrspDesadv(type){
   const rowJump=l=>l.gtin||l.art||l.lineNo||'';
   const cfg={
     presence:[
-      {label:'Quantity',get:l=>{const v=l.qty&&l.qty['12'];return (v===undefined||v==='')?undefined:v;},rowLabel,rowJump},
+      // Any of confirmed (12), backorder (83) or cancelled (182) counts: a
+      // cancelled ORDRSP line (action 2) only carries QTY+182, and showed
+      // as "Quantity missing" when only QTY+12 was looked at.
+      {label:'Quantity',get:l=>{const v=l.qty&&['12','83','182'].map(q=>l.qty[q]).find(x=>x!==undefined&&x!=='');return v===undefined?undefined:v;},rowLabel,rowJump},
       {label:'Order reference',get:l=>(l.orders&&l.orders.size)?'x':undefined,rowLabel,rowJump}
     ],
     categorical:[],
