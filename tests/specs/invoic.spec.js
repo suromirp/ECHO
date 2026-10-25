@@ -509,3 +509,27 @@ test('an all-zeros EAN and an incomplete order number passed on unchanged are ea
     await expect(page.locator('#quickOverview')).toContainText('150201 → 6150201?');
   }
 });
+
+// A real Supplier Juliett credit note sent the line-level charge amount as MOA+203
+// right after ALC ("ALC+C++++ATR'MOA+203:0.4'"). It overwrote the line's
+// own MOA+203 (10.94 -> 0.40): false "Line amount differs", a false charge
+// difference, a false arithmetic note and a false total-line-amount gap.
+test('an MOA+203 right after ALC is the charge amount, not the line amount', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'alc-moa-203.sup.edi'),
+    path.join(FIX, 'alc-moa-203.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const buckets = await invoiceFindingsByCategory(page);
+  expect(buckets.message).toHaveLength(0);
+  expect(buckets.diff.some(t => /differs/.test(t))).toBe(false);
+  const chargeRow = page.locator('#invoiceResults tr', { hasText: 'ATR' }).first();
+  await expect(chargeRow).toContainText('0.40');
+  await expect(chargeRow.locator('.pill')).toHaveText('Match');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'alc-moa-203.sup.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('quantity × net price');
+});
