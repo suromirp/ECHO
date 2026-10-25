@@ -374,6 +374,22 @@ test('the CSV DESADV dialect is also recognized in Quick check', async ({ page }
   expect(overviewText).toContain('3'); // 3 items
 });
 
+// The CSV dialect's HDR arrival date (field after the despatch date) wasn't
+// read, so the header table only showed bol's DTM+132.
+test('the CSV DESADV dialect\'s arrival date is read and matches bol\'s DTM+132', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'csv-dialect.sup.des'), path.join(FIX, 'csv-dialect.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const row = page.locator('#hdrFields tr', { hasText: 'Expected delivery' });
+  await expect(row).toContainText('02-01-2026');
+  await expect(row).not.toHaveClass(/differ/);
+  expect((await row.locator('td').nth(1).innerText()).trim()).not.toBe('—');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'csv-dialect.sup.des'));
+  await expect(page.locator('#quickOverview')).toContainText('02-01-2026');
+});
+
 // A real DESADV failed delivery outright with "Packing List Reference must
 // not exceed 15 characters" — traced to an 18-character RFF+BM value, a
 // hard downstream limit bol's own DESADV documentation doesn't mention at
