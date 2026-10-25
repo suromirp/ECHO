@@ -198,6 +198,10 @@ actual test fixtures, don't just keep this list as prose:
   headed "Packing reference almost matches the document number" with both
   values visible and the advice in More info; the header table row is
   "Packing reference".
+- **ORDRSP**: a changed confirmed delivery date (`DTM+67`) is a grouped
+  Transformation difference, compared per (item, action) bucket like the
+  net price, only when both sides state it (Compare-only). Quick check's
+  Lines table shows the delivery date and net price per line.
 - **ORDRSP**: supplier action 6 used as a date-only amendment that bol's
   output carries as action 5 (same `QTY+12`, same `DTM+67`, no
   backorder/cancel) is one grouped Good-to-know note, not N "action codes

@@ -574,6 +574,12 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   gap pattern, visible without any second message) also runs standalone
   in Quick check and per-side in Compare as a Message check
   (`checkSplitItemPriceGap`), per CLAUDE.md's parity rule.
+  The confirmed delivery date (`DTM+67`) had the same blind spot: never
+  compared, so a changed date still read "Loud and clear". It's now taken
+  per (item, action) bucket next to the price and a difference is one
+  grouped Transformation difference (only when both sides state a date;
+  missing on one side is structural). Compare-only, since it needs both
+  messages; Quick check's Lines table shows the date and price per line.
 - **A `DTM` qualifier code (e.g. `67` delivery date, `69` despatch date)
   appearing more than once within the same `LIN` group, with genuinely
   different dates, can cause a downstream EDI processor to silently drop
