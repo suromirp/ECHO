@@ -79,6 +79,7 @@ Fixture(s) are relative to `fixtures/<message type>/`.
 | DESADV | a top-level consignment CPS with a summary PAC is not flagged as a pallet missing its SSCC | `desadv/consignment-summary-cps.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | "Distinct items" stat labeled and explained via tooltip, not a bare "Items" count | `desadv/many-pallets-missing-sscc.edi` (same file both sides) | `specs/desadv.spec.js` |
 | ORDRSP/DESADV | verdict driven by Transformation differences only: Message checks alone (even err) get the calm "mapping is correct" verdict; a DESADV diff at warn level never reads "transformation matches" | `desadv/message-checks-only.edi` (same file both sides), `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
+| UI | Copy report uses neutral per-section marks (`[DIFFERENCE]`/`[CHECK]`/`[INFO]`/`[OK]`), never `[ERROR]` | `desadv/message-checks-only.edi`, `desadv/date-shift.{sup,bol}.edi` | `specs/desadv.spec.js` |
 | INVOIC | multiple VAT-rate groups summed (TRANSUSXML + bol UBL) | `invoic/multi-vat.sup.transusxml.xml`, `invoic/multi-vat.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | TAX segment missing rate, grouped | `invoic/tax-missing-rate.sup.edi`, `invoic/tax-missing-rate.bol.ubl.xml` | `specs/invoic.spec.js` |
 | INVOIC | qty×price vs. line-amount gap, rounding tolerance | `invoic/line-arithmetic-tolerance.sup.edi`, `invoic/line-arithmetic-tolerance.bol.ubl.xml` | `specs/invoic.spec.js` |

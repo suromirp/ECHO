@@ -50,7 +50,9 @@ A finding shows a short headline plus the affected values (tags, old → new),
 so the panel reads as a quick overview. The why and what-to-do go inside
 `moreInfo(...)`, a collapsed `<details class="f-more">` toggle. "Copy
 report" includes that text (without the toggle label). "Copy for Transus"
-leaves it out and sends only the headline. Applied to every finding
+leaves it out and sends only the headline. "Copy report" marks each line
+by section, never by severity: `[DIFFERENCE]` (Transformation differences),
+`[CHECK]` (Message checks), `[INFO]`, `[OK]`. Applied to every finding
 whose visible text ran past ~150 characters (ORDRSP, DESADV and INVOIC).
 New findings follow the same shape: if the visible part needs more than
 one sentence, the rest belongs in `moreInfo`.
