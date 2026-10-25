@@ -1246,6 +1246,11 @@ function parseFactsCsvDesadv(raw){
       f.docNumber=row[2]||null;
       if(row[3]){f.docDate=row[3];f.headerDtm['137']=row[3];}
       if(row[5]){f.despatchDate=row[5];f.headerDtm['11']=row[5];}
+      // Expected arrival: the field right after the despatch date. Reverse-
+      // engineered like the rest: on the real Supplier Hotel DESADV it matched bol's
+      // DTM+132 exactly. Not read before, so the arrival date only showed
+      // on bol's side of the header table.
+      if(row[6]){f.arrivalDate=row[6];f.headerDtm['132']=row[6];}
       if(row[13])f.orderRefsHeader.add(row[13]);
       if(row[19])f.parties.SU={gln:row[19],name:null,vat:null};
       if(row[21])f.parties.BY={gln:row[21],name:null,vat:null};
@@ -1275,6 +1280,7 @@ function parseFactsCsvDesadv(raw){
   if(f.orderRefsHeader.size)f.lines.forEach(l=>{if(l.orders.size===0)f.orderRefsHeader.forEach(o=>l.orders.add(o));});
   if(f.docDate)f.docDate=normDate(f.docDate);
   if(f.despatchDate)f.despatchDate=normDate(f.despatchDate);
+  if(f.arrivalDate)f.arrivalDate=normDate(f.arrivalDate);
   return f;
 }
 

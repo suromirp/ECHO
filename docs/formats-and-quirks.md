@@ -275,6 +275,11 @@ terminators at all.
   6 used purely to signal a changed delivery date" entry further below
   (every line sent as action 6 with no backorder, remapped to action 5 in
   bol's output).
+- **The DESADV `HDR` arrival date (field 6, right after the despatch date in
+  field 5) wasn't read**, so the Header fields table showed the expected
+  delivery date on bol's side only. On the real Supplier Hotel DESADV it matches
+  bol's `DTM+132` exactly; read as `arrivalDate` now. Same caveat as the
+  other positions: reverse-engineered from one message.
 - If a third message type turns up in this dialect, detect it the same way
   — a signal from the `HDR` record's own type field, checked before the
   generic `"ENV"` routing — per the same principle as the invoice-dialect

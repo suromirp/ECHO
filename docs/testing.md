@@ -112,6 +112,8 @@ actual test fixtures, don't just keep this list as prose:
   all) is read correctly — items, quantities, order number and pallets
   with their SSCCs — rather than silently producing zero supplier lines
   and showing every item as "missing," in both Compare and Quick check.
+- **DESADV**: the CSV dialect's `HDR` arrival date is read (Header fields
+  table and Quick check), matching bol's `DTM+132`.
 - **ORDRSP**: the same supplier's CSV dialect, ORDRSP variant, is routed to
   its own parser (not the DESADV one) based on the `HDR` record's own
   document-type field, in both Compare and Quick check — rather than
