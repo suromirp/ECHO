@@ -307,6 +307,19 @@ actual test fixtures, don't just keep this list as prose:
   counted as "without an EAN or item number".
 - **INVOIC**: per-EAN differences are capped at 5 per kind with an "N more"
   line; the credit-note note is a short headline with More info.
+- **INVOIC**: a `TAX` segment inside a line's `ALC` group is the charge's
+  VAT rate (kept on the ALC, shown in Quick check's charge chip), never the
+  line's: no false "VAT % differs" for a 21% charge on a 9% line.
+- **INVOIC**: Quick check shows a Findings list (Message checks / Good to
+  know) like ORDRSP/DESADV, `!` for warnings and `⚠` only for errors, and
+  the ECHO signal reacts to the worst level instead of always "all good".
+- **INVOIC**: an illegal XML control character in any EDIFACT field (NAD
+  name/address, FTX, IMD, …) is one grouped Message check with a tag per
+  segment, in both modes.
+- **INVOIC**: summary `MOA+131` (total charges/allowances) that doesn't equal
+  the sum of the message's ALC amounts (beyond a cent) is a Message check,
+  per side in Compare and once when passed on unchanged, and in Quick
+  check; a matching `MOA+131` is silent.
 - **XML reading**: whitespace before `<?xml` doesn't empty the message
   (DESADV XML, bol UBL invoice); text before the declaration is skipped with
   a banner; an illegal control character in a DESADV XML is stripped with

@@ -558,6 +558,35 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   fault beyond stating where the byte originated (usually the supplier's
   own export/PIM feed) — it's a data-quality issue in that field, not a
   mapping question, so it's kept out of the Transus report either way.
+  The EDIFACT scan used to look at `IMD` only, but the XML conversion fails
+  just the same on such a byte in a `NAD` name or address, an `FTX` text or
+  any other field. `parseInvoicEdifact` now checks every element of every
+  segment (after splitting on the delimiters, so a delimiter is never
+  mistaken for one) into `illegalTextChars`, one entry per segment;
+  `illegalTextCharFindings` groups them into one finding with a tag per
+  segment (`NAD+SU`, `FTX+AAI`, `IMD+F · line 2`), in both modes.
+- **A `TAX` segment inside an `ALC` group is that charge's VAT rate**, not
+  the line's (EANCOM puts an optional `TAX` in the ALC segment group, e.g.
+  a 21% freight charge on a 9% food line). `parseInvoicEdifact` assigned
+  every `TAX` after `LIN` to the line, so the charge's rate overwrote the
+  line's VAT % and Compare showed a false "VAT % differs". It's now kept on
+  the ALC (`vatPct`, shown in Quick check's charge chip). A message-level
+  ALC's rate still counts as one of the message's VAT rates, as before.
+- **Summary `MOA+131` (total charges/allowances) not matching the ALC
+  amounts** (real Supplier Juliett credit note): `MOA+131:3.38`, while its seven
+  line-level `ALC` amounts add up to 3.41. The 0.03 gap is exactly one
+  `ALC+C++++BAT'MOA+203:0.03` on a line whose net price (4.50 = gross 4.33
+  + the other 0.17 charge) doesn't include it either. Payable (`MOA+77`),
+  taxable and line amounts all reconcile; only this total doesn't. Flagged
+  as a Message check (`invoiceChargeTotalIssue`, warn), per side in Compare,
+  once when bol's output carries the same, and in Quick check. Generous on
+  purpose (rule 7): EDIFACT only (bol's UBL has no equivalent of a total
+  that includes line-level charges; UBL's `ChargeTotalAmount` is
+  message-level charges only), only when at least one ALC states an amount
+  and none lacks one, compared by magnitude, charges − allowances or
+  charges + allowances both accepted, and a gap of a cent ignored. bol's own
+  INVOIC spec lists `MOA+259` (total charges) rather than 131; ECHO doesn't
+  read 259 yet, since no real message has carried it.
 - **A `TAX` segment stating the VAT rate at a different position than the
   rest of the message's own `TAX` segments** is a separate, real, confirmed
   cause of Transus rejecting a message ("VAT percentage/amount is
