@@ -164,6 +164,9 @@ actual test fixtures, don't just keep this list as prose:
   … see Message checks" verdict, never "lost in translation"; a DESADV with
   a Transformation difference at warn level never says "the transformation
   matches".
+- **ORDRSP/DESADV**: message values in Compare findings (article code,
+  quantity, action, order number) are HTML-escaped — `ART<b>1` shows as
+  text, never as markup.
 - **UI**: "Copy report" marks each finding by section — `[DIFFERENCE]`,
   `[CHECK]` (Message checks), `[INFO]`, `[OK]` — never `[ERROR]`, which read
   as "you did something wrong" on a supplier's own message check.
