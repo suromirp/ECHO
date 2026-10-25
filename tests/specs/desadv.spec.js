@@ -357,7 +357,7 @@ test('a flat quoted-CSV DESADV dialect is read, not silently treated as an empty
   // parsed: the supplier's own pallets each carry an SSCC, but bol's output
   // flattens everything into one CPS with none at all.
   const buckets = await findingsByCategory(page);
-  expect(buckets.diff.some(t => /2 SSCC\(s\) only in the supplier message/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /2 SSCCs only in the supplier message/.test(t))).toBe(true);
   expect(buckets.message.some(t => /No SSCC found on 1 pallet group/.test(t))).toBe(true);
 });
 
@@ -853,6 +853,10 @@ test('an article moved to another pallet in bol\'s output is flagged as a pallet
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /387000000000000019/.test(t) && /missing on the bol side/.test(t))).toBe(true);
   expect(buckets.diff.some(t => /387000000000000026/.test(t) && /missing on the supplier side/.test(t))).toBe(true);
+  // Headline names the SSCC and the count; the per-item diffs sit in More info.
+  const mapping = page.locator('#findings li', { hasText: /Pallet mapping differs for SSCC 387000000000000019/ });
+  await expect(mapping).toContainText('(1 difference)');
+  await expect(mapping.locator('details.f-more')).toContainText('missing on the bol side');
 });
 
 // Real Supplier Foxtrot DESADV: RFF+ON:310467 on two lines next to 9310467, delivery
@@ -986,4 +990,18 @@ test('pallet structure findings are grouped with tags, in Compare and Quick chec
   const html = await ov.innerHTML();
   expect(html).toContain('! Repeated pallet EAN');
   expect(html).not.toContain('⚠ Repeated pallet EAN');
+});
+
+// "N SSCC(s) only in …" listed every SSCC inline in one <code> run. They are
+// clickable tags now, collapsed behind a toggle past ~20.
+test('SSCCs only on one side are listed as tags, collapsed past 20', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sscc-only-one-side.sup.edi'), path.join(FIX, 'sscc-only-one-side.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const sup = page.locator('#findings li', { hasText: '22 SSCCs only in the supplier message' });
+  await expect(sup).toHaveCount(1);
+  await expect(sup.locator('details > summary')).toContainText('Show 22 SSCCs');
+  expect(await sup.locator('.wc-affected li').count()).toBe(22);
+  await expect(sup.locator('.wc-affected')).toContainText('008712345000001003');
+  await expect(page.locator('#findings li', { hasText: '22 SSCCs only in the bol output' })).toHaveCount(1);
 });
