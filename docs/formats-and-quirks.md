@@ -192,6 +192,17 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
     the dialect was parsed, ECHO's ordinary per-item order-number comparison
     surfaced this; in the same message bol's output also put every `LIN`
     under the last box and nested the other boxes under the first one.
+    A second real message (Supplier Delta, same dialect) showed the same
+    one-line-late shift on 14 lines, reported as 13 unrelated per-item
+    "order numbers differ" warnings. `findOrderShiftRuns` (modelled on
+    `findCascadingPriceShiftRuns`) now pairs lines by position — only when
+    both messages have the same number of lines and every pair is the same
+    item — and reports a run where bol's order equals the supplier's order
+    of the previous line, with at least 3 lines whose own order changed, as
+    one grouped Transformation difference ("supplier → bol" per line). Those
+    items are left out of the per-item list. An order-number mismatch is
+    now a Difference (err), not a "Check": bol matches the delivery to a
+    purchase order on it.
 
 ### 3. Exact Online raw export
 

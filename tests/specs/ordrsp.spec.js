@@ -475,3 +475,16 @@ test('a date-only action 6 carried as action 5 in bol\'s output is one Good-to-k
   expect(note[0]).toContain('on 3 items');
   expect(note[0]).not.toContain('8712345000042');
 });
+
+// Copy for Transus' "…and N more" counted left-out findings, so a capped
+// "7 more item(s) also show …" summary counted as one. It counts items now.
+test('Copy for Transus counts left-out items, not findings, in its "and N more" line', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'transus-more-count.sup.edi'), path.join(FIX, 'transus-more-count.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const text = await page.evaluate(() => lastTransusTextEn);
+  // Shown: 5 quantity differences + the "7 more" quantity summary. Left
+  // out: 5 action differences + a "7 more" action summary = 12 items.
+  expect(text).toContain('7 more item(s) also show a quantity difference');
+  expect(text).toContain('…and 12 more difference(s)');
+});

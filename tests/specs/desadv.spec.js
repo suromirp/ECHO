@@ -1063,3 +1063,26 @@ test('pallet overview: empty group vs items on the other side is a Difference, z
   expect(q).toContain('EAN zeroed');
   expect(q).toContain('0 items');
 });
+
+// Real Supplier Delta DESADV: bol's line n carried the supplier's order number
+// of line n-1, reported as many unrelated per-item "order numbers differ"
+// warnings (status "Check"). Now one grouped shift finding; an unrelated
+// order-number mismatch is still its own finding, at Difference level.
+test('order numbers shifted one line down in bol\'s output are one grouped finding; an order mismatch is a Difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'order-shift.sup.edi'), path.join(FIX, 'order-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const shift = buckets.diff.filter(t => /Order numbers shifted one line down in bol's output/.test(t));
+  expect(shift).toHaveLength(1);
+  expect(shift[0]).toContain('on 4 lines');
+  expect(shift[0]).toContain('line 2 · 8712345000028: 9100002 → 9100001');
+  expect(shift[0]).toContain('line 5 · 8712345000059: 9100005 → 9100004');
+  const perItem = buckets.diff.filter(t => /order numbers differ/.test(t));
+  expect(perItem).toHaveLength(1);
+  expect(perItem[0]).toContain('8712345000066');
+  expect(await page.locator('#findings li.f-err', { hasText: 'order numbers differ' }).count()).toBe(1);
+  const statuses = await page.evaluate(() => lastLineRows.rows.filter(r => r.orderDiff).map(r => r.status));
+  expect(statuses.length).toBe(5);
+  statuses.forEach(s => expect(s).toBe('diff'));
+});
