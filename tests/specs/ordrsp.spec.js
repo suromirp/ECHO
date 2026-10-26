@@ -430,8 +430,9 @@ test('each ORDRSP action rule keeps its own level, in Compare and Quick check', 
   const dateRule = page.locator('#findings li', { hasText: /Supplier — Action 5 without a delivery date/ }).first();
   await expect(dateRule.locator('details.f-more')).toContainText('normally states');
   const verdict = page.locator('#verdict');
-  await expect(verdict).toContainText('Almost in sync');
-  await expect(verdict).toContainText('The mapping itself is correct');
+  await expect(verdict.locator('.vplay')).toHaveText('Almost in sync.');
+  await expect(verdict.locator('.vtitle')).toContainText('The mapping looks right');
+  await expect(verdict.locator('.vwhere')).toContainText('Message checks');
   await expect(verdict).not.toContainText('lost in translation');
 
   await openApp(page);

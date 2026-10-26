@@ -882,13 +882,15 @@ test('a multi-UNH EDIFACT DESADV keeps its type per message, in Quick check and 
 });
 
 // Header fields table: supplier vs bol value per header field, with the
-// field each came from. Opens by itself when something differs.
-test('the header fields table shows each value with its source field, and opens on a difference', async ({ page }) => {
+// field each came from. Collapsed by default (findings come first); the
+// summary line says how many fields differ. It used to open by itself on a
+// difference — changed deliberately with the findings-first layout.
+test('the header fields table shows each value with its source field, collapsed with a "N differ" summary', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
   const det = page.locator('#hdrFields details.hdr-fields');
-  expect(await det.evaluate(e => e.open)).toBe(true);
+  expect(await det.evaluate(e => e.open)).toBe(false);
   await expect(det.locator('summary')).toContainText('2 differ');
   await expect(det.locator('tr.differ', { hasText: 'Despatch date' })).toContainText('DTM+11');
 
@@ -953,10 +955,14 @@ test('the verdict is based on Transformation differences; Message checks alone g
   const buckets = await findingsByCategory(page);
   expect(buckets.message.filter(t => /Packing List Reference too long/.test(t))).toHaveLength(2);
   expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+  // Headline calm (the mapping looks right), but the icon shows the worst
+  // level: RFF+BM too long is err, so ⚠ — never hidden behind "!".
   const verdict = page.locator('#verdict');
-  await expect(verdict).toContainText('Almost in sync');
-  await expect(verdict).toContainText('The transformation and pallet mappings match.');
-  await expect(verdict).toContainText('see Message checks below');
+  await expect(verdict).toHaveClass(/\berr\b/);
+  await expect(verdict.locator('.icon')).toHaveText('⚠');
+  await expect(verdict.locator('.vtitle')).toHaveText('The mapping looks right; both messages have something worth a look');
+  await expect(verdict.locator('.vplay')).toHaveText('Almost in sync.');
+  await expect(verdict.locator('.vwhere')).toContainText('Message checks (2) — in both messages themselves, not in the mapping.');
   await expect(verdict).not.toContainText('lost in translation');
   await expect(page.locator('#findings li.findings-cat', { hasText: 'Message checks' }))
     .toHaveAttribute('title', /supplier's or bol's own message/);
@@ -964,9 +970,12 @@ test('the verdict is based on Transformation differences; Message checks alone g
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'date-shift.sup.edi'), path.join(FIX, 'date-shift.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
-  await expect(verdict).toContainText('Almost in sync');
-  await expect(verdict).toContainText('see Transformation differences below');
-  await expect(verdict).not.toContainText('The transformation and pallet mappings match');
+  await expect(verdict).toHaveClass(/\bwarn\b/);
+  await expect(verdict.locator('.vtitle')).toHaveText("Bol's output differs from the supplier message");
+  await expect(verdict.locator('.vplay')).toHaveText('Almost in sync.');
+  await expect(verdict.locator('.vwhere')).toContainText('Transformation differences (2)');
+  await expect(verdict.locator('.vwhere')).toContainText('Copy for Transus');
+  await expect(verdict).not.toContainText('mapping looks right');
 });
 
 // "Copy report" marked every err-level finding "[ERROR]", including a
@@ -1195,7 +1204,7 @@ test('SSCCs only in bol\'s output are the supplier\'s Message check, not a diffe
   expect(buckets.diff.some(t => /SSCC/.test(t))).toBe(false);
   const transus = await page.evaluate(() => lastTransusTextEn);
   expect(transus).not.toContain('087123457000000010');
-  await expect(page.locator('#verdict')).toContainText('No transformation differences found');
+  await expect(page.locator('#verdict .vtitle')).toContainText('The mapping looks right');
 
   // Quick check on the supplier file: the same check.
   await openApp(page);
