@@ -82,14 +82,17 @@ headline and playful line stay calm for Message checks (rule 7).
 
 ## Result layout
 
-Desktop first. Compare (ORDRSP/DESADV): verdict → Findings (Message
+Desktop first. Compare (ORDRSP/DESADV): verdict → "Got an error
+message?" → Findings (Message
 checks, Transformation differences, Good to know, then a small **Worth
 checking** group, Copy buttons) → stats strip → Header fields (collapsed)
 → action overview (ORDRSP) → search box → Amendment details → Line
 comparison → Pallet / SSCC overview → original messages. INVOIC: verdict →
 Findings → stats strip → Invoice details (collapsed) → Line comparison →
-Charges & allowances → Totals → overviews → original messages. Quick check
-follows the same idea (summary line, Findings, fields, search, tables).
+Charges & allowances → Totals → overviews → original messages (the error
+picklist sits under the verdict there too). Quick check follows the same
+idea ("Got an error message?" above the Overview, then summary line,
+Findings, fields, search, tables).
 
 Quick check opens with a one-line summary above its Findings ("Nothing
 unusual found. ECHO ran its checks on this DESADV (12 lines)" or "3 things
@@ -104,6 +107,80 @@ styled as a button.
 
 Worth checking items use the documented **!** icon (warn colour), not an
 eye; they never count towards the verdict.
+
+## Error picklist ("Got an error message?")
+
+Colleagues often open ECHO because bol's system or Transus returned an
+error for a message. One slim bar, in Compare right under the verdict (ORDRSP/DESADV and
+INVOIC) and in Quick check right above the Overview, has a dropdown of
+known errors and a text field to paste the error text. Pasted text is
+matched by keywords (`matchErrorText`: lower case, quotes and extra spaces
+ignored, so IDs, numbers and quotes around the text don't matter; the
+entry whose keywords start earliest in the text wins). The card under it
+says:
+
+- what the error usually means (1-2 neutral sentences) and where to look
+  (segment / XML field);
+- **In this message**: links to the related findings in the current
+  result (and the XML file banners); a click scrolls to the finding,
+  opens a collapsed parent and flashes it. With none: "ECHO sees nothing
+  in this message that explains it; check …" plus what to check outside
+  ECHO. Never "the message is wrong";
+- when the error usually comes with another message type, it says so
+  ("this error usually comes with a DESADV, and this is an ORDRSP");
+- values from the pasted text with 5+ digits (an EAN, order number,
+  SSCC): "is in this message" (click jumps to the source) or "doesn't
+  appear in this message";
+- no match: "ECHO doesn't recognise this error text yet." and the whole
+  list as buttons.
+
+A finding's own label separator reads "Supplier: headline" in the card
+(no em-dashes in the card). The selection resets with every new result.
+
+**Copy report** (Compare) gets one line, `Error reported: <text>` (the
+pasted text, else the picked label), after the context lines. **Copy for
+Transus** leaves it out: it holds mapping questions only, and most of
+these errors point at one side's own message, whose Message checks never
+go to Transus either.
+
+### The catalogue
+
+`ERROR_CATALOGUE` in `index.html`, one object per error:
+
+| field | |
+|---|---|
+| `id` | stable id (also the dropdown value) |
+| `label` | the known error text, as shown in the dropdown; must match its own `match` |
+| `match` | regexes on the normalized text (lower case, no quotes, single spaces) |
+| `types` | message types it usually comes with, or `null` for any |
+| `meaning`, `where` | HTML, short and neutral, segment codes in `<span class="seg">` |
+| `keys` | finding keys of the related findings |
+| `elsewhere` | what to check outside ECHO, completing "ECHO sees nothing in this message that explains it; …" |
+
+Findings are tied to errors by a **key**, never by headline text. A check
+puts `fkey('some-key')` (an empty, invisible marker element) at the start
+of its finding's HTML; it travels through every `add()` wrapper and
+`perSideOnce` unchanged, and `stripHtml` drops it. Several keys:
+`fkey('a','b')` (the GS1 check-digit finding carries `ean-check-digit`
+and/or `sscc-check-digit` depending on what it lists).
+
+- **Add an error**: add one object to `ERROR_CATALOGUE`, and a line to
+  the matcher test in `tests/specs/error-picklist.spec.js`.
+- **Wire a new check**: give its finding `fkey('<key>')` and add the key
+  to the entry's `keys`. A new key needs no other code.
+
+Current entries and keys:
+
+| error | keys |
+|---|---|
+| Purchase Order not found | `order-near-miss`, `order-missing`, `order-diff`, `order-co-only`, `order-ambiguous` |
+| Ean not known | `ean-zeroed`, `ean-zeroed-in-output`, `ean-check-digit`, `item-one-side`, `blank-lin`, `no-identifier` |
+| Unit price is unknown | `price-none`, `price-partial`, `price-missing-side`, `price-shift`, `dtm-duplicate` |
+| Packing List Reference must not exceed 15 characters | `packref-length` |
+| Duplicate reference (packing slip already received) | `packref-near-match` |
+| Couldn't parse XML content | `illegal-char`, `illegal-char-file`, `xml-concatenated`, `xml-unreadable`, `xml-leading-text`, `tax-no-rate` |
+| VAT percentage/amount is missing | `tax-no-rate`, `tax-rate-position`, `vat-diff` |
+| SSCC not found / pallet without SSCC | `pac-missing`, `sscc-length`, `sscc-check-digit`, `sscc-none`, `sscc-pallet-missing`, `sscc-one-side` |
 
 ## Header fields table
 
