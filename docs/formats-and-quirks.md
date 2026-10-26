@@ -445,6 +445,8 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   an empty group as "1 item" (its placeholder row was counted), "— — No
   items" and a "Match" badge, even though the other side had items for
   that SSCC. A real line whose EAN was zeroed also showed as "No items".
+  The line table and pallet pill also said Match for lines whose EAN bol's
+  output had zeroed; both now show the zeroed EAN as a Difference.
   An empty SSCC is now a Difference when the other side has items for it
   ("no items here; N on the other side"), the item count only counts real
   lines, and a line without an EAN is labelled "EAN zeroed"/"EAN missing".

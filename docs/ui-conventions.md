@@ -137,6 +137,24 @@ one sentence, the rest belongs in `moreInfo`.
   explanation (the RFF+CO order note). Rounding gaps on two or more lines
   are one grouped finding with a tag per EAN.
 
+## Tables never contradict findings
+
+- A line whose EAN bol's output replaced by zeros shows `supplier EAN →
+  0000000000000` in the line table (Compare and INVOIC) with status
+  Difference; the row used to say Match because the lines were still
+  paired.
+- The pallet / SSCC overview never shows a plain Match/OK pill for an SSCC
+  a finding is about (`ssccFindingFlags`): a "Pallet mapping differs" or a
+  zeroed-EAN SSCC is a Difference on both sides with the reason in small
+  type; a Message check on the SSCC itself (check digit doesn't match, no
+  PAC, not 18 characters, a zeroed EAN in Quick check) gives a "!" pill
+  naming it. An SSCC in a PAC-less CPS reads "Not in bol's output (no
+  PAC)", and the panel's summary points at the PAC finding instead of
+  listing the same SSCCs again.
+- The Quantities tile is labelled "Quantities (per EAN)" with a tooltip:
+  it compares totals per EAN, nothing about dates, pallets, order numbers
+  or zeroed EANs.
+
 ## Grouping repeated findings
 
 Repeated findings of the same underlying pattern are grouped into one

@@ -2736,9 +2736,11 @@ function detectPalletCollapse(mismatches,bMap,sMap){
   if(!totalItemsOnSide||biggest.items.length<totalItemsOnSide*0.5)return null; // not actually "one pallet holds nearly everything"
   return {side,collapsedSscc:biggest.sscc,collapsedCount:biggest.items.length,affectedCount:mismatches.length};
 }
+/* Returns the SSCCs whose mapping differs, so the pallet overview can mark
+   them Difference on both sides (tables never contradict findings). */
 function comparePalletMapping(bol,sup,add,keyFn){
   const bMap=palletsBySSCC(bol),sMap=palletsBySSCC(sup);
-  if(!bMap.size&&!sMap.size)return;
+  if(!bMap.size&&!sMap.size)return new Set();
   const common=[...bMap.keys()].filter(s=>sMap.has(s));
   let palletGtinUnmapped=false;
   const mismatches=[];
@@ -2782,6 +2784,7 @@ function comparePalletMapping(bol,sup,add,keyFn){
     }
   }
   if(palletGtinUnmapped)add('info','<strong>Supplier sends pallet-level EAN</strong>, not passed on to bol (expected).'+moreInfo('The supplier includes a pallet-level EAN in addition to the SSCC. This is uncommon in our DESADV flow, but it is not mapped to the bol output and no impact was detected on the SSCC, item or quantity mapping.'),'info');
+  return new Set(mismatches.map(m=>m.sscc));
 }
 
 /* one side's pallet/SSCC breakdown, with:
@@ -2789,7 +2792,23 @@ function comparePalletMapping(bol,sup,add,keyFn){
    - Check: structural observations about this side's own message
    These are deliberately kept apart so a preserved transformation (Match) doesn't
    visually hide a supplier-message issue (e.g. a repeated pallet EAN), or vice versa. */
-function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
+/* SSCCs that a single-message finding is about (GS1 check digit, no PAC,
+   not 18 characters, a line with a zeroed EAN), so the pallet overview
+   never shows a plain Match/OK pill next to them. sscc -> {notes,diff}. */
+function ssccFindingFlags(facts){
+  const m=new Map();
+  const add=(sscc,note)=>{if(!sscc)return;if(!m.has(sscc))m.set(sscc,{notes:new Set(),diff:false});m.get(sscc).notes.add(note);};
+  gs1CheckDigitIssues([],(facts.pallets||[]).map(p=>p.sscc)).forEach(b=>add(b.code,"check digit doesn't match"));
+  (facts.pallets||[]).forEach(p=>{
+    if(!p.sscc)return;
+    if(!p.hasPac)add(p.sscc,'no PAC');
+    if(p.sscc.length!==18)add(p.sscc,'not 18 characters');
+    if((p.items||[]).some(it=>it.__line&&it.__line.gtinZeroed))add(p.sscc,'EAN zeroed');
+  });
+  return m;
+}
+function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn,flags){
+  flags=flags||ssccFindingFlags(facts);
   if(!facts.pallets||!facts.pallets.length)return '';
   const relevant=facts.pallets.filter(p=>(p.items&&p.items.length)||p.sscc||p.palletGtin);
   if(!relevant.length)return '';
@@ -2840,7 +2859,8 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     // note here too — without this, the summary badge below only looks at
     // anyDiff/allNotes and would default to "Match", even though every item
     // row inside is really "nothing to compare against".
-    if(!singleMode&&hasItems&&p.sscc&&otherMap&&!otherMap.has(p.sscc))palletLevelNotes.push('No match on other side');
+    const flag=p.sscc?flags.get(p.sscc):null;
+    if(!singleMode&&hasItems&&p.sscc&&otherMap&&!otherMap.has(p.sscc))palletLevelNotes.push(flag&&flag.notes.has('no PAC')?"Not in bol's output (no PAC)":'No match on other side');
     // Mapping status per item, computed once per pallet (not per row): an
     // item can legitimately appear as more than one line on the same pallet
     // (e.g. split across batches/best-before dates), so this compares the
@@ -2932,8 +2952,9 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn){
     const allNotes=[...palletLevelNotes,...itemLevelNotesSeen];
     const ssccTxt=p.sscc?`<span class="clickable-val" onclick="${jumpCall(p.sscc)}">${esc(p.sscc)}</span>`:'<span style="color:var(--warn)">— missing</span>';
     let summaryBadge,status;
-    if(!singleMode&&anyDiff){summaryBadge=pillDiff();status='diff';}
-    else if(allNotes.length){summaryBadge=`<span class="pill warn">! ${esc(allNotes.join(' · '))}</span>`;status='warn';}
+    const flagNotes=flag?[...flag.notes].filter(n=>!(n==='no PAC'&&allNotes.some(a=>/no PAC/.test(a)))):[];
+    if(!singleMode&&(anyDiff||(flag&&flag.diff))){summaryBadge=pillDiff()+(flagNotes.length?`<span class="dim" style="font-size:11px">${esc(flagNotes.join(' · '))}</span>`:'');status='diff';}
+    else if(allNotes.length||flagNotes.length){summaryBadge=`<span class="pill warn" title="See Findings for this SSCC.">! ${esc([...allNotes,...flagNotes].join(' · '))}</span>`;status='warn';}
     else{summaryBadge=singleMode?pillOkSingle():pillMatch();status='ok';}
     statuses.push(status);
     const nestedUnder=palletIsNested(p,byCps)?byCps.get(p.parentCps):null;
@@ -3146,6 +3167,8 @@ function compare(bol,sup){
   const supOrdersOnlyOnBol=!supHasAnyOrder&&bolHasAnyOrder;
 
   const rows=[];let anyQtyDiff=false,anyActionDiff=false,anyMissing=false;
+  const zeroLines=new Set(); // bol lines whose EAN was replaced by zeros (compareZeroGtin)
+  let palletDiffSsccs=new Set(); // SSCCs with a "Pallet mapping differs" finding
   keys.forEach(k=>{
     const b=ba.get(k),s=sa.get(k);
     const row={key:k,art:(b&&b.art)||(s&&s.art)||'',gtin:(b&&b.gtin)||(s&&s.gtin)||''};
@@ -3364,7 +3387,7 @@ function compare(bol,sup){
     const pacCoveredBol=checkMissingPacWithSscc(bol,'Bol',add,factsJump('bol'));
     if(!pacCoveredSup.size&&!pacCoveredBol.size)perSideOnce(add,sup,bol,checkSsccLength,factsJump);
     else{checkSsccLength(sup,'Supplier',add,factsJump('sup'),pacCoveredSup);checkSsccLength(bol,'Bol',add,factsJump('bol'),pacCoveredBol);}
-    comparePalletMapping(bol,sup,add,keyFn);
+    palletDiffSsccs=comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
     // document number often already serves as the packing reference for
@@ -3415,13 +3438,18 @@ function compare(bol,sup){
   // shared by ORDRSP and DESADV (same underlying parser), so checked for
   // both, per side.
   if(type==='ORDRSP'||type==='DESADV'){
-    checkZeroGtin(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    {const sm=orderNearMisses(sup).map(h=>h.short).join('|'),bm=orderNearMisses(bol).map(h=>h.short).join('|');
-     if(sm&&sm===bm)checkOrderNearMiss(sup,'Supplier (passed on unchanged to bol)',add,v=>`jumpToFactsSource('both',${jsQuote(v)})`);
-     else{checkOrderNearMiss(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNearMiss(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);}}
+    perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
-    checkZeroGtin(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,bolZeroExplained);
+    if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
+    else{checkZeroGtin(sup,'Supplier',add,factsJump('sup'));checkZeroGtin(bol,'Bol',add,factsJump('bol'),bolZeroExplained);}
+    // Tables never contradict findings: a row whose bol EAN was replaced by
+    // zeros shows "supplier EAN → 0000000000000" and Difference, not Match.
+    bolZeroExplained.forEach(l=>{
+      const r=rows.find(x=>x.key===keyFn(l));
+      if(r){r.bolEanZeroed=true;r.status='diff';}
+      zeroLines.add(l);
+    });
     perSideOnce(add,sup,bol,checkDtmDuplicateQualifier,factsJump);
   }
 
@@ -3514,6 +3542,7 @@ function compare(bol,sup){
   if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+(supHasAnyOrder&&bolHasAnyOrder?', order numbers':'')+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
+    zeroLines,pacExplainsOnlySup,palletDiffSsccs,
     stats:{keys:keys.length,linesBol:bol.lines.length,linesSup:sup.lines.length,ssccBol:new Set(bol.ssccs).size,ssccSup:new Set(sup.ssccs).size,
       qtyMatch:!anyQtyDiff&&!anyMissing,actionMatch:type==='ORDRSP'?(!anyActionDiff&&!anyMissing):null},
     fmtBol:bol.format,fmtSup:sup.format};
@@ -5022,6 +5051,9 @@ function compareInvoice(sup,bol){
       missingSup:!S,missingBol:!B,cells:[],status:'ok',
       supCount:S?S.length:0,bolCount:B?B.length:0};
     if(!S||!B){row.status='diff';rows.push(row);return;}
+    // bol's EAN replaced by zeros (paired by invoiceZeroPairs): the row says
+    // so and is a Difference, matching the finding.
+    if(B.some(l=>zeroPairs.has(l))){row.bolEanZeroed=true;row.status='diff';}
     const cmpField=(label,f,fmt,absCompare)=>{
       if(!fieldState[f].bol||!fieldState[f].sup){
         const val=fieldState[f].sup?sumBy(S,f):sumBy(B,f);
@@ -5935,7 +5967,9 @@ function renderLineTable(){
   thead+=`<th>Quantities (supplier → bol)</th><th>Status</th></tr>`;
   const body=shown.map(r=>{
     const cls=r.status==='ok'?'row-ok':(r.status==='warn'?'row-warn':'row-diff');
-    const eanCell=r.gtin?`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}`:'—';
+    let eanCell=r.gtin?`<span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}`:'—';
+    // bol's EAN replaced by zeros: show it, so the row matches the finding.
+    if(r.bolEanZeroed)eanCell=`<span class="val-sup clickable-val" onclick="jumpToFactsSource('sup',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)} → <span class="val-bol diff-val">0000000000000</span>`;
     let tds=`<td class="mono">${esc(r.art||'—')}</td><td class="mono">${eanCell}</td>`;
     const supOrders=r.supOrders||[],bolOrders=r.bolOrders||[];
     let orderCell='—';
@@ -6082,7 +6116,7 @@ function render(result,bol,sup,notes){
     }
   }
   strip.push(`<div class="stat"><div class="l">Supplier / bol format</div><div class="v" style="font-size:13px">${result.fmtSup}<br>${result.fmtBol}</div></div>`);
-  strip.push(`<div class="stat ${st.qtyMatch?'match':'diff'}"><div class="l">Quantities</div><div class="v">${st.qtyMatch?'Match':'Difference'}</div></div>`);
+  strip.push(`<div class="stat ${st.qtyMatch?'match':'diff'}" title="Total quantity per EAN (or article code) across the whole message, supplier vs bol. Says nothing about dates, pallets, order numbers or EANs replaced by zeros — those are in Findings."><div class="l">Quantities (per EAN)</div><div class="v">${st.qtyMatch?'Match':'Difference'}</div></div>`);
   if(st.actionMatch!==null)strip.push(`<div class="stat ${st.actionMatch?'match':'diff'}"><div class="l">Actions</div><div class="v">${st.actionMatch?'Match':'Difference'}</div></div>`);
   strip.push(`<div class="stat" title="Distinct products, matched by EAN/article code — not the number of lines or pallets (see those below)."><div class="l">Distinct items</div><div class="v">${st.keys}</div></div>`);
   strip.push(`<div class="stat"><div class="l">Supplier / bol lines</div><div class="v">${st.linesSup}/${st.linesBol}</div></div>`);
@@ -6213,11 +6247,21 @@ function render(result,bol,sup,notes){
 
   // sscc
   const hasPallets=(sup.pallets&&sup.pallets.length)||(bol.pallets&&bol.pallets.length);
-  if(st.ssccBol||st.ssccSup||hasPallets){document.getElementById('ssccPanel').classList.remove('hidden');const sr=result.ssccResult;let h='<div style="font-size:13px;line-height:1.7;">';h+=`<div><span class="pill ok">${sr.common.length}</span> in both</div>`;if(sr.onlySup.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlySup.length}</span> supplier only: <span class="mono val-sup">${esc(sr.onlySup.join(', '))}</span></div>`;if(sr.onlyBol.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlyBol.length}</span> bol only: <span class="mono val-bol">${esc(sr.onlyBol.join(', '))}</span></div>`;h+='</div>';
+  if(st.ssccBol||st.ssccSup||hasPallets){document.getElementById('ssccPanel').classList.remove('hidden');const sr=result.ssccResult;let h='<div style="font-size:13px;line-height:1.7;">';h+=`<div><span class="pill ok">${sr.common.length}</span> in both</div>`;
+    // SSCCs a finding already lists (no PAC) aren't listed here a second time.
+    if(sr.onlySup.length&&result.pacExplainsOnlySup)h+=`<div style="margin-top:6px"><span class="pill warn">${sr.onlySup.length}</span> supplier only — in CPS groups without PAC, see the PAC finding under Message checks</div>`;
+    else if(sr.onlySup.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlySup.length}</span> supplier only: <span class="mono val-sup">${esc(sr.onlySup.join(', '))}</span></div>`;if(sr.onlyBol.length)h+=`<div style="margin-top:6px"><span class="pill err">${sr.onlyBol.length}</span> bol only: <span class="mono val-bol">${esc(sr.onlyBol.join(', '))}</span></div>`;h+='</div>';
     if(hasPallets){
       const palletKeyFn=buildKeyResolver(bol,sup);
-      h+=palletOverviewHtml('Supplier',sup,palletsBySSCC(bol),'sup',palletKeyFn);
-      h+=palletOverviewHtml('bol',bol,palletsBySSCC(sup),'bol',palletKeyFn);
+      // An SSCC a finding is about never shows a plain Match/OK pill.
+      const supFlags=ssccFindingFlags(sup),bolFlags=ssccFindingFlags(bol);
+      (bol.pallets||[]).forEach(p=>{
+        if(!p.sscc||!(p.items||[]).some(it=>it.__line&&result.zeroLines.has(it.__line)))return;
+        [supFlags,bolFlags].forEach(m=>{const f=m.get(p.sscc)||{notes:new Set(),diff:false};f.notes.delete('EAN zeroed');f.notes.add("EAN zeroed in bol's output");f.diff=true;m.set(p.sscc,f);});
+      });
+      result.palletDiffSsccs.forEach(sscc=>[supFlags,bolFlags].forEach(m=>{const f=m.get(sscc)||{notes:new Set(),diff:false};f.diff=true;m.set(sscc,f);}));
+      h+=palletOverviewHtml('Supplier',sup,palletsBySSCC(bol),'sup',palletKeyFn,supFlags);
+      h+=palletOverviewHtml('bol',bol,palletsBySSCC(sup),'bol',palletKeyFn,bolFlags);
     }
     document.getElementById('ssccBody').innerHTML=h;
     const totalPallets=(sup.pallets?sup.pallets.length:0)+(bol.pallets?bol.pallets.length:0);
@@ -6905,7 +6949,9 @@ function renderInvoiceCompare(res,notes){
       return `<span class="${cl}">${esc(c.label)}: ${supSpan}${supScopeTxt} → ${bolSpan}${bolScopeTxt}</span>`;
     }).join('<br>');
     const pill=r.status==='ok'?pillMatch():pillDiff();
-    const gtinTd=r.gtin?`<td class="mono"><span class="clickable-val" onclick="jumpToInvSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}</td>`:`<td class="mono">—</td>`;
+    const gtinTd=r.bolEanZeroed
+      ?`<td class="mono"><span class="s clickable-val" onclick="jumpToInvSource('sup',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)} → <span class="b cmp-no">0000000000000</span></td>`
+      :(r.gtin?`<td class="mono"><span class="clickable-val" onclick="jumpToInvSource('both',${jsQuote(r.gtin)})">${esc(r.gtin)}</span>${summaLink(r.gtin)}</td>`:`<td class="mono">—</td>`);
     return `<tr class="${cls}">${gtinTd}<td class="mono">${esc(r.art||'—')}</td><td class="desc">${esc(r.desc||'')}</td><td class="cmp-cell">${cellTxt}</td><td>${pill}</td></tr>`;
   }).join('');
   h+=`</table></div></div>`;

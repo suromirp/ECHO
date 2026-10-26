@@ -373,6 +373,12 @@ actual test fixtures, don't just keep this list as prose:
   Amendment details rows, badge "Actions match (see Good to know)"); INVOIC
   rounding gaps on several lines are one finding with EAN tags, and
   one-sided header rows / totals are table rows only.
+- **UI**: tables never contradict findings — a zeroed bol EAN shows as
+  `supplier EAN → 0000000000000` and Difference in the line table (DESADV
+  and INVOIC), its SSCC is a Difference in the pallet overview; an SSCC
+  with a Message check (e.g. a wrong check digit) never shows OK/Match, in
+  Quick check and Compare; the Quantities tile reads "Quantities (per
+  EAN)" with a tooltip.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

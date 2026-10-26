@@ -68,3 +68,52 @@ test('INVOIC results: verdict with "Where to look", Findings before the stats, I
   expect(await page.locator('#invHdrDetails').evaluate(e => e.open)).toBe(false);
   await expect(page.locator('#invHdrDetails > summary')).toContainText('Invoice details');
 });
+
+// Tables never contradict findings (docs/ui-conventions.md): a line whose
+// EAN bol's output replaced by zeros shows "supplier EAN → 0000000000000"
+// and Difference (it used to read Match), its SSCC's pallet pill is a
+// Difference, and the Quantities tile says it is per EAN.
+test('a zeroed bol EAN shows in the line table and pallet overview as a Difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'zero-ean-shared-pallet.sup.edi'), path.join(FIX, 'desadv', 'zero-ean-shared-pallet.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await page.locator('#lineFilterToggle').uncheck({ force: true });
+  const zeroRows = page.locator('#lineTable tr', { hasText: '→ 0000000000000' });
+  await expect(zeroRows).toHaveCount(2);
+  for (const r of await zeroRows.all()) await expect(r.locator('.pill')).toHaveText('Difference');
+  const pallets = page.locator('#ssccBody .pallet-det > summary', { hasText: '387000000000000033' });
+  await expect(pallets).toHaveCount(2);
+  for (const p of await pallets.all()) {
+    await expect(p).toContainText('Difference');
+    await expect(p).toContainText("EAN zeroed in bol's output");
+    await expect(p).not.toContainText('Match');
+  }
+  const qty = page.locator('#strip .stat', { hasText: 'Quantities' });
+  await expect(qty.locator('.l')).toHaveText('Quantities (per EAN)');
+  await expect(qty).toHaveAttribute('title', /per EAN/);
+});
+
+test('an SSCC a Message check is about never shows a plain OK/Match pill (Quick check and Compare)', async ({ page }) => {
+  const fx = path.join(FIX, 'desadv', 'gs1-check-digit.edi');
+  await openApp(page);
+  await page.locator('#tabQuickBtn').click();
+  await page.locator('#quickFileInput').setInputFiles(fx);
+  const qc = page.locator('#quickOverview .pallet-det > summary', { hasText: '387000000000000012' });
+  await expect(qc).toContainText("check digit doesn't match");
+  await expect(qc).not.toContainText('OK');
+
+  await openApp(page);
+  await runCompareFixtures(page, fx, fx);
+  const cmp = page.locator('#ssccBody .pallet-det > summary', { hasText: '387000000000000012' });
+  await expect(cmp.first()).toContainText("check digit doesn't match");
+  await expect(cmp.first()).not.toContainText('Match');
+});
+
+test('INVOIC: a zeroed bol EAN shows in the line table as a Difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'invoic', 'zero-ean-bol-output.sup.edi'), path.join(FIX, 'invoic', 'zero-ean-bol-output.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const row = page.locator('#invoiceResults table.inv tr', { hasText: '→ 0000000000000' });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('.pill')).toHaveText('Difference');
+});

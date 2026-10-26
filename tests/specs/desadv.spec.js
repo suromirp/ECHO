@@ -228,7 +228,7 @@ test('a nested CPS group that carries its own SSCC is marked as nested, not show
 
   // Each nested child names the parent pallet's SSCC it belongs under.
   await expect(page.locator('#quickOverview .pallet-list')).toContainText('nested under');
-  await expect(page.locator('#quickOverview .pallet-list')).toContainText('000000000000000101');
+  await expect(page.locator('#quickOverview .pallet-list')).toContainText('000000000000001014');
   // The parent pallet, in turn, says how many nested units it has.
   await expect(page.locator('#quickOverview .pallet-list')).toContainText('+2 nested unit');
 
