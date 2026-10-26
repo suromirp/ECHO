@@ -427,20 +427,20 @@ test('a Packing List Reference (RFF+BM) over 15 characters is flagged, once when
   await expect(page.locator('#results')).toBeVisible();
 
   const buckets = await findingsByCategory(page);
-  const tooLong = buckets.message.filter(t => /Packing List Reference too long/.test(t));
+  const tooLong = buckets.message.filter(t => /Packing reference too long \(RFF\+BM\)/.test(t));
   // Same value on both sides: one finding about the supplier's message.
   expect(tooLong).toHaveLength(1);
   expect(tooLong[0]).toContain('Supplier (passed on unchanged to bol) —');
   tooLong.forEach(t => expect(t).toContain('17 characters'));
   // Never sent to Transus — it's a hard limit on the value itself, not a
   // mapping question.
-  expect(buckets.diff.some(t => /Packing List Reference too long/.test(t))).toBe(false);
+  expect(buckets.diff.some(t => /Packing reference too long \(RFF\+BM\)/.test(t))).toBe(false);
 });
 
 test('the Packing List Reference length check also fires standalone in Quick check', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'packing-reference-too-long.sup.edi'));
-  await expect(page.locator('#quickOverview')).toContainText('Packing List Reference too long');
+  await expect(page.locator('#quickOverview')).toContainText('Packing reference too long (RFF+BM)');
   await expect(page.locator('#quickOverview')).toContainText('17 characters');
 });
 
@@ -626,7 +626,7 @@ test('a changed despatch date or expected delivery date is flagged as a transfor
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /Despatch date \(DTM\+11\) changed/.test(t))).toBe(true);
-  expect(buckets.diff.some(t => /Expected delivery date \(DTM\+132\) changed/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Expected delivery \(DTM\+132\) changed/.test(t))).toBe(true);
 });
 
 test('identical dates on both sides are not flagged', async ({ page }) => {
@@ -964,7 +964,7 @@ test('the verdict is based on Transformation differences; Message checks alone g
   await runCompareFixtures(page, fixture, fixture);
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
-  expect(buckets.message.filter(t => /Supplier \(passed on unchanged to bol\) — Packing List Reference too long/.test(t))).toHaveLength(1);
+  expect(buckets.message.filter(t => /Supplier \(passed on unchanged to bol\) — Packing reference too long \(RFF\+BM\)/.test(t))).toHaveLength(1);
   expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
   // Headline calm (the mapping looks right), but the icon shows the worst
   // level: RFF+BM too long is err, so ⚠ — never hidden behind "!".
@@ -999,7 +999,8 @@ test('Copy report uses neutral marks per section, not [ERROR]', async ({ page })
   let report = await page.evaluate(() => lastReportText);
   expect(report).not.toContain('[ERROR]');
   expect(report).not.toContain('[WARNING]');
-  expect(report).toMatch(/\[CHECK\] Supplier \(passed on unchanged to bol\) — Packing List Reference too long/);
+  // Section mark renamed from [CHECK] (the word "Check" meant three things).
+  expect(report).toMatch(/\[MESSAGE CHECK\] Supplier \(passed on unchanged to bol\) — Packing reference too long \(RFF\+BM\)/);
   expect(report).toMatch(/\[OK\] All compared values match/);
 
   await openApp(page);

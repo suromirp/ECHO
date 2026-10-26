@@ -9,7 +9,7 @@
   :root{
     --bg:#0a0e1a; --panel:#10162a; --panel-2:#141b32; --panel-3:#19213c;
     --border:#232c48; --border-strong:#34406a;
-    --text:#e7ecf7; --text-dim:#97a2c2; --text-faint:#5c6789;
+    --text:#e7ecf7; --text-dim:#97a2c2; --text-faint:#8692b6; /* faint ≥4.5:1 on every panel (was #5c6789, ~3:1) */
     /* bol brand palette */
     --bol-blue:#0000A4; --true-blue-bold:#6797E5; --true-blue-reg:#9EBDF4; --true-blue-light:#D2E1FF;
     --green-bold:#47AE87; --green-reg:#81D2A8; --green-light:#BCEDD2;
@@ -33,7 +33,7 @@
 
   /* branded header */
   .site-header{margin-bottom:22px;}
-  .brand-row{display:flex;align-items:center;gap:13px;margin-bottom:9px;}
+  .brand-row{display:flex;align-items:center;gap:13px;margin-bottom:9px;flex-wrap:wrap;}
   .brand-logo-plate{background:transparent;display:inline-flex;align-items:center;line-height:0;flex:none;}
   .brand-logo{height:26px;width:auto;display:block;}
 
@@ -105,6 +105,7 @@
   h1{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.03em;color:var(--text);margin:0;background:linear-gradient(135deg,var(--text) 35%,var(--true-blue-reg) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
   .brand-tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--border);padding:3px 9px;border-radius:999px;font-weight:600;}
   .version-tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint);white-space:nowrap;}
+  @media(max-width:600px){.version-tag{display:none;}}
   .sub{color:var(--text-dim);font-size:13px;line-height:1.55;max-width:760px;margin:0;}
 
   /* tabs */
@@ -130,8 +131,9 @@
   .btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--sans);font-size:13px;font-weight:600;border-radius:7px;padding:9px 16px;cursor:pointer;border:1px solid var(--border);background:var(--panel-2);color:var(--text);transition:background .15s,border-color .15s,transform .05s;}
   .btn:hover{background:var(--panel-3);border-color:var(--border-strong);}
   .btn:active{transform:translateY(1px);}
-  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
-  .btn.primary:hover{background:#0000c4;border-color:#0000c4;}
+  /* brighter than the bol brand blue, which barely stood out on the dark panels */
+  .btn.primary{background:#2f5bff;border-color:#6f8fff;color:#fff;box-shadow:0 0 0 3px rgba(47,91,255,.18);}
+  .btn.primary:hover{background:#3d63ff;border-color:#9ab0ff;}
   button.btn:disabled{opacity:.4;cursor:not-allowed;}
   button.btn.primary:disabled{opacity:.4;cursor:not-allowed;}
   .btn.ghost{background:transparent;}
@@ -245,6 +247,11 @@
   .pill.ok{color:var(--ok);border-color:var(--ok);}
   .pill.err{color:var(--err);border-color:var(--err);}
   .pill.warn{color:var(--warn);border-color:var(--warn);}
+  /* not a warning: nothing to compare (Not applicable / one side only) or an expected soft difference (Info) */
+  .pill.neutral{color:var(--text-dim);border-color:var(--border-strong);}
+  .pill.info{color:var(--info);border-color:var(--info);}
+  /* a segment code after its plain-language label: small and grey */
+  .seg{font-family:var(--mono);font-size:.85em;color:var(--text-dim);font-weight:400;}
   .pill.a5{color:var(--accept);border-color:var(--accept);}
   .pill.a6{color:var(--backorder);border-color:var(--backorder);}
   .pill.a2{color:var(--cancel);border-color:var(--cancel);}
@@ -282,7 +289,7 @@
   .wc-body{padding:0 12px 12px 33px;}
   .wc-detail{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
   details.f-more{margin-top:5px;}
-  details.f-more>summary{cursor:pointer;font-size:12px;font-weight:400;color:var(--muted,#888);list-style:none;display:inline-block;background:none;border:0;padding:0;margin:0;box-shadow:none;}
+  details.f-more>summary{cursor:pointer;font-size:12px;font-weight:400;color:var(--text-dim);list-style:none;display:inline-block;background:none;border:0;padding:0;margin:0;box-shadow:none;}
   details.f-more>summary:hover{text-decoration:underline;}
   details.f-more>summary::-webkit-details-marker{display:none;}
   details.f-more>summary::before{content:'▸ ';}
@@ -405,13 +412,14 @@
       <div class="legend-grid">
         <div><span class="pill ok">Match</span><span>The compared values are the same.</span></div>
         <div><span class="pill err">Difference</span><span>The compared values differ — worth checking.</span></div>
-        <div><span class="pill warn">Check</span><span>A minor difference — the important values still match.</span></div>
-        <div><span class="pill warn">Not applicable</span><span>This field isn't sent on either side, so it can't be compared.</span></div>
-        <div><span class="pill warn">Info</span><span>An expected, soft difference — not counted as a mismatch.</span></div>
+        <div><span class="pill warn">Minor difference</span><span>A minor difference — the important values still match.</span></div>
+        <div><span class="pill neutral">Not applicable</span><span>This field isn't sent on either side, so it can't be compared.</span></div>
+        <div><span class="pill neutral">One side only</span><span>Sent on one side only, so it can't be compared — not counted as a difference.</span></div>
+        <div><span class="pill info">Info</span><span>An expected, soft difference — not counted as a mismatch.</span></div>
         <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched.</span></div>
         <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side.</span></div>
         <div><span class="pill ok">OK</span><span>No structural issue found in this message.</span></div>
-        <div><span class="fi" style="color:var(--err)">⚠</span><span>Check this first.</span></div>
+        <div><span class="fi" style="color:var(--err)">⚠</span><span>Look at this first.</span></div>
         <div><span class="fi" style="color:var(--warn)">!</span><span>Worth a closer look — not necessarily an error.</span></div>
         <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
         <div><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim)">Worth checking</span><span>Findings group for a pattern that stands out from the rest of one message's lines, marked <span style="color:var(--warn);font-weight:700">!</span>. Not necessarily wrong; not counted in the verdict.</span></div>
@@ -555,7 +563,7 @@
 
       <div class="panel">
         <div class="toggle-bar" style="margin-bottom:8px">
-          <h2 id="lineTitle" style="margin:0">Line comparison</h2>
+          <h2 id="lineTitle" style="margin:0" title="One row per distinct item (EAN or article code); lines with the same item are added up.">Line comparison <span class="seg" style="text-transform:none">per item</span></h2>
           <label class="switch">
             <input type="checkbox" id="lineFilterToggle">
             <span class="track"></span>
@@ -568,7 +576,7 @@
 
       <div class="panel hidden" id="ssccPanel">
         <div class="toggle-bar" style="margin-bottom:8px">
-          <h2 style="margin:0">Pallet / SSCC overview (GIN+BJ)</h2>
+          <h2 style="margin:0">Pallet / SSCC overview <span class="seg" style="text-transform:none">GIN+BJ</span></h2>
           <label class="switch">
             <input type="checkbox" id="palletFilterToggle">
             <span class="track"></span>
@@ -663,10 +671,12 @@ function normalizeGtin(g){
    match the legend at the top of the page exactly, in one place. */
 function pillMatch(){return '<span class="pill ok" title="The compared values are the same.">Match</span>';}
 function pillDiff(){return '<span class="pill err" title="The compared values differ — worth checking.">Difference</span>';}
-function pillNA(text){return `<span class="pill warn" title="${esc(text||"This field isn't sent on either side, so it can't be compared.")}">Not applicable</span>`;}
+function pillNA(text){return `<span class="pill neutral" title="${esc(text||"This field isn't sent on either side, so it can't be compared.")}">Not applicable</span>`;}
+/* Sent on only one side: nothing to compare, not a difference (rule 3). */
+function pillOneSide(){return '<span class="pill neutral" title="Sent on one side only, so it can\'t be compared. Not counted as a difference.">One side only</span>';}
 function pillOkSingle(){return '<span class="pill ok" title="No structural issue found in this message.">OK</span>';}
-function pillCheck(){return '<span class="pill warn" title="A minor difference — the important values still match.">Check</span>';}
-function pillInfo(){return '<span class="pill warn" title="An expected, soft difference — not counted as a mismatch.">Info</span>';}
+function pillCheck(){return '<span class="pill warn" title="A minor difference — the important values still match.">Minor difference</span>';}
+function pillInfo(){return '<span class="pill info" title="An expected, soft difference — not counted as a mismatch.">Info</span>';}
 
 /* =====================================================================
    Personality layer — deliberately secondary to the functional tool.
@@ -1049,6 +1059,12 @@ const ACTION_TOOLTIP={
   '6':'Line accepted with a change: either part of it is backordered, or the full quantity is confirmed but the delivery date changed. (EDIFACT LIN action code 6.)',
   '2':'Line rejected/cancelled — nothing will be delivered for it. (EDIFACT LIN action code 2.)'
 };
+/* One glossary for quantity qualifiers. DESADV QTY+12 is the despatched
+   quantity (ORDRSP QTY+12 is the confirmed one). */
+function qtyName(q,type){
+  if(q==='12')return type==='DESADV'?'Despatched':'Confirmed';
+  return {'83':'Backorder','182':'Cancelled','47':'Quantity','59':'Quantity per pack','21':'Ordered'}[q]||('Qty '+q);
+}
 function actionPillHtml(a,ctx){
   if(!a)return '—';
   let tip=ACTION_TOOLTIP[a]||`EDIFACT LIN action code ${a} — not one of the codes bol/Transus maps (2, 5 or 6).`;
@@ -2303,7 +2319,7 @@ function checkNoSsccAnywhere(facts,label,add,jumpCall,opts){
   const list=noSsccPallets(facts);
   const n=list.length;
   const pallets=n?`<div style="margin-top:6px">${n} pallet group${n===1?'':'s'} without SSCC${cpsTagListHtml(list,jumpCall,'pallet groups')}</div>`:'';
-  add('warn',`${label} — <strong>No SSCC (GIN+BJ)</strong> anywhere in the message.`+pallets+(o.otherHtml||'')+moreInfo(`Pallets can't be matched by SSCC, so pallet-level structure can't be verified from this message alone.${o.otherInfo?' '+o.otherInfo:''}`),'message');
+  add('warn',`${label} — <strong>No SSCC</strong> <span class="seg">(GIN+BJ)</span> anywhere in the message.`+pallets+(o.otherHtml||'')+moreInfo(`Pallets can't be matched by SSCC, so pallet-level structure can't be verified from this message alone.${o.otherInfo?' '+o.otherInfo:''}`),'message');
 }
 /* opts.skipNoSscc: Compare already reports "Neither message contains an
    SSCC" with these pallets listed, so the per-side "No SSCC found" would
@@ -2421,7 +2437,7 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
   const ref=facts.billOfLadingRef;
   if(!ref||ref.length<=15)return;
   const jump=jumpCall?` onclick="${jumpCall(ref)}"`:'';
-  add('err',`${label} — <strong>Packing List Reference too long</strong>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline; a message like this fails to deliver entirely.`),'message');
+  add('err',`${label} — <strong>Packing reference too long</strong> <span class="seg">(RFF+BM)</span>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline (its error calls it "Packing List Reference"); a message like this fails to deliver entirely.`),'message');
 }
 
 // A CPS group that carries its own SSCC (GIN+BJ) but never declared itself
@@ -2549,7 +2565,7 @@ function checkOrderNearMiss(facts,label,add,jumpCall){
    differences sent to Transus. */
 function checkNoOrderAnywhere(label,add,opts){
   const o=opts||{};
-  add('warn',`${label} — <strong>No order number (RFF+ON)</strong> in the header or on any line.`+(o.otherHtml||'')+moreInfo(`Worth checking whether that's expected for this message.${o.otherInfo?' '+o.otherInfo:''}`),'message');
+  add('warn',`${label} — <strong>No order number</strong> <span class="seg">(RFF+ON)</span> in the header or on any line.`+(o.otherHtml||'')+moreInfo(`Worth checking whether that's expected for this message.${o.otherInfo?' '+o.otherInfo:''}`),'message');
 }
 /* Clickable value tags, collapsed past ~20 (docs/ui-conventions.md). */
 function valueTagsHtml(values,jumpCall,what){
@@ -2613,10 +2629,10 @@ function headerFieldsHtml(sup,bol,type){
    a date missing on one side is structural (formats differ in what they
    carry), not a difference. */
 function compareDesadvDates(sup,bol,add){
-  [['despatchDate','Despatch date','DTM+11'],['arrivalDate','Expected delivery date','DTM+132']].forEach(([k,label,seg])=>{
+  [['despatchDate','Despatch date','DTM+11'],['arrivalDate','Expected delivery','DTM+132']].forEach(([k,label,seg])=>{
     const s=sup[k],b=bol[k];
     if(!s||!b||s===b)return;
-    add('warn',`<strong>${label} (${seg}) changed</strong>: <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span> → <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span>`+moreInfo(`The supplier sent the first date; bol's output says the second. Worth checking with Transus.`),'diff');
+    add('warn',`<strong>${label}</strong> <span class="seg">(${seg})</span> <strong>changed</strong>: <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span> → <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span>`+moreInfo(`The supplier sent the first date; bol's output says the second. Worth checking with Transus.`),'diff');
   });
 }
 
@@ -2973,7 +2989,7 @@ function palletOverviewHtml(label,facts,otherMap,sideKey,keyFn,flags){
         ${hierarchyNote}
         ${summaryBadge}
       </summary>
-      <table class="inv"><tr><th>Item EAN</th><th>Quantity</th>${mappingTh}<th title="Flags only one specific thing: whether this item's own EAN accidentally repeats the pallet's own EAN (GIN+SRV) — a sign of a possible mix-up.">Check</th></tr>${rows}</table>
+      <table class="inv"><tr><th>Item EAN</th><th>Quantity</th>${mappingTh}<th title="Flags only one specific thing: whether this item's own EAN accidentally repeats the pallet's own EAN (GIN+SRV) — a sign of a possible mix-up.">Pallet EAN note</th></tr>${rows}</table>
     </details>`;
   });
   const total=relevant.length;
@@ -3259,7 +3275,7 @@ function compare(bol,sup){
     if(type==='ORDRSP'&&r.actionDiff)actionDiffs.push({label,r});
     if(r.orderDiff&&!r.orderOnlyBol&&!orderShiftKeys.has(r.key))orderDiffs.push({label,r});});
   addCapped('err',qtyDiffs,
-    ({label,x})=>`Item <code>${esc(label)}</code>: quantity (qual ${esc(x.q)}) differs — supplier <span class="val-sup">${esc(x.sup??'—')}</span> vs bol <span class="val-bol">${esc(x.bol??'—')}</span>.`,
+    ({label,x})=>`Item <code>${esc(label)}</code>: ${esc(qtyName(x.q,type).toLowerCase())} quantity <span class="seg">(QTY+${esc(x.q)})</span> differs — supplier <span class="val-sup">${esc(x.sup??'—')}</span> vs bol <span class="val-bol">${esc(x.bol??'—')}</span>.`,
     rest=>`<strong>${rest} more item(s) also show a quantity difference</strong> — see the Line comparison below for the full list.`);
   addCapped('err',actionDiffs,
     ({label,r})=>`Item <code>${esc(label)}</code>: action codes differ — supplier [${esc(r.supActions.join(', ')||'—')}] vs bol [${esc(r.bolActions.join(', ')||'—')}].`,
@@ -3366,7 +3382,7 @@ function compare(bol,sup){
     // below (checkPalletStructure opts.skipNoSscc), its pallets listed here.
     const sNo=noSsccPallets(sup),bNo=noSsccPallets(bol);
     const part=(list,who,side)=>list.length?`<div style="margin-top:6px">${who}: ${list.length} pallet group${list.length===1?'':'s'} without SSCC${cpsTagListHtml(list,v=>`jumpToFactsSource(${jsQuote(side)},${jsQuote(v)})`,`${who.toLowerCase()} pallet groups`)}</div>`:'';
-    add('warn',"<strong>Neither message contains an SSCC (GIN+BJ)</strong>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
+    add('warn',"<strong>Neither message contains an SSCC</strong> <span class=\"seg\">(GIN+BJ)</span>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
   }
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
@@ -3515,7 +3531,7 @@ function compare(bol,sup){
       const n=dateDiffs.length;
       const lis=dateDiffs.map(d=>`<li><span class="clickable-val" onclick="${d.jump}">${esc(d.label)}: ${esc(showDate(d.sup))} → ${esc(showDate(d.bol))}</span></li>`).join('');
       const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
-      add('warn',`<strong>Delivery date (DTM+67) differs</strong> on ${n} line${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The supplier's confirmed delivery date (first value) differs from the one in bol's output (second value) for the same item and action. Worth checking with Transus.`),'diff',n);
+      add('warn',`<strong>Delivery date</strong> <span class="seg">(DTM+67)</span> <strong>differs</strong> on ${n} line${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The supplier's confirmed delivery date (first value) differs from the one in bol's output (second value) for the same item and action. Worth checking with Transus.`),'diff',n);
     }
     cascadePriceShiftFindings(cascadeRuns).forEach(t=>add('err',t,'diff'));
     addCapped('err',priceDiffs,
@@ -4627,7 +4643,7 @@ function invoiceChargeTotalText(issue,cur,jumpCall){
   const st=jumpCall?`<span class="clickable-val" onclick="${jumpCall('MOA+131')}">${esc(a(issue.stated))}</span>`:esc(a(issue.stated));
   const parts=issue.hasCharges&&issue.hasAllowances?` (charges ${esc(a(issue.charges))}, allowances ${esc(a(issue.allowances))})`:'';
   const diff=fmtAmt(Math.abs(Math.abs(issue.stated)-Math.abs(issue.sum)),cur);
-  return `<strong>Total charges/allowances (MOA+131) differs from the ALC amounts</strong>: stated ${st}, the ALC segments add up to <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary MOA+131 states the total of the message's charges and allowances. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure, ${esc(diff)} apart. The payable, taxable and line amounts are separate figures and are compared on their own. Which of the two is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
+  return `<strong>Total charges/allowances</strong> <span class="seg">(MOA+131)</span> <strong>differs from the ALC amounts</strong>: stated ${st}, the ALC segments add up to <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary MOA+131 states the total of the message's charges and allowances. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure, ${esc(diff)} apart. The payable, taxable and line amounts are separate figures and are compared on their own. Which of the two is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
 }
 /* qty × net price vs. line amount for every line of one invoice: the ONE
    helper behind both Quick check and Compare (per side). Per line, never
@@ -5759,7 +5775,10 @@ function factsOverviewHtml(facts){
   // the packing reference in bol's own systems — confirmed against bol's
   // data sources — so it takes priority over BGM's document number here
   // rather than being shown as a second, separate field.
-  f.push(fieldHtml(isD?'Packing reference number':'Document number',clickField(isD?(facts.billOfLadingRef||facts.docNumber):facts.docNumber),null,true));
+  // Labels match Compare's header table: "Packing reference", "Expected
+  // delivery"; the segment it came from in small grey type.
+  const packSrc=facts.billOfLadingRef?'RFF+BM':'BGM';
+  f.push(fieldHtml(isD?'Packing reference':'Document number',clickField(isD?(facts.billOfLadingRef||facts.docNumber):facts.docNumber)+(isD&&(facts.billOfLadingRef||facts.docNumber)?` <span class="seg">${packSrc}</span>`:''),null,true));
   f.push(fieldHtml('Document date',clickDateField(facts.docDate),null,true));
   const orders=[...new Set([...(facts.orderRefsHeader||[]),...facts.lines.flatMap(l=>[...(l.orders||[])])])];
   const orderList=orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}`).join(', ');
@@ -5776,15 +5795,15 @@ function factsOverviewHtml(facts){
     else if(lineReq.length)f.push(fieldHtml('Requested delivery','Per line, see Lines'));
   }
   if(isD){
-    f.push(fieldHtml('Arrival date',clickDateField(facts.arrivalDate),null,true));
+    f.push(fieldHtml('Expected delivery',clickDateField(facts.arrivalDate)+(facts.arrivalDate?` <span class="seg">${facts.format==='EDIFACT'?(facts.headerDtm&&facts.headerDtm['132']?'DTM+132':(facts.headerDtm&&facts.headerDtm['17']?'DTM+17':'DTM+2')):''}</span>`:''),null,true));
     f.push(fieldHtml('Despatch date',clickDateField(facts.despatchDate),null,true));
     // a DESADV without any packing reference is worth surfacing explicitly,
     // rather than the field silently not appearing at all
     // BGM's document number is often the de facto packing reference for DESADV
     // (shown separately above as "Packing reference number") — an RFF-based
     // reference not being present alongside it isn't worth flagging as missing.
-    if(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)f.push(fieldHtml('Packing reference(s)',facts.deliveryNoteRefs.map(r=>clickField(r)).join(', '),null,true));
-    else if(!facts.docNumber&&!facts.billOfLadingRef)f.push(fieldHtml('Packing reference(s)','Not found in this message',null,false));
+    if(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)f.push(fieldHtml('Despatch note reference',facts.deliveryNoteRefs.map(r=>clickField(r)).join(', ')+` <span class="seg">${esc(packRefRffQual(facts))}</span>`,null,true));
+    else if(!facts.docNumber&&!facts.billOfLadingRef)f.push(fieldHtml('Packing reference','Not found in this message',null,false));
   }
   f.push(fieldHtml('Number of lines',facts.lines.length||null));
   // Distinct SSCCs: a message can repeat one SSCC across several CPS groups
@@ -5857,7 +5876,7 @@ function factsOverviewHtml(facts){
     const showArt=facts.lines.some(l=>l.art);
     const showDesc=facts.lines.some(l=>l.desc);
     const quals=[...new Set(facts.lines.flatMap(l=>Object.keys(l.qty||{})))];
-    const qname={'12':'Confirmed','83':'Backorder','182':'Cancelled','47':'Quantity','59':'Quantity per pack','21':'Ordered'};
+    const qname=Object.fromEntries(quals.map(q=>[q,qtyName(q,type)]));
     let th=`<tr><th>#</th><th>EAN</th>`;
     if(showArt)th+=`<th>Item</th>`;
     if(showDesc)th+=`<th>Description</th>`;
@@ -5992,7 +6011,7 @@ function renderLineTable(){
       const af=(arr,ctx)=>arr.map(a=>actionPillHtml(a,ctx)).join(' ')||'—';
       tds+=`<td>${af(r.supActions,supCtx)}</td><td>${af(r.bolActions,bolCtx)}</td>`;
     }
-    const qtxt=r.qtys.map(x=>{const cl=x.diff?'diff-val':'';const qn={'12':'Confirmed','83':'Backorder','182':'Cancelled'}[x.q]||x.q;return `<span class="${cl}">${qn}: <span class="val-sup">${x.sup??'—'}</span> → <span class="val-bol">${x.bol??'—'}</span></span>`;}).join('<br>')||'—';
+    const qtxt=r.qtys.map(x=>{const cl=x.diff?'diff-val':'';const qn=qtyName(x.q,isO?'ORDRSP':'DESADV');return `<span class="${cl}">${qn}: <span class="val-sup">${x.sup??'—'}</span> → <span class="val-bol">${x.bol??'—'}</span></span>`;}).join('<br>')||'—';
     tds+=`<td class="mono">${qtxt}</td>`;
     const sp=r.status==='ok'?pillMatch():(r.status==='warn'?pillCheck():pillDiff());
     tds+=`<td>${sp}</td>`;
@@ -6001,14 +6020,17 @@ function renderLineTable(){
   document.getElementById('lineTable').innerHTML=thead+body;
   const hidden=rows.length-shown.length;
   const note=document.getElementById('lineFilterNote');
+  // One row per distinct item (EAN/article code), not per message line:
+  // the counts say "items", so "2 of 18" never reads against "30 lines".
+  const it=n=>`${n} item${n===1?'':'s'}`;
   if(q&&!shown.length){
-    note.innerHTML=`No lines match "${esc(searchEl.value.trim())}".`;
+    note.innerHTML=`No items match "${esc(searchEl.value.trim())}".`;
   }else if(onlyDiff&&!shown.length){
-    note.innerHTML=`All ${rows.length} lines match — nothing to review here. Toggle off to see them all.`;
+    note.innerHTML=`All ${it(rows.length)} match — nothing to review here. Toggle off to see them all.`;
   }else if(hidden>0){
     note.innerHTML=q
-      ?`Showing ${shown.length} of ${rows.length} lines matching "${esc(searchEl.value.trim())}".`
-      :`Showing ${shown.length} of ${rows.length} lines (${hidden} matching line${hidden===1?'':'s'} hidden).`;
+      ?`Showing ${shown.length} of ${it(rows.length)} matching "${esc(searchEl.value.trim())}" (one row per item, not per message line).`
+      :`Showing ${shown.length} of ${it(rows.length)} (${hidden} matching item${hidden===1?'':'s'} hidden).`;
   }else{
     note.innerHTML='';
   }
@@ -6184,7 +6206,7 @@ function render(result,bol,sup,notes){
       // representation Line comparison uses below, so the two panels never
       // look like they're describing something different for the same row.
       const hasBack=q83&&((Number(q83.sup)||0)!==0||(Number(q83.bol)||0)!==0);
-      const qSrc=hasBack?{label:'Backorder',x:q83}:(q12?{label:'Confirmed',x:q12}:null);
+      const qSrc=hasBack?{label:'Backorder',x:q83}:(q12?{label:qtyName('12',result.type),x:q12}:null);
       row+=`<td class="mono">${qSrc?`${qSrc.label}: <span class="val-sup">${esc(qSrc.x.sup??'—')}</span> → <span class="val-bol">${esc(qSrc.x.bol??'—')}</span>`:'<span class="dim" title="Neither a backorder nor a confirmed quantity was found for this line.">No quantity found</span>'}</td>`;
       if(result.type==='ORDRSP'){
         const supCtx={confirmed:q12?q12.sup:undefined,backorder:q83?q83.sup:undefined};
@@ -6529,10 +6551,10 @@ function buildReportText(title,findings,extra,ctx){
   const markOf=f=>{
     if(f.level==='ok')return 'OK';
     if(f.level==='info'||f.cat==='info')return 'INFO';
-    if(f.cat==='message')return 'CHECK';
+    if(f.cat==='message')return 'MESSAGE CHECK';
     return 'DIFFERENCE';
   };
-  const rank={DIFFERENCE:0,CHECK:1,INFO:2,OK:3};
+  const rank={DIFFERENCE:0,'MESSAGE CHECK':1,INFO:2,OK:3};
   [...findings].sort((a,b)=>(rank[markOf(a)]-rank[markOf(b)])||(order[a.level]-order[b.level])).forEach(f=>{
     lines.push('['+markOf(f)+'] '+stripHtml(f.text));
   });
@@ -6957,7 +6979,8 @@ function renderInvoiceCompare(res,notes){
   h+=`<details class="hdr-fields inv-hdr" id="invHdrDetails"><summary>Invoice details <span class="dim">(${hdrSum}${hdrOneSide?` · ${hdrOneSide} noted for info`:''})</span></summary><div class="inv-scroll" style="margin-top:8px"><table class="inv">
     <tr><th>Field</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
   h+=res.hdr.map(r=>{
-    const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():(r.status==='na'?pillNA():pillInfo()));
+    const oneSide=(r.sup==null||r.sup==='')!==(r.bol==null||r.bol==='');
+    const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():(r.status==='na'?pillNA():(oneSide&&!r.infoText?pillOneSide():pillInfo())));
     const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)')||r.label.endsWith('(VAT)'));
     const isOrderRow=r.label==='Order(s)';
     const supTxt=r.sup??'—',bolTxt=r.bol??'—';
@@ -6972,7 +6995,7 @@ function renderInvoiceCompare(res,notes){
 
   /* lines */
   h+=`<div class="panel"><h2>Line comparison (matched on EAN)</h2>`;
-  h+=`<div class="note-inline">Each line shows supplier → bol. "Not applicable" means the field isn't sent on one side; that doesn't count as a difference.</div>`;
+  h+=`<div class="note-inline">Each line shows supplier → bol. "one side only" means the field is sent on one side only; that doesn't count as a difference.</div>`;
   h+=`<div class="inv-scroll"><table class="inv"><tr><th>EAN</th><th>Item</th><th>Description</th><th>Comparison</th><th>Status</th></tr>`;
   h+=res.rows.map(r=>{
     const cls=r.status==='ok'?'row-ok':'row-diff';
@@ -6980,7 +7003,7 @@ function renderInvoiceCompare(res,notes){
     if(r.missingBol)cellTxt='<span class="cmp-no">missing from bol output</span>';
     else if(r.missingSup)cellTxt='<span class="cmp-no">missing from supplier message</span>';
     else cellTxt=r.cells.map(c=>{
-      if(c.status==='na')return `<span class="cmp-info" title="This field isn't sent on one side, so it can't be compared.">${esc(c.label)}: ${esc(c.sup??'—')} → ${esc(c.bol??'—')} (not applicable)</span>`;
+      if(c.status==='na')return `<span class="cmp-info" title="Sent on one side only, so it can't be compared — not counted as a difference.">${esc(c.label)}: ${esc(c.sup??'—')} → ${esc(c.bol??'—')} (one side only)</span>`;
       if(c.ambiguous)return `<span class="cmp-info" style="color:var(--warn)">${esc(c.label)}: ambiguous — multiple message-level references, not guessed (supplier: ${esc(c.sup??'—')} · bol: ${esc(c.bol??'—')})</span>`;
       const cl=c.status==='diff'?'cmp-no':'cmp-yes';
       const scopeHint='Whether this reference was sent once for the whole message, or specifically on this line.';
@@ -7015,7 +7038,8 @@ function renderInvoiceCompare(res,notes){
     h+=`<div class="panel"><h2>Totals</h2><div class="inv-scroll"><table class="inv">
       <tr><th>Total</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.totRows.map(r=>{
-      const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillNA("This total isn't sent on either side at all, so there's nothing to compare."));
+      // na here means sent on one side only (a total absent on both isn't listed)
+      const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():pillOneSide());
       const supTxt=fmtAmt(r.sup,cur),bolTxt=fmtAmt(r.bol,cur);
       const supSpan=supTxt?`<span class="s clickable-val" onclick="jumpToInvSource('sup',${jsQuote(supTxt)})">${esc(supTxt)}</span>`:`<span class="s">—</span>`;
       const bolSpan=bolTxt?`<span class="b clickable-val" onclick="jumpToInvSource('bol',${jsQuote(bolTxt)})">${esc(bolTxt)}</span>`:`<span class="b">—</span>`;

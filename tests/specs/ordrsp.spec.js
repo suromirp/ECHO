@@ -410,7 +410,7 @@ test('message values in Compare findings are escaped, not rendered as HTML', asy
   await expect(page.locator('#results')).toBeVisible();
   expect(await page.locator('#findings b, #findings i').count()).toBe(0);
   const text = await page.locator('#findings').innerText();
-  expect(text).toContain('Item ART<b>1: quantity (qual 12) differs');
+  expect(text).toContain('Item ART<b>1: confirmed quantity (QTY+12) differs');
   expect(text).toContain('action codes differ');
   expect(text).toContain('supplier [PO<i>1] vs bol [PO<i>2]');
 });
