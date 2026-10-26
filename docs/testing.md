@@ -410,6 +410,24 @@ actual test fixtures, don't just keep this list as prose:
   unknown text says so and offers the list; Copy report gets one "Error
   reported:" line, Copy for Transus none; every catalogue label matches
   its own entry (`tests/specs/error-picklist.spec.js`).
+- **ORDRSP/DESADV/INVOIC/ORDERS**: a UNB sender (13-digit GLN) other than
+  `NAD+SU` (`NAD+BY` for ORDERS) is an info Message check in Quick check and
+  on the supplier side in Compare, never on bol's side; a sender equal to
+  another party in the message (bol's own ORDERS) is silent. The Header
+  fields table and Quick check show "Sent by (UNB)", also for each message
+  of a multi-`UNH` interchange.
+- **DESADV**: a consignment `PAC` count that differs from the pallet SSCCs
+  under it is an info Message check in both modes; nested units with their
+  own SSCC aren't counted, and a matching count is silent.
+- **DESADV**: no `DTM+132` and no other delivery date is an info Message
+  check in both modes; `DTM+17` alone is enough to stay silent.
+- **INVOIC**: a credit note (`BGM+381`, UBL type 2) without `RFF+IV` /
+  `BillingReference` is an info Message check in both modes; the supplier's
+  `RFF+IV` without a bol `BillingReference` is only the "Original invoice"
+  Invoice details row.
+- **INVOIC**: summary `MOA+259` (total charges) is read, shown as Total
+  charges and checked against the charge ALC amounts like `MOA+131`; both
+  stated and off is one finding.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

@@ -180,7 +180,7 @@ Current entries and keys:
 | Duplicate reference (packing slip already received) | `packref-near-match` |
 | Couldn't parse XML content | `illegal-char`, `illegal-char-file`, `xml-concatenated`, `xml-unreadable`, `xml-leading-text`, `tax-no-rate` |
 | VAT percentage/amount is missing | `tax-no-rate`, `tax-rate-position`, `vat-diff` |
-| SSCC not found / pallet without SSCC | `pac-missing`, `sscc-length`, `sscc-check-digit`, `sscc-none`, `sscc-pallet-missing`, `sscc-one-side` |
+| SSCC not found / pallet without SSCC | `pac-missing`, `pallet-count`, `sscc-length`, `sscc-check-digit`, `sscc-none`, `sscc-pallet-missing`, `sscc-one-side` |
 
 ## Header fields table
 
