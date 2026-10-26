@@ -117,3 +117,87 @@ test('INVOIC: a zeroed bol EAN shows in the line table as a Difference', async (
   await expect(row).toHaveCount(1);
   await expect(row.locator('.pill')).toHaveText('Difference');
 });
+
+// One glossary (docs/ui-conventions.md "Terminology"): DESADV QTY+12 is
+// "Despatched", DTM+132 is "Expected delivery", "Packing reference"
+// everywhere, and "Check" no longer means three things.
+test('terminology: Despatched, Expected delivery, Packing reference, and distinct words for "check"', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'gtin-padding.sup.edi'), path.join(FIX, 'desadv', 'gtin-padding.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  await page.locator('#lineFilterToggle').uncheck({ force: true });
+  await expect(page.locator('#lineTable')).toContainText('Despatched:');
+  await expect(page.locator('#lineTable')).not.toContainText('Confirmed:');
+  // Search counts name items (one row per item), not lines.
+  await page.locator('#resultSearchInput').fill('zzz-no-such-value');
+  await expect(page.locator('#lineFilterNote')).toContainText('No items match');
+
+  await openApp(page);
+  await page.locator('#tabQuickBtn').click();
+  await page.locator('#quickFileInput').setInputFiles(path.join(FIX, 'desadv', 'bill-of-lading-reference.sup.edi'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov.locator('.field .l', { hasText: /^Packing reference$/ })).toHaveCount(1);
+  await expect(ov).not.toContainText('Packing reference number');
+  await expect(ov).not.toContainText('Arrival date');
+  await expect(ov.locator('#quickLinesTable th', { hasText: 'Despatched' })).toHaveCount(1);
+
+  const legend = page.locator('#legendDetails');
+  await expect(legend).not.toContainText('Check this first');
+  await expect(legend).toContainText('Look at this first');
+  await expect(legend.locator('.pill', { hasText: 'Minor difference' })).toHaveCount(1);
+  await expect(legend.locator('.pill.neutral', { hasText: 'Not applicable' })).toHaveCount(1);
+  await expect(legend.locator('.pill.neutral', { hasText: 'One side only' })).toHaveCount(1);
+});
+
+// "Not applicable" means absent on both sides (legend); a total sent on one
+// side only is "One side only", and neither is shown in a warning colour.
+test('INVOIC: a one-sided total is "One side only" in a neutral colour', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'invoic', 'rounding-gaps.sup.edi'), path.join(FIX, 'invoic', 'rounding-gaps.bol.ubl.xml'));
+  const pill = page.locator('#invoiceResults table.inv tr', { hasText: 'Taxable amount' }).locator('.pill');
+  await expect(pill).toHaveText('One side only');
+  await expect(pill).toHaveClass(/neutral/);
+});
+
+function contrast(a, b) {
+  const L = c => {
+    const [r, g, bl] = c.match(/\d+/g).slice(0, 3).map(Number).map(v => v / 255)
+      .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [x, y] = [L(a), L(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+// Contrast: faint text and the "More info" toggle reach 4.5:1 on panels;
+// the Compare button stands out from its panel.
+test('faint text and "More info" reach 4.5:1 contrast; the Compare button stands out', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'date-shift.sup.edi'), path.join(FIX, 'desadv', 'date-shift.bol.edi'));
+  const colors = await page.evaluate(() => {
+    const cs = e => getComputedStyle(e);
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--text-faint)';
+    document.body.appendChild(probe);
+    const panel = cs(document.querySelector('.panel')).backgroundColor;
+    const panel3 = (() => { const d = document.createElement('div'); d.style.background = 'var(--panel-3)'; document.body.appendChild(d); return cs(d).backgroundColor; })();
+    const more = cs(document.querySelector('details.f-more > summary')).color;
+    const btn = document.getElementById('compareBtn');
+    return { faint: cs(probe).color, panel, panel3, more, btnBg: cs(btn).backgroundColor, btnFg: cs(btn).color };
+  });
+  expect(contrast(colors.faint, colors.panel)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.faint, colors.panel3)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.more, colors.panel3)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.btnFg, colors.btnBg)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.btnBg, colors.panel)).toBeGreaterThanOrEqual(3);
+});
+
+// Mobile isn't a priority, but the page must not scroll sideways at 390px
+// (the version tag in the header used to cause it).
+test('no horizontal page scroll at 390px wide', async ({ browser }) => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  await openApp(page);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await page.close();
+});

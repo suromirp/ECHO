@@ -1,12 +1,25 @@
 # UI/UX conventions
 
-- Icons: **⚠** errors, **!** warnings, **ⓘ** info, **✓** ok. Never ✕ or a
-  bare "i".
+- Icons: **⚠** errors ("Look at this first"), **!** warnings, **ⓘ** info,
+  **✓** ok. Never ✕ or a bare "i".
 - Quick check shows its single-message checks as one **Findings** list for
   every message type, and the ECHO signal reacts to the worst level in it.
   INVOIC's list is split into Message checks / Good to know like Compare
   (`quickFindingsHtml`); it used to be loose notes with ⚠ on warnings and a
   signal that always said "all good".
+- Glossary — one name per thing, everywhere (Compare, Quick check,
+  findings, legend, reports):
+  - DESADV `QTY+12` is **"Despatched"**; ORDRSP `QTY+12` is "Confirmed"
+    (`qtyName`). `DTM+132` is **"Expected delivery"** (header table, Quick
+    check field, finding). The RFF+BM / BGM value is the **"Packing
+    reference"** (Quick check field too; bol's own error text "Packing
+    List Reference" only appears inside More info); an RFF+DQ/AAS value is
+    a "Despatch note reference".
+  - "Check" no longer means three things: the ⚠ legend line reads "Look at
+    this first", the minor-difference pill reads **"Minor difference"**,
+    and Copy report marks Message checks `[MESSAGE CHECK]`.
+  - A segment code follows its plain-language label in small grey type
+    (`.seg`): "Despatch date (DTM+11) changed", "No SSCC (GIN+BJ)".
 - Terminology: **"EAN"** in all visible text (internal variable/field
   names stay `gtin`); **"Packing reference"**, not "Despatch note";
   **"Distinct items"**, not "Items" — a bare "Items" count reads as a
@@ -118,7 +131,7 @@ more"). Its intro names the message ID (from the ZIP, folder or file name,
 folder, plus GLN) and the document; Copy report starts with the same
 lines. "Copy report" marks each line
 by section, never by severity: `[DIFFERENCE]` (Transformation differences),
-`[CHECK]` (Message checks), `[INFO]`, `[OK]`. Applied to every finding
+`[MESSAGE CHECK]` (Message checks), `[INFO]`, `[OK]`. Applied to every finding
 whose visible text ran past ~150 characters (ORDRSP, DESADV and INVOIC).
 New findings follow the same shape: if the visible part needs more than
 one sentence, the rest belongs in `moreInfo`.
@@ -183,12 +196,23 @@ Keep these six meanings distinct and don't blur them:
 
 - **Match** — compared values are the same.
 - **Difference** — compared values differ, worth checking.
-- **Check** — a minor difference; the important values still match.
+- **Minor difference** (was "Check") — a minor difference; the important
+  values still match.
+- **One side only** — sent on one side only, so it can't be compared; not
+  counted as a difference (INVOIC totals and one-sided header rows without
+  an explanation of their own). Neutral grey, like Not applicable — never
+  a warning colour.
 - **Not applicable** — the field isn't sent on either side, so it can't be
   compared at all.
 - **Info** — an expected, soft difference, not counted as a mismatch.
 - **OK** — no structural issue found (used for single-message checks with
   nothing to compare against).
+
+Pills that aren't a problem (Not applicable, One side only) are neutral
+grey; Info is info-blue. Faint text (`--text-faint`) and the "More info"
+toggle are at least 4.5:1 on every panel colour; the primary button
+(Compare) is a brighter blue than the bol brand blue so it stands out on
+the dark panels.
 
 A field absent on both sides is **Not applicable**, never **Match** (INVOIC's
 Invoice details table used to show "Match" for, e.g., a packing reference

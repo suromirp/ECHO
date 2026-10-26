@@ -228,7 +228,7 @@ actual test fixtures, don't just keep this list as prose:
   quantity, action, order number) are HTML-escaped — `ART<b>1` shows as
   text, never as markup.
 - **UI**: "Copy report" marks each finding by section — `[DIFFERENCE]`,
-  `[CHECK]` (Message checks), `[INFO]`, `[OK]` — never `[ERROR]`, which read
+  `[MESSAGE CHECK]` (Message checks), `[INFO]`, `[OK]` — never `[ERROR]`, which read
   as "you did something wrong" on a supplier's own message check.
 - **INVOIC**: multiple VAT-rate groups summed correctly for the taxable
   total (both the TRANSUSXML-style and bol's-own-UBL-style aggregation).
@@ -382,6 +382,13 @@ actual test fixtures, don't just keep this list as prose:
   with a Message check (e.g. a wrong check digit) never shows OK/Match, in
   Quick check and Compare; the Quantities tile reads "Quantities (per
   EAN)" with a tooltip.
+- **UI**: one glossary — DESADV QTY+12 "Despatched", DTM+132 "Expected
+  delivery", "Packing reference" in Quick check too; "Check" split into
+  "Look at this first" (⚠ legend), "Minor difference" (pill) and
+  `[MESSAGE CHECK]` (Copy report); a one-sided INVOIC total is "One side
+  only" (neutral), Not applicable is neutral too; the Compare line table's
+  search/filter counts say "items"; `--text-faint` and "More info" ≥ 4.5:1
+  on panels; the Compare button stands out; no horizontal scroll at 390px.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 
