@@ -868,3 +868,136 @@ test('one-sided header values and totals are table rows, not also findings', asy
   await expect(page.locator('#invoiceResults table.inv tr', { hasText: 'Buyer (GLN)' })).toContainText('8712423020597');
   await expect(page.locator('#invoiceResults table.inv tr', { hasText: 'Taxable amount' })).toContainText('253.23');
 });
+
+// A credit note (BGM+381 / bol UBL InvoiceTypeCode 2) without a reference
+// to the invoice it corrects (RFF+IV / BillingReference): info, Message
+// check, in both modes. bol's UBL lacking BillingReference while the
+// supplier sent RFF+IV is shown in Invoice details only.
+test('a credit note without a reference to the original invoice is an info Message check, in both modes', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'credit-no-invoice-ref.sup.edi'),
+    path.join(FIX, 'credit-no-invoice-ref.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const f = b.message.filter(t => /Credit note without a reference to the original invoice/.test(t));
+  expect(f).toHaveLength(1);
+  expect(f[0]).toContain('Supplier (passed on unchanged to bol)');
+  expect(b.diff.some(t => /original invoice/.test(t))).toBe(false);
+  await expect(page.locator('#invoiceResults ul.findings li', { hasText: 'original invoice' })).toHaveClass(/f-info/);
+
+  for (const file of ['credit-no-invoice-ref.sup.edi', 'credit-no-invoice-ref.bol.ubl.xml']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    const q = await quickFindingsByCategory(page);
+    expect(q.message.filter(t => /Credit note without a reference to the original invoice/.test(t))).toHaveLength(1);
+  }
+
+  // The supplier names the original invoice (RFF+IV), bol's UBL doesn't:
+  // no finding, the Invoice details row shows it.
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'credit-type-code-2.sup.edi'),
+    path.join(FIX, 'credit-type-code-2.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  await expect(page.locator('#invoiceResults')).not.toContainText('Credit note without a reference');
+  const row = page.locator('#invoiceResults tr', { hasText: 'Original invoice' }).first();
+  await expect(row).toContainText('INV5000');
+  await expect(row.locator('.pill')).toHaveText('One side only');
+
+  // RFF+IV, a BillingReference, or a plain invoice: nothing to report.
+  for (const file of ['credit-type-code-2.sup.edi', 'alc-moa-203.bol.ubl.xml', 'charge-total-mismatch.sup.edi']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    await expect(page.locator('#quickOverview .ov-type')).toBeVisible();
+    await expect(page.locator('#quickOverview')).not.toContainText('Credit note without a reference');
+  }
+});
+
+// bol's own INVOIC spec lists MOA+259 (total charges) for the summary.
+// Read and checked against the ALC amounts like MOA+131; when both are
+// present and off, one finding names both.
+test('MOA+259 not matching the charge ALC amounts is a Message check, in both modes; one finding with MOA+131', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'charge-total-259.sup.edi'),
+    path.join(FIX, 'charge-total-259.bol.ubl.xml'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const f = b.message.filter(t => /MOA\+259/.test(t));
+  expect(f).toHaveLength(1);
+  expect(f[0]).toContain('Supplier —');
+  expect(f[0]).toContain('Total charges (MOA+259) differs from the ALC amounts');
+  expect(f[0]).toContain('0.57');
+  expect(f[0]).toContain('0.60');
+  expect(b.diff.some(t => /MOA\+259/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'charge-total-259.sup.edi'),
+    path.join(FIX, 'charge-total-259.sup.edi'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const d = await invoiceFindingsByCategory(page);
+  const df = d.message.filter(t => /MOA\+259/.test(t));
+  expect(df).toHaveLength(1);
+  expect(df[0]).toContain('Supplier (passed on unchanged to bol)');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'charge-total-259.sup.edi'));
+  const q = await quickFindingsByCategory(page);
+  expect(q.message.filter(t => /MOA\+259/.test(t))).toHaveLength(1);
+  await expect(page.locator('#quickOverview .totbox')).toContainText('Total charges');
+
+  // MOA+131 and MOA+259 both stated (same value), both off: one finding.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'charge-total-259-and-131.sup.edi'));
+  const q2 = await quickFindingsByCategory(page);
+  const both = q2.message.filter(t => /MOA\+131|MOA\+259/.test(t));
+  expect(both).toHaveLength(1);
+  expect(both[0]).toContain('MOA+131, MOA+259');
+
+  // MOA+259 equal to the charges (an allowance next to them): silent, and
+  // the Totals box shows it as Total charges.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'charge-total-259-ok.sup.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+  await expect(page.locator('#quickOverview')).not.toContainText('MOA+259');
+  const tot = page.locator('#quickOverview .totbox .tot', { hasText: 'Total charges' });
+  await expect(tot).toContainText('0.60');
+});
+
+// UNB sender vs NAD+SU on an EDIFACT invoice: info, the supplier side in
+// Compare (bol's UBL has no UNB), and Quick check.
+test('INVOIC: a UNB sender other than NAD+SU is an info Message check, supplier side and Quick check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'unb-sender-differs.sup.edi'),
+    path.join(FIX, 'unb-sender-differs.sup.edi'),
+  );
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const f = b.message.filter(t => /Sent from a different GLN than the supplier in the message/.test(t));
+  expect(f).toHaveLength(1);
+  expect(f[0]).toMatch(/^\W*Supplier — /);
+  expect(f[0]).toContain('8700000000902');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'unb-sender-differs.sup.edi'));
+  const q = await quickFindingsByCategory(page);
+  expect(q.message.filter(t => /Sent from a different GLN/.test(t))).toHaveLength(1);
+  await expect(page.locator('#quickOverview .field', { hasText: 'Sent by' })).toContainText('8700000000902');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'charge-total-mismatch.sup.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
+  await expect(page.locator('#quickOverview')).not.toContainText('Sent from a different GLN');
+});

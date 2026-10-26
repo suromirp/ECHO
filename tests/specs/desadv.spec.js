@@ -1225,3 +1225,102 @@ test('SSCCs only in bol\'s output are the supplier\'s Message check, not a diffe
   await expect(qc).toHaveCount(1);
   await expect(qc).toContainText('No SSCC (GIN+BJ) anywhere in the message');
 });
+
+// Consignment-level PAC (CPS+1'PAC+3++201' = "3 pallets") vs the pallets
+// under it that carry an SSCC. Nested cartons with their own SSCC aren't
+// pallets. Info, Message check, both modes; never when the count fits.
+test('a consignment PAC count that differs from the pallet SSCCs is an info Message check, in both modes', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'pallet-count-mismatch.edi'), path.join(FIX, 'pallet-count-mismatch.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => /Pallet count \(PAC\) differs from the number of pallet SSCCs/.test(t));
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toContain('Supplier (passed on unchanged to bol)');
+  expect(hits[0]).toContain('PAC on CPS 1 says 3, the message has 2 pallets with an SSCC');
+  expect(hits[0]).toContain("2 nested units with their own SSCC aren't counted as pallets");
+  expect(buckets.diff.some(t => /Pallet count/.test(t))).toBe(false);
+  await expect(page.locator('#findings li', { hasText: 'Pallet count (PAC)' })).toHaveClass(/f-info/);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'pallet-count-mismatch.edi'));
+  const qc = page.locator('#quickOverview ul.findings > li', { hasText: 'Pallet count (PAC) differs' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toHaveClass(/f-info/);
+  await expect(page.locator('#quickOverview .quick-summary')).toContainText('Nothing unusual found');
+});
+
+test('the pallet count check is silent when the PAC matches the pallets (nested SSCCs not counted)', async ({ page }) => {
+  for (const file of ['pallet-count-nested-ok.edi', 'consignment-summary-cps.edi', 'sub-cps-per-item.sup.edi']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    await expect(page.locator('#quickOverview .ov-type')).toHaveText('DESADV');
+    await expect(page.locator('#quickOverview')).not.toContainText('Pallet count (PAC)');
+  }
+});
+
+// No DTM+132 (expected delivery) and no other delivery date (DTM+17/2…):
+// info, Message check, per side in Compare and in Quick check.
+test('a DESADV without any expected delivery date is an info Message check, in both modes', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'no-expected-delivery.sup.edi'), path.join(FIX, 'no-expected-delivery.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => /No expected delivery date \(DTM\+132\)/.test(t));
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toContain('Supplier —');
+  expect(buckets.diff.some(t => /expected delivery/i.test(t))).toBe(false);
+  await expect(page.locator('#verdict .vtitle')).toHaveText("Bol's output matches the supplier message");
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'no-expected-delivery.sup.edi'));
+  const qc = page.locator('#quickOverview ul.findings > li', { hasText: 'No expected delivery date' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toHaveClass(/f-info/);
+
+  // DTM+132, or only DTM+17: nothing to report.
+  for (const file of ['no-expected-delivery.bol.edi', 'expected-delivery-dtm17.edi', 'date-shift.sup.edi']) {
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, file));
+    await expect(page.locator('#quickOverview .ov-type')).toHaveText('DESADV');
+    await expect(page.locator('#quickOverview')).not.toContainText('No expected delivery date');
+  }
+});
+
+// UNB sender (who sent the file) vs NAD+SU (the supplier): a service
+// provider or parent company sending on the supplier's behalf. Info,
+// Message check; Quick check and the supplier side in Compare only, since
+// bol's output UNB is written by the transformation.
+test('a UNB sender other than NAD+SU is an info Message check on the supplier side and in Quick check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'unb-sender-differs.sup.edi'), path.join(FIX, 'unb-sender-differs.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => /Sent from a different GLN than the supplier in the message/.test(t));
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toMatch(/^\W*Supplier — /);
+  expect(hits[0]).toContain('8700000000902');
+  expect(hits[0]).toContain('8700000000007');
+  expect(buckets.diff.some(t => /Sent from/.test(t))).toBe(false);
+  const row = page.locator('#hdrFields tr', { hasText: 'Sent by' });
+  await expect(row).toContainText('8700000000902');
+  await expect(row).toContainText('UNB');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'unb-sender-differs.sup.edi'));
+  const qc = page.locator('#quickOverview ul.findings > li', { hasText: 'Sent from a different GLN' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toHaveClass(/f-info/);
+  await expect(page.locator('#quickOverview .field', { hasText: 'Sent by' })).toContainText('8700000000902');
+
+  // UNB sender = NAD+SU: nothing to report; the field still shows.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'date-shift.sup.edi'));
+  await expect(page.locator('#quickOverview .field', { hasText: 'Sent by' })).toContainText('8700000000007');
+  await expect(page.locator('#quickOverview')).not.toContainText('Sent from a different GLN');
+
+  // A multi-message interchange gives the UNB to every message in it.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'two-messages.edi'));
+  await expect(page.locator('#quickOverview .field', { hasText: 'Sent by' })).toContainText('8700000000007');
+});

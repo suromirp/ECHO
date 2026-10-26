@@ -468,10 +468,12 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   identical concept — recognized as a fallback (never overriding `9` if
   both appear in the same message).
 - **MOA `25`** ("Charge/allowance basis" per the official EDIFACT 5025
-  code list) is used by some suppliers as if it directly stated the ALC
-  amount — recognized as a fallback amount source for a charge/allowance,
-  since the alternative (silently treating it as "no amount sent,"
-  defaulting to 0) is worse.
+  code list) is what bol's own INVOIC spec prescribes for the amount of a
+  line-level allowance, so it isn't a supplier quirk: suppliers following
+  bol's spec send `ALC+A…'MOA+25:<amount>'`. ECHO reads it as that
+  charge/allowance's amount (an explicit 8/23/204 arriving later in the same
+  ALC group still replaces it), since the alternative (treating it as "no
+  amount sent," defaulting to 0) is worse.
 - **`MOA+203` right after `ALC` is the charge amount** (real Supplier Juliett credit
   note): `LIN+5…'MOA+203:10.94'PRI+AAA:10.94…'ALC+C++++ATR'MOA+203:0.4'`.
   `parseInvoicEdifact` only took `MOA` 8/204/23/131/52/25 as an ALC amount,
@@ -599,8 +601,14 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   message-level charges only), only when at least one ALC states an amount
   and none lacks one, compared by magnitude, charges − allowances or
   charges + allowances both accepted, and a gap of a cent ignored. bol's own
-  INVOIC spec lists `MOA+259` (total charges) rather than 131; ECHO doesn't
-  read 259 yet, since no real message has carried it.
+  INVOIC spec lists `MOA+259` (total charges, UNCL 5025) rather than 131
+  (total charges/allowances). ECHO reads 259 too: it is shown as "Total
+  charges" (preferred over 131 there) and checked by the same
+  `invoiceChargeTotalIssue`, where the charges alone also fit (plus the
+  131 combinations, generously). When both are stated and off, one finding
+  names both ("Total charges/allowances (MOA+131, MOA+259)"), never two. No
+  real message with 259 has been seen yet; the fixtures are synthetic.
+  `MOA_LABEL` had 131 and 259 the wrong way round (unused, fixed).
 - **`RFF+CO` as the only order reference** (same real Supplier Juliett credit note):
   the header carried `RFF+CO:<value>` (UNCL 1153 CO = buyer's/customer
   order number) and no `RFF+ON`. `parseInvoicEdifact` only read `ON`, so
@@ -860,13 +868,13 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   bucket alongside every other unhandled RFF qualifier, with no dedicated
   label at all — that gap is what's fixed, not by adding a second field,
   but by making the existing one point at the right source.
-- **`RFF+BM` has a hard, otherwise-undocumented 15-character limit** —
-  confirmed by a second, different real delivery error ("Packing List
-  Reference must not exceed 15 characters"), traced to an 18-character
-  value. Bol's own DESADV documentation doesn't mention a length at all for
-  this field (only "uniek en zichtbaar op de fysieke zending"), so this
-  isn't something a supplier could reasonably know without hitting it.
-  Transus's own mapping doesn't truncate or reject it either — the value
+- **`RFF+BM` has a hard 15-character limit** — confirmed by a second,
+  different real delivery error ("Packing List Reference must not exceed 15
+  characters"), traced to an 18-character value. bol's own DESADV spec
+  states the same limit: `RFF+BM` is `an..15` there (next to "uniek en
+  zichtbaar op de fysieke zending"). An earlier version of this note said
+  bol's documentation gave no length; that was wrong, it's in the segment
+  table. Transus's own mapping doesn't truncate or reject it either — the value
   passes through unchanged into bol's own EDIFACT output — it's bol's
   downstream delivery pipeline that rejects the message outright, and
   confirmed via `checkPackingReferenceLength`. A hard limit on the
@@ -877,6 +885,8 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   just the SSCC** — Transus support's own ticket reply confirmed the
   mechanism: without `PAC`, the whole packaging unit isn't recognized, so
   the SSCC (and the pallet structure around it) never reaches bol at all.
+  bol's own DESADV spec lists `PAC` as optional; ECHO is deliberately
+  stricter here, because of that confirmed loss, not because of the spec.
   Confirmed against a real message: 9 `CPS` groups on the supplier side,
   each with its own `GIN+BJ` but no `PAC` anywhere — bol's output collapsed
   to one flat `CPS` with zero SSCCs, not 9 missing ones among others intact.
@@ -1021,6 +1031,55 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   occasional detail lookup. Now a row per party (`Supplier (VAT)`,
   `Buyer (VAT)`, etc.), shown only when at least one side has one,
   clickable like the GLN rows already were.
+- **Interchange sender (`UNB`) other than the supplier** (`NAD+SU`): ECHO
+  didn't read `UNB` at all. The sender id and qualifier (element 2) and the
+  recipient (element 3) are now kept as `unb` on the facts and invoice
+  objects; a multi-`UNH` interchange gives its `UNB` to every split message
+  (`interchangeUnb`), and `parseInvoicEdifact` to every invoice in it. The
+  Header fields table and Quick check show it as "Sent by (UNB)".
+  `checkUnbSender` notes, at info level (Message check), a 13-digit UNB
+  sender that differs from a 13-digit `NAD+SU` GLN: often a service
+  provider or parent company sending on the supplier's behalf, worth
+  knowing when a message seems to arrive "from someone else". An ORDERS is
+  sent by the buyer, so there it is compared with `NAD+BY`. A sender that
+  is another party named in the message (bol as `NAD+BY` on its own
+  outbound message) never counts. Quick check, and only the supplier side
+  in Compare: in the fixtures bol's output repeats the supplier's UNB
+  sender, but that UNB is written by the transformation and says nothing
+  about who sent the supplier's file. Not an Invoice details row in INVOIC
+  Compare, since bol's UBL has no UNB (it would be a one-sided row on every
+  invoice).
+- **Consignment PAC count vs pallet SSCCs** (DESADV): a parentless `CPS`
+  without its own SSCC, with a `PAC` and pallets under it (`CPS+1'PAC+3++201'`)
+  states how many packages the shipment has. `checkConsignmentPalletCount`
+  compares that with the distinct SSCCs on the `CPS` groups directly under
+  it (nested units with their own SSCC are not pallets, `palletIsNested`;
+  several groups sharing an SSCC are one pallet). Info, Message check, per
+  side in Compare and in Quick check. Generous: only when every pallet group
+  directly under the consignment has an SSCC (the "No SSCC" findings cover
+  the rest), and silent when any PAC quantity there, or their sum, equals the
+  pallet SSCCs, all SSCCs in the message (a PAC counting every package), or
+  the number of pallet groups. EDIFACT only (the PAC quantity and package
+  type are now kept per CPS as `pacs`).
+- **No expected delivery date** (DESADV): `DTM+132` is bol's documented
+  expected-delivery qualifier and bol's output carries it. A message with no
+  `DTM+132` and no other delivery date (header or line: `17`, `2`, which ECHO
+  already reads as the expected delivery, or `35`/`63`/`64`/`69`/`76`) gets an
+  info Message check (`checkNoExpectedDelivery`), per side in Compare and in
+  Quick check. EDIFACT only. Most synthetic fixtures are minimal and carry no
+  date, so they show this note; the real cases documented here (Supplier
+  Alfa's `RequestedDeliveryDate`, Supplier Hotel's `HDR` arrival date) each
+  carried one, so it isn't expected to fire on a normal message.
+- **Credit note without a reference to the original invoice**: EDIFACT
+  `BGM+381` or bol's UBL `InvoiceTypeCode` 2 with no `RFF+IV` (`OI`/`ACW`
+  accepted too) or UBL `BillingReference` (header or line). Info, Message
+  check (`creditNoteWithoutInvoiceRef`), in Quick check and in Compare. In
+  Compare bol's side is only named together with the supplier's ("passed on
+  unchanged"): whether bol's UBL is expected to carry a `BillingReference`
+  isn't confirmed, so the supplier sending `RFF+IV` and bol's output having
+  none is the "Original invoice" row in Invoice details (One side only), not
+  a finding. The other XML dialects have no explicit credit-note flag and
+  aren't checked.
 - **Credit notes**: the supplier's EDIFACT BGM function code (381/384)
   and bol's UBL `InvoiceTypeCode` both say which document it is. bol uses
   **`1` = invoice, `2` = credit note**, checked on three real bol UBL files:

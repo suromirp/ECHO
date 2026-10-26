@@ -649,6 +649,19 @@ function splitEsc(str,delim,rel){
     cur+=ch;}
   out.push(cur);return out;
 }
+/* Interchange header: UNB+UNOC:3+<sender>:<qual>+<recipient>:<qual>+…
+   Element 2 is the sender, element 3 the recipient, each id:qualifier
+   (14 = GLN). Kept on the facts / invoice object as unb. */
+function parseUnbElements(el,delims){
+  const s=splitEsc(el[2]||'',delims.comp,delims.rel),r=splitEsc(el[3]||'',delims.comp,delims.rel);
+  const v=x=>(x||'').trim()||null;
+  return {sender:v(s[0]),senderQual:v(s[1]),recipient:v(r[0]),recipientQual:v(r[1])};
+}
+function interchangeUnb(raw){
+  const {segs,delims}=splitSegments(raw);
+  const seg=segs.find(x=>splitEsc(x,delims.elem,delims.rel)[0]==='UNB');
+  return seg?parseUnbElements(splitEsc(seg,delims.elem,delims.rel),delims):null;
+}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 /* GS1 GTINs come in several lengths (GTIN-8/12/13/14) that describe the same
@@ -1086,7 +1099,7 @@ const STATUS_TO_ACTION={'5':'5','6':'6','3':'6','2':'2','7':'2'};
 function parseFactsEdifact(raw){
   const {segs,delims}=splitSegments(raw);
   const f={format:'EDIFACT',msgType:null,bgmFunc:null,orderRefsHeader:new Set(),lines:[],ssccs:[],segs,delims,
-    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0,billOfLadingRef:null};
+    docNumber:null,docDate:null,parties:{},arrivalDate:null,despatchDate:null,deliveryNoteRefs:[],headerDtm:{},pallets:[],blankLinCount:0,billOfLadingRef:null,unb:null};
   let cur=null;
   let currentCps=null; // active CPS (pallet/package) group, DESADV only
   const push=()=>{
@@ -1120,12 +1133,13 @@ function parseFactsEdifact(raw){
   let lastParty=null;
   segs.forEach(seg=>{
     const el=splitEsc(seg,delims.elem,delims.rel);const tag=el[0];
-    if(tag==='UNH'){const mi=splitEsc(el[2]||'',delims.comp,delims.rel);f.msgType=mi[0]||null;}
+    if(tag==='UNB'){if(!f.unb)f.unb=parseUnbElements(el,delims);}
+    else if(tag==='UNH'){const mi=splitEsc(el[2]||'',delims.comp,delims.rel);f.msgType=mi[0]||null;}
     else if(tag==='BGM'){f.bgmFunc=el[3]||el[el.length-1]||null;f.docNumber=el[2]||null;}
     else if(tag==='CPS'){
       push();cur=null;
       if(currentCps)f.pallets.push(currentCps);
-      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[],weight:null,hasPac:false};
+      currentCps={cps:el[1]||'',parentCps:el[2]||null,palletGtin:null,sscc:null,items:[],weight:null,hasPac:false,pacs:[]};
     }
     else if(tag==='PAC'&&currentCps&&!cur){
       // Mere presence (regardless of content) marks this CPS as declaring
@@ -1136,6 +1150,11 @@ function parseFactsEdifact(raw){
       // pallet missing its SSCC" just because pallets happen to be nested
       // under it).
       currentCps.hasPac=true;
+      // PAC+2++201: number of packages (element 1) and package type
+      // (element 3). Kept per CPS for the consignment-level pallet count
+      // (checkConsignmentPalletCount).
+      const pq=splitEsc(el[1]||'',delims.comp,delims.rel)[0];
+      currentCps.pacs.push({qty:/^\d+$/.test((pq||'').trim())?parseInt(pq,10):null,type:splitEsc(el[3]||'',delims.comp,delims.rel)[0]||null});
     }
     else if(tag==='MEA'&&currentCps&&!cur){
       // MEA+PD+AAD+KGM:1123.080 — weight measurement for the current CPS
@@ -1628,7 +1647,10 @@ function parseFactsList(raw){
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
   const chunks=splitEdifactMessages(raw);
   if(chunks.length<=1)return [parseFactsEdifact(raw)];
-  return chunks.map(c=>parseFactsEdifact(c));
+  // The split chunks start at UNH, so the interchange header (UNB) is
+  // read once here and given to every message in the interchange.
+  const unb=interchangeUnb(raw);
+  return chunks.map(c=>{const f=parseFactsEdifact(c);if(!f.unb)f.unb=unb;return f;});
 }
 
 /* match supplier/bol ORDRSP or DESADV documents by BGM document number,
@@ -2428,11 +2450,11 @@ function checkPalletStructure(facts,label,add,jumpCall,opts){
 // bol's delivery pipeline rejects a DESADV outright when the Packing List
 // Reference (RFF+BM) is longer than 15 characters — confirmed against a
 // real "Packing List Reference must not exceed 15 characters" delivery
-// error, traced to an 18-character RFF+BM value. Not mentioned on bol's own
-// DESADV documentation at all (which only says the reference must be
-// "uniek en zichtbaar op de fysieke zending" — no length given), so this is
-// a hard, otherwise-undocumented downstream limit, not a mapping question —
-// kept as a Message check about the sending side's own value.
+// error, traced to an 18-character RFF+BM value. bol's own DESADV spec
+// states the limit too: RFF+BM is an..15 there (besides "uniek en zichtbaar
+// op de fysieke zending"). Transus passes a longer value on unchanged; bol's
+// delivery pipeline rejects it. A limit on the sending side's own value,
+// not a mapping question, so a Message check.
 function checkPackingReferenceLength(facts,label,add,jumpCall){
   const ref=facts.billOfLadingRef;
   if(!ref||ref.length<=15)return;
@@ -2440,9 +2462,90 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
   add('err',`${label} — <strong>Packing reference too long</strong> <span class="seg">(RFF+BM)</span>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline (its error calls it "Packing List Reference"); a message like this fails to deliver entirely.`),'message');
 }
 
+/* Interchange sender (UNB element 2) vs the party the message itself names
+   as its sender: NAD+SU, or NAD+BY for an ORDERS (the buyer sends the
+   order). Often a service provider or parent company sends on behalf of
+   the supplier, so this is info only. Generous (rule 7): both must be
+   13-digit GLNs, and a sender that is another party named in the message
+   (e.g. bol as NAD+BY on its own outbound message) never counts. Works on
+   facts and invoice objects alike (both carry unb, parties, msgType).
+   Quick check, and the supplier side in Compare: bol's output UNB is
+   written by the transformation, not by the supplier. */
+function unbSenderMismatch(m){
+  const unb=m&&m.unb;
+  if(!unb||!unb.sender||!/^\d{13}$/.test(unb.sender))return null;
+  const role=m.msgType==='ORDERS'?'BY':'SU';
+  const p=m.parties&&m.parties[role];
+  const gln=p&&p.gln?String(p.gln).trim():'';
+  if(!/^\d{13}$/.test(gln)||gln===unb.sender)return null;
+  if(Object.entries(m.parties||{}).some(([r,q])=>r!==role&&q&&q.gln&&String(q.gln).trim()===unb.sender))return null;
+  return {sender:unb.sender,gln,role};
+}
+function checkUnbSender(m,label,add,jumpCall){
+  const x=unbSenderMismatch(m);
+  if(!x)return;
+  const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
+  const who=x.role==='BY'?'buyer':'supplier';
+  add('info',`${label?label+' — ':''}<strong>Sent from a different GLN than the ${who} in the message</strong>: ${v(x.sender)} <span class="seg">(UNB)</span> vs ${v(x.gln)} <span class="seg">(NAD+${x.role})</span>`+moreInfo(`The interchange header (UNB) names who sent the file; NAD+${x.role} names the ${who} the message is about. When they differ, it is often a service provider or a parent company sending on behalf of the ${who}. Nothing unusual in itself, but worth knowing when a message seems to arrive "from someone else".`),'message');
+}
+
+/* DESADV: the consignment-level PAC (a parentless CPS without its own SSCC,
+   with pallets under it: CPS+1'PAC+5++201' = "5 pallets") vs the pallets
+   under it that carry an SSCC (GIN+BJ). Nested units with their own SSCC
+   (palletIsNested) aren't pallets, and several CPS groups sharing one SSCC
+   are one pallet (palletsBySSCC). Generous (rule 7): only when every
+   pallet group directly under the consignment has an SSCC (otherwise the
+   SSCC findings already cover it), and not when any PAC quantity there (or
+   their sum) matches the pallet SSCCs, all SSCCs in the message (a PAC
+   that counts every package) or the number of pallet groups. EDIFACT only. */
+function consignmentPalletCountIssues(facts){
+  const out=[];
+  if(!facts||facts.format!=='EDIFACT'||!facts.pallets||!facts.pallets.length)return out;
+  const allSsccs=palletsBySSCC(facts);
+  facts.pallets.forEach(root=>{
+    if(root.parentCps||root.sscc||!(root.pacs&&root.pacs.length))return;
+    const children=facts.pallets.filter(p=>p.parentCps&&p.parentCps===root.cps);
+    if(!children.length||children.some(c=>!c.sscc))return;
+    const qtys=root.pacs.map(p=>p.qty).filter(q=>q!==null&&q>0);
+    if(!qtys.length)return;
+    const sum=qtys.reduce((a,b)=>a+b,0);
+    const pallets=new Set(children.map(c=>c.sscc)).size;
+    const fits=n=>qtys.includes(n)||sum===n;
+    if(fits(pallets)||fits(allSsccs.size)||fits(children.length))return;
+    out.push({cps:root.cps,stated:qtys.length===1?qtys[0]:sum,pallets,nested:allSsccs.size-pallets});
+  });
+  return out;
+}
+function checkConsignmentPalletCount(facts,label,add,jumpCall){
+  consignmentPalletCountIssues(facts).forEach(x=>{
+    const cps=jumpCall?`<span class="clickable-val" onclick="${jumpCall('CPS+'+x.cps)}">CPS ${esc(x.cps)}</span>`:`CPS ${esc(x.cps)}`;
+    const nested=x.nested>0?` ${x.nested} nested unit${x.nested===1?'':'s'} with ${x.nested===1?'its':'their'} own SSCC ${x.nested===1?'isn\'t':'aren\'t'} counted as pallets.`:'';
+    add('info',`${label?label+' — ':''}<strong>Pallet count (PAC) differs from the number of pallet SSCCs</strong>: PAC on ${cps} says ${esc(x.stated)}, the message has ${x.pallets} pallet${x.pallets===1?'':'s'} with an SSCC`+moreInfo(`The consignment level (${esc('CPS '+x.cps)}) states how many packages the shipment has in its PAC segment. The pallets directly under it carry ${x.pallets} different SSCC${x.pallets===1?'':'s'} (GIN+BJ).${nested} A different count can mean a pallet isn't in the message, or that the PAC counts a different packaging level. Worth comparing with the physical shipment.`),'message');
+  });
+}
+
+/* DESADV without an expected delivery date: no DTM+132 (bol's documented
+   expected-arrival qualifier) and no other delivery date either, in the
+   header or on a line (DTM+17/2 are older equivalents ECHO already reads
+   as the expected delivery; 35/63/64/69/76 are other delivery dates a
+   mapping could use). Generous on purpose: any of them is enough. EDIFACT
+   only (the XML/CSV dialects name their dates differently). */
+const DESADV_DELIVERY_DTM=['132','17','2','35','63','64','69','76'];
+function hasDeliveryDate(facts){
+  if(facts.arrivalDate)return true;
+  const h=facts.headerDtm||{};
+  if(DESADV_DELIVERY_DTM.some(q=>h[q]))return true;
+  return (facts.lines||[]).some(l=>l.dtm&&DESADV_DELIVERY_DTM.some(q=>l.dtm[q]));
+}
+function checkNoExpectedDelivery(facts,label,add){
+  if(!facts||facts.format!=='EDIFACT'||!(facts.lines&&facts.lines.length)||hasDeliveryDate(facts))return;
+  add('info',`${label?label+' — ':''}<strong>No expected delivery date</strong> <span class="seg">(DTM+132)</span> in this message.`+moreInfo(`bol's DESADV documentation names DTM+132 as the expected delivery date. This message has none, and no other delivery date either (such as DTM+17 or DTM+2). Worth checking whether an expected delivery date is meant to be sent with this despatch advice.`),'message');
+}
+
 // A CPS group that carries its own SSCC (GIN+BJ) but never declared itself
 // a packaging unit via PAC is a confirmed real problem, not a theoretical
-// one — Transus support's own ticket reply confirmed that without PAC, the
+// one. bol's own DESADV spec lists PAC as optional; ECHO is stricter on
+// purpose, because Transus support's own ticket reply confirmed that without PAC, the
 // SSCC (and the pallet/package structure built around it) doesn't reach
 // bol at all, even though it's right there in the supplier's own message.
 // Confirmed against a real message: 9 CPS groups each with their own SSCC,
@@ -2587,7 +2690,10 @@ function headerFieldsHtml(sup,bol,type){
     isD&&['Expected delivery',f=>f.arrivalDate,arrSeg,['ArrivalDate','DeliveryDate']],
     ['Supplier GLN',f=>f.parties&&f.parties.SU&&f.parties.SU.gln,()=>'NAD+SU',['SupplierGLN','Supplier']],
     ['Buyer GLN',f=>f.parties&&f.parties.BY&&f.parties.BY.gln,()=>'NAD+BY',['BuyerGLN','Buyer']],
-    ['Delivery address GLN',f=>f.parties&&f.parties.DP&&f.parties.DP.gln,()=>'NAD+DP',['DeliveryPartyGLN','DeliveryParty']]
+    ['Delivery address GLN',f=>f.parties&&f.parties.DP&&f.parties.DP.gln,()=>'NAD+DP',['DeliveryPartyGLN','DeliveryParty']],
+    // Interchange sender (EDIFACT only): who sent the file, which can be a
+    // service provider rather than the supplier itself (checkUnbSender).
+    ['Sent by',f=>f.unb&&f.unb.sender,()=>'UNB',['UNB']]
   ].filter(Boolean);
   const isDate=l=>/date|delivery/i.test(l);
   let differ=0,shown=0;
@@ -3396,6 +3502,8 @@ function compare(bol,sup){
     // the supplier's finding (perSideOnce).
     perSideOnce(add,sup,bol,(f,label,a,j)=>checkPalletStructure(f,label,a,j,{skipNoSscc:noSsccAnywhere||(f===sup?supNoSscc:bolNoSscc)}),factsJump);
     perSideOnce(add,sup,bol,checkPackingReferenceLength,factsJump);
+    perSideOnce(add,sup,bol,checkConsignmentPalletCount,factsJump);
+    perSideOnce(add,sup,bol,checkNoExpectedDelivery,factsJump);
     compareDesadvDates(sup,bol,add);
     perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
     // The SSCC-length observation on SSCCs the PAC finding already lists
@@ -3455,6 +3563,10 @@ function compare(bol,sup){
   // shared by ORDRSP and DESADV (same underlying parser), so checked for
   // both, per side.
   if(type==='ORDRSP'||type==='DESADV'){
+    // UNB sender vs NAD+SU: the supplier side only. bol's output UNB is
+    // written by the transformation, so it says nothing about who sent the
+    // supplier's message.
+    checkUnbSender(sup,'Supplier',add,factsJump('sup'));
     perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
@@ -3583,7 +3695,7 @@ function compare(bol,sup){
 
 const BGM_DOCTYPE={'380':'invoice','381':'credit','383':'invoice','384':'credit','385':'invoice'};
 const NAD_ROLE={'SU':'Supplier','BY':'Buyer','IV':'Invoicee','DP':'Delivery address','DL':'Delivery address','CN':'Consignee','PE':'Payee','SE':'Seller','ST':'Delivery address'};
-const MOA_LABEL={'9':'Payable amount','21':'Payment discount','52':'Discount amount','124':'VAT amount','125':'Taxable amount','128':'Total amount','129':'Amount subject to payment discount','131':'Total charges','132':'Freight costs','176':'Total VAT','203':'Line amount','259':'Total charges/allowances','260':'Total allowances','8':'Charge/allowance amount','204':'Charge/allowance amount'};
+const MOA_LABEL={'9':'Payable amount','21':'Payment discount','52':'Discount amount','124':'VAT amount','125':'Taxable amount','128':'Total amount','129':'Amount subject to payment discount','131':'Total charges/allowances','132':'Freight costs','176':'Total VAT','203':'Line amount','259':'Total charges','260':'Total allowances','8':'Charge/allowance amount','204':'Charge/allowance amount'};
 
 function num(v){
   if(v===undefined||v===null)return null;
@@ -3620,7 +3732,7 @@ function emptyInvoice(source){
     paymentTerms:{days:null,pct:null,amount:null},
     lines:[],charges:[],
     totals:{lineTotal:null,taxable:null,tax:null,payable:null,taxInclusive:null,charges:null,allowances:null,discountBase:null},
-    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalTextChars:[],blankLinCount:0,orderQuals:{},extras:{},raw:null};
+    taxRates:[],taxIssues:[],taxRateEncodingMismatch:false,illegalTextChars:[],blankLinCount:0,orderQuals:{},invoiceRefs:[],unb:null,extras:{},raw:null};
 }
 function uniqPush(arr,v){if(v!==null&&v!==undefined&&v!==''&&!arr.includes(v))arr.push(v);}
 /* First real EAN among a line's candidate identifiers. An all-zeros EAN is
@@ -3706,9 +3818,9 @@ function finalizeInvoiceRefs(inv){
 function parseInvoicEdifact(raw){
   const {segs,delims}=splitSegments(raw);
   const invoices=[];
-  let inMsg=false,cur=null,curSegs=null;
+  let inMsg=false,cur=null,curSegs=null,unb=null;
 
-  const startMsg=(mi)=>{cur=emptyInvoice('EDIFACT');cur.msgType=mi;curSegs=[];inMsg=true;};
+  const startMsg=(mi)=>{cur=emptyInvoice('EDIFACT');cur.msgType=mi;cur.unb=unb;curSegs=[];inMsg=true;};
   const endMsg=()=>{if(cur){cur.raw={segs:curSegs,delims};invoices.push(cur);}cur=null;curSegs=null;inMsg=false;};
 
   let curLine=null,curAlc=null,inSummary=false,curTaxPct=null;
@@ -3730,6 +3842,8 @@ function parseInvoicEdifact(raw){
       if(mi==='INVOIC'){startMsg(mi);curLine=null;curAlc=null;inSummary=false;}
       return;
     }
+    // Interchange header, before the first UNH: given to every invoice in it.
+    if(tag==='UNB'&&!inMsg){unb=parseUnbElements(el,delims);return;}
     if(!inMsg)return;
     curSegs.push(seg);
     if(tag==='UNT'){
@@ -3800,7 +3914,13 @@ function parseInvoicEdifact(raw){
           /* VAT hoort bij de laatst genoemde partij */
           if(cur.extras.lastParty&&cur.parties[cur.extras.lastParty])cur.parties[cur.extras.lastParty].vat=val;}
         else if(q==='DL'){if(curLine)uniqPush(curLine.explicitDespatch,val);}
-        else{cur.extras.rff=cur.extras.rff||{};cur.extras.rff[q]=val;}
+        else{
+          // RFF+IV (invoice number) on a credit note: the invoice it
+          // corrects. OI (previous invoice number) and ACW (reference to a
+          // previous message) are accepted as the same kind of reference.
+          if(q==='IV'||q==='OI'||q==='ACW')uniqPush(cur.invoiceRefs,val);
+          cur.extras.rff=cur.extras.rff||{};cur.extras.rff[q]=val;
+        }
         break;}
       case 'NAD':{
         const role=el[1]||'';
@@ -3888,11 +4008,11 @@ function parseInvoicEdifact(raw){
         const c=comp(1);
         const q=c[0],v=num(c[1]);
         // 25 = "Charge/allowance basis" per the official EDIFACT 5025 code
-        // list — not the more common "8 = Allowance or charge amount", but
-        // in practice this is the value some suppliers send directly after
-        // an ALC segment as that allowance's amount, and without this it
-        // silently fell through into the generic line-MOA bucket below,
-        // leaving the allowance's own amount blank.
+        // list, not the more common "8 = Allowance or charge amount". bol's
+        // own INVOIC spec prescribes MOA+25 as the amount of a line-level
+        // allowance, so suppliers following that spec send it directly after
+        // the ALC; without this it fell through into the generic line-MOA
+        // bucket below, leaving the allowance's own amount blank.
         // While an ALC group is open, its first MOA is that charge's or
         // allowance's amount, whatever the qualifier. A real Supplier Juliett credit
         // note sent "ALC+C++++ATR'MOA+203:0.4'": the MOA+203 fell through to
@@ -3925,6 +4045,11 @@ function parseInvoicEdifact(raw){
         else if(q==='79')cur.totals.lineTotal=v;
         else if(q==='129')cur.totals.discountBase=v;
         else if(q==='131'){cur.totals.charges=v;cur.extras.moa131=v;}
+        // 259 = Total charges (UNCL 5025), the summary total bol's own INVOIC
+        // spec lists. Shown as "Total charges" in preference to 131 (which is
+        // charges and allowances together), and checked against the ALC
+        // amounts by invoiceChargeTotalIssue like 131.
+        else if(q==='259'){cur.extras.moa259=v;}
         else if(q==='260'||q==='52')cur.totals.allowances=v;
         else if(q==='21'&&cur.paymentTerms.amount===null)cur.paymentTerms.amount=v;
         else{cur.extras.moa=cur.extras.moa||{};cur.extras.moa[q]=v;}
@@ -4003,6 +4128,7 @@ function parseInvoicEdifact(raw){
       const s=inv.lines.reduce((a,l)=>a+(l.lineAmount||0),0);
       if(inv.lines.length)inv.totals.lineTotal=Math.round(s*100)/100;
     }
+    if(inv.extras.moa259!==null&&inv.extras.moa259!==undefined)inv.totals.charges=inv.extras.moa259;
     const trs=inv.extras.taxRateStyles;
     if(trs&&trs.line.length&&trs.summary.length){
       const lineStyles=new Set(trs.line),summaryStyles=new Set(trs.summary);
@@ -4317,6 +4443,12 @@ function parseInvoicBolXml(raw){
     /* header-orderreferentie (indien aanwezig) + scope-aware afleiding per regel */
     const hdrOrder=valOf(root,['OrderReference','ID']);
     if(hdrOrder)uniqPush(inv.headerOrders,hdrOrder);
+    /* BillingReference (header or line): the invoice a credit note
+       corrects, bol's UBL counterpart of RFF+IV. */
+    for(const br of root.getElementsByTagNameNS('*','BillingReference')){
+      const id=[...br.getElementsByTagNameNS('*','ID')].map(textOf).find(Boolean);
+      if(id)uniqPush(inv.invoiceRefs,id);
+    }
     finalizeInvoiceRefs(inv);
     inv.raw={xml:raw};
     return inv;
@@ -4613,7 +4745,8 @@ function uniformArithmeticGapText(g){
   const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
   return `<strong>${n} items show their stated line amount consistently at about ${pctTxt} of quantity × net price</strong>: one pattern, not ${n} separate gaps. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Looks like one uniform arrangement (e.g. an undisclosed discount or rebate) applied to every one of them, with nothing elsewhere in the message (no allowance/charge segment, no discount percentage) explaining it. This is a property of the message's own numbers, not something bol's transformation would introduce or could fix. Worth confirming with whoever generates this feed whether a ~${pctTxt} arrangement is intended, and if so, asking them to send it as its own discount/allowance rather than folding it into the line amount.`);
 }
-/* EDIFACT summary MOA+131 ("total charges/allowances") vs. the ALC amounts
+/* EDIFACT summary MOA+131 ("total charges/allowances") and MOA+259 ("total
+   charges", the one bol's own INVOIC spec lists) vs. the ALC amounts
    the same message lists (message and line level). A real Supplier Juliett credit note
    stated MOA+131:3.38 while its seven line-level ALCs add up to 3.41 (one
    0.03 charge counted nowhere else either). A single-message observation,
@@ -4624,26 +4757,57 @@ function uniformArithmeticGapText(g){
    one (a percentage-only ALC can't be summed), magnitudes only (credit
    notes), and a match on charges − allowances, charges + allowances or
    either way round of signs counts. Tolerance: just over one cent. */
+/* Credit note (EDIFACT BGM+381, or bol's UBL InvoiceTypeCode 2) that
+   doesn't name the invoice it corrects (RFF+IV / OI / ACW, UBL
+   BillingReference). Info: whether a reference is required depends on the
+   arrangement with the supplier. Only the two dialects with an explicit
+   type flag (the other XML dialects only have the sign of the total). */
+function creditNoteWithoutInvoiceRef(inv){
+  if(!inv)return false;
+  const credit=(inv.source==='EDIFACT'&&inv.extras&&inv.extras.bgmCode==='381')||(inv.source==='bol XML (UBL)'&&inv.docType==='credit');
+  return credit&&!(inv.invoiceRefs&&inv.invoiceRefs.length);
+}
+function creditNoteRefText(seg){
+  return `<strong>Credit note without a reference to the original invoice</strong> <span class="seg">(${esc(seg)})</span>`+moreInfo(`A credit note usually names the invoice it corrects (RFF+IV in EDIFACT, BillingReference in bol's UBL). This one doesn't, so the message itself doesn't say which invoice it relates to. Whether that's needed depends on the arrangement with this supplier; worth knowing when matching the credit note to an invoice.`);
+}
+function creditNoteRefSeg(inv){return inv.source==='EDIFACT'?'RFF+IV':'BillingReference';}
 function invoiceChargeTotalIssue(inv){
   if(!inv||inv.source!=='EDIFACT')return null;
-  const stated=inv.extras&&inv.extras.moa131;
-  if(stated===null||stated===undefined)return null;
+  const ex=inv.extras||{};
+  const stated=[['MOA+131',ex.moa131],['MOA+259',ex.moa259]].filter(([,v])=>v!==null&&v!==undefined);
+  if(!stated.length)return null;
   const alcs=[...(inv.charges||[]),...inv.lines.flatMap(l=>l.charges||[])];
   if(!alcs.length||alcs.some(c=>c.amount===null||c.amount===undefined))return null;
   const sumOf=k=>Math.round(alcs.filter(c=>c.kind===k).reduce((s,c)=>s+c.amount,0)*100)/100;
   const ch=sumOf('charge'),al=sumOf('allowance');
   const cands=[ch-al,ch+al,Math.abs(ch)+Math.abs(al),Math.abs(ch)-Math.abs(al)].map(v=>Math.abs(v));
+  // MOA+259 is "total charges": the charges alone fit too (generous: the
+  // charges/allowances combinations still count, in case it's used that way).
+  const cands259=[Math.abs(ch),...cands];
   const TOL=0.015;
-  if(cands.some(v=>Math.abs(v-Math.abs(stated))<TOL))return null;
-  const sum=Math.round((ch-al)*100)/100;
-  return {stated,sum,charges:ch,allowances:al,hasCharges:alcs.some(c=>c.kind==='charge'),hasAllowances:alcs.some(c=>c.kind==='allowance'),n:alcs.length};
+  const off=stated.filter(([seg,v])=>!(seg==='MOA+259'?cands259:cands).some(c=>Math.abs(c-Math.abs(v))<TOL));
+  if(!off.length)return null;
+  // One finding at most: when both totals are off they are named in the
+  // same finding, never two.
+  const only259=off.every(([seg])=>seg==='MOA+259');
+  const sum=only259?ch:Math.round((ch-al)*100)/100;
+  return {stated:off[0][1],statedList:off.map(([seg,v])=>({seg,v})),segs:off.map(([seg])=>seg),only259,sum,charges:ch,allowances:al,hasCharges:alcs.some(c=>c.kind==='charge'),hasAllowances:alcs.some(c=>c.kind==='allowance'),n:alcs.length};
 }
 function invoiceChargeTotalText(issue,cur,jumpCall){
   const a=v=>fmtAmt(Math.abs(v),cur);
-  const st=jumpCall?`<span class="clickable-val" onclick="${jumpCall('MOA+131')}">${esc(a(issue.stated))}</span>`:esc(a(issue.stated));
-  const parts=issue.hasCharges&&issue.hasAllowances?` (charges ${esc(a(issue.charges))}, allowances ${esc(a(issue.allowances))})`:'';
-  const diff=fmtAmt(Math.abs(Math.abs(issue.stated)-Math.abs(issue.sum)),cur);
-  return `<strong>Total charges/allowances</strong> <span class="seg">(MOA+131)</span> <strong>differs from the ALC amounts</strong>: stated ${st}, the ALC segments add up to <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary MOA+131 states the total of the message's charges and allowances. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure, ${esc(diff)} apart. The payable, taxable and line amounts are separate figures and are compared on their own. Which of the two is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
+  const list=issue.statedList||[{seg:'MOA+131',v:issue.stated}];
+  const segs=list.map(x=>x.seg);
+  const val=x=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(x.seg)}">${esc(a(x.v))}</span>`:esc(a(x.v));
+  const sameVal=list.every(x=>Math.abs(Math.abs(x.v)-Math.abs(list[0].v))<0.005);
+  const st=sameVal?val(list[0]):list.map(x=>`${val(x)} (${esc(x.seg)})`).join(' and ');
+  const parts=!issue.only259&&issue.hasCharges&&issue.hasAllowances?` (charges ${esc(a(issue.charges))}, allowances ${esc(a(issue.allowances))})`:'';
+  const diff=fmtAmt(Math.abs(Math.abs(list[0].v)-Math.abs(issue.sum)),cur);
+  if(segs.length===1&&segs[0]==='MOA+131'){
+    return `<strong>Total charges/allowances</strong> <span class="seg">(MOA+131)</span> <strong>differs from the ALC amounts</strong>: stated ${st}, the ALC segments add up to <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary MOA+131 states the total of the message's charges and allowances. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure, ${esc(diff)} apart. The payable, taxable and line amounts are separate figures and are compared on their own. Which of the two is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
+  }
+  const label=issue.only259?'Total charges':'Total charges/allowances';
+  const what=issue.only259?'the charge ALC segments add up to':'the ALC segments add up to';
+  return `<strong>${label}</strong> <span class="seg">(${esc(segs.join(', '))})</span> <strong>differs from the ALC amounts</strong>: stated ${st}, ${what} <code>${esc(a(issue.sum))}</code>${parts}.`+moreInfo(`The summary ${esc(segs.join(' and '))} state${segs.length===1?'s':''} the total of the message's ${issue.only259?'charges':'charges and allowances'}. The ${issue.n} ALC amount${issue.n===1?'':'s'} in this message (message and line level) add up to a different figure${sameVal?`, ${esc(diff)} apart`:''}. MOA+259 is "total charges" and MOA+131 "total charges/allowances"; both are checked against the same ALC amounts. The payable, taxable and line amounts are separate figures and are compared on their own. Which figure is intended can't be told from the message itself; worth checking with whoever produces this feed.`);
 }
 /* qty × net price vs. line amount for every line of one invoice: the ONE
    helper behind both Quick check and Compare (per side). Per line, never
@@ -4918,11 +5082,11 @@ function compareInvoice(sup,bol){
   perSideOnce(add,sup,bol,(f,label,a)=>taxIssueFindings(f.taxIssues).forEach(t=>a('warn',`${label} — ${t}`,'message')),invJump);
   perSideOnce(add,sup,bol,(f,label,a)=>{if(f.taxRateEncodingMismatch)a('warn',`${label} — ${taxRateEncodingMismatchText()}`,'message');},invJump);
   perSideOnce(add,sup,bol,(f,label,a,j)=>illegalTextCharFindings(f.illegalTextChars,j).forEach(t=>a('warn',`${label} — ${t}`,'message')),invJump);
-  // MOA+131 vs the ALC amounts: one side's own numbers, per side, once when
-  // bol's output carries the same (only EDIFACT states MOA+131).
+  // MOA+131 / MOA+259 vs the ALC amounts: one side's own numbers, per side,
+  // once when bol's output carries the same (only EDIFACT states them).
   {
     const si=invoiceChargeTotalIssue(sup),bi=invoiceChargeTotalIssue(bol);
-    const sig=i=>i?`${Math.abs(i.stated).toFixed(2)}|${Math.abs(i.sum).toFixed(2)}`:'';
+    const sig=i=>i?`${(i.segs||[]).join(',')}|${Math.abs(i.stated).toFixed(2)}|${Math.abs(i.sum).toFixed(2)}`:'';
     if(si&&bi&&sig(si)===sig(bi))add('warn','Supplier (passed on unchanged to bol) — '+invoiceChargeTotalText(si,cur,v=>`jumpToInvSource('both',${jsQuote(v)})`),'message');
     else{
       if(si)add('warn','Supplier — '+invoiceChargeTotalText(si,cur,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`),'message');
@@ -4930,6 +5094,18 @@ function compareInvoice(sup,bol){
     }
   }
   perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=gs1CheckDigitFinding(gs1CheckDigitIssues(f.lines.map(l=>l.gtin),[]),j);if(t)a('warn',`${label} — ${t}`,'message');},invJump);
+  // Credit note without a reference to the original invoice. bol's side is
+  // only named together with the supplier's: whether bol's UBL is expected
+  // to carry a BillingReference isn't confirmed, so the supplier sending
+  // RFF+IV and bol's output having none is shown in Invoice details
+  // ("Original invoice"), not as a finding (rule 3).
+  {
+    const sNo=creditNoteWithoutInvoiceRef(sup),bNo=creditNoteWithoutInvoiceRef(bol);
+    if(sNo&&bNo)add('info',PASSED_ON_LABEL+' — '+creditNoteRefText([...new Set([creditNoteRefSeg(sup),creditNoteRefSeg(bol)])].join(' / ')),'message');
+    else if(sNo)add('info','Supplier — '+creditNoteRefText(creditNoteRefSeg(sup)),'message');
+  }
+  // UNB sender vs NAD+SU: the supplier side only (bol's UBL has no UNB).
+  checkUnbSender(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
   // Blank LIN segments and no order number anywhere: single-message checks
   // ORDRSP/DESADV already run (parity rule), per side here.
   perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — `+invoiceBlankLinText(f.blankLinCount),'message');},invJump);
@@ -4996,6 +5172,12 @@ function compareInvoice(sup,bol){
   }
   hrow('Packing reference(s)',sup.despatchNotes.join(', ')||null,bol.despatchNotes.join(', ')||null,{cmp:()=>sameSet(sup.despatchNotes,bol.despatchNotes)});
   hrow('Delivery date',showDate(sup.deliveryDate),showDate(bol.deliveryDate),{soft:true});
+  // The invoice a credit note corrects (RFF+IV / BillingReference). Shown,
+  // not flagged: a soft row. (The UNB sender isn't a row here: bol's UBL
+  // never has one, so it would be a one-sided row on every invoice; it is in
+  // each side's overview instead.)
+  if(sup.invoiceRefs.length||bol.invoiceRefs.length)
+    hrow('Original invoice',sup.invoiceRefs.join(', ')||null,bol.invoiceRefs.join(', ')||null,{soft:true,cmp:()=>sameSet(sup.invoiceRefs,bol.invoiceRefs)});
   ['SU','BY','IV','DP'].forEach(role=>{
     const s=sup.parties[role],b=bol.parties[role];
     if(!s&&!b)return;
@@ -5548,6 +5730,8 @@ function invoiceOverviewHtml(inv,opts={}){
   if(inv.paymentTerms.days!==null)f.push(fieldHtml('Payment term',inv.paymentTerms.days+' days'));
   if(inv.paymentTerms.pct!==null)f.push(fieldHtml('Payment discount',inv.paymentTerms.pct+' %',inv.paymentTerms.amount!==null?fmtAmt(inv.paymentTerms.amount,cur):''));
   if(inv.taxRates.length)f.push(fieldHtml('VAT rate',inv.taxRates.join(', ')+' %'));
+  if(inv.invoiceRefs&&inv.invoiceRefs.length)f.push(fieldHtml('Original invoice',inv.invoiceRefs.map(r=>`<span class="clickable-val" onclick="${jumpCall(r)}">${esc(r)}</span>`).join(', ')+` <span class="seg">${inv.source==='EDIFACT'?'RFF+IV':'BillingReference'}</span>`,null,true));
+  if(inv.unb&&inv.unb.sender)f.push(fieldHtml('Sent by',`<span class="clickable-val" onclick="${jumpCall(inv.unb.sender)}">${esc(inv.unb.sender)}</span> <span class="seg">UNB</span>`,null,true));
   f.push(fieldHtml('Number of lines',inv.lines.length||null));
   const fh=f.filter(Boolean).join('');
 
@@ -5587,8 +5771,12 @@ function invoiceOverviewHtml(inv,opts={}){
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn','<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
-  // MOA+131 vs the ALC amounts (EDIFACT only), same check as Compare.
+  // MOA+131 / MOA+259 vs the ALC amounts (EDIFACT only), same check as Compare.
   {const ci=invoiceChargeTotalIssue(inv);if(ci)qcAdd('warn',invoiceChargeTotalText(ci,cur,jumpCall));}
+  // Credit note without a reference to the original invoice, and the UNB
+  // sender vs NAD+SU: same checks as Compare.
+  if(creditNoteWithoutInvoiceRef(inv))qcAdd('info',creditNoteRefText(creditNoteRefSeg(inv)));
+  checkUnbSender(inv,'',qcAdd,jumpCall);
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -5705,6 +5893,8 @@ function factsOverviewHtml(facts){
     if(noSscc)checkNoSsccAnywhere(facts,'This message',qcAdd,jumpCall);
     checkPalletStructure(facts,'This message',qcAdd,jumpCall,{skipNoSscc:noSscc});
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
+    checkConsignmentPalletCount(facts,'',qcAdd,jumpCall);
+    checkNoExpectedDelivery(facts,'',qcAdd);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
     const pacCovered=checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
     checkSsccLength(facts,'This message',qcAdd,jumpCall,pacCovered);
@@ -5733,6 +5923,7 @@ function factsOverviewHtml(facts){
   if(lineChecks)checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
   if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
+  checkUnbSender(facts,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).
   let wcNotices=[];
@@ -5805,6 +5996,7 @@ function factsOverviewHtml(facts){
     if(facts.deliveryNoteRefs&&facts.deliveryNoteRefs.length)f.push(fieldHtml('Despatch note reference',facts.deliveryNoteRefs.map(r=>clickField(r)).join(', ')+` <span class="seg">${esc(packRefRffQual(facts))}</span>`,null,true));
     else if(!facts.docNumber&&!facts.billOfLadingRef)f.push(fieldHtml('Packing reference','Not found in this message',null,false));
   }
+  if(facts.unb&&facts.unb.sender)f.push(fieldHtml('Sent by',clickField(facts.unb.sender)+' <span class="seg">UNB</span>',null,true));
   f.push(fieldHtml('Number of lines',facts.lines.length||null));
   // Distinct SSCCs: a message can repeat one SSCC across several CPS groups
   // (one group per article), which is still one pallet.
@@ -6981,7 +7173,7 @@ function renderInvoiceCompare(res,notes){
   h+=res.hdr.map(r=>{
     const oneSide=(r.sup==null||r.sup==='')!==(r.bol==null||r.bol==='');
     const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():(r.status==='na'?pillNA():(oneSide&&!r.infoText?pillOneSide():pillInfo())));
-    const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label.endsWith('(GLN)')||r.label.endsWith('(VAT)'));
+    const clickable=(r.label==='Order(s)'||r.label==='Packing reference(s)'||r.label==='Original invoice'||r.label.endsWith('(GLN)')||r.label.endsWith('(VAT)'));
     const isOrderRow=r.label==='Order(s)';
     const supTxt=r.sup??'—',bolTxt=r.bol??'—';
     const supFirst=String(r.sup??'').split(',')[0].trim(),bolFirst=String(r.bol??'').split(',')[0].trim();

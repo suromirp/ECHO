@@ -82,3 +82,19 @@ test('ORDERS with a DTM+2 only on the lines shows that date in the overview, mar
   expect(headers.map(h => h.toLowerCase())).toEqual(['#', 'ean', 'ordered', 'requested delivery', 'net price']);
   await expect(page.locator('#quickLinesTable .dim')).toHaveCount(0);
 });
+
+// An ORDERS is sent by the buyer, so its UNB sender is compared with
+// NAD+BY. bol's own ORDERS (UNB sender = NAD+BY) is silent.
+test('ORDERS: a UNB sender other than the buyer is an info note; the buyer itself is silent', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(__dirname, '..', 'fixtures', 'orders', 'unb-sender-differs.edi'));
+  const qc = page.locator('#quickOverview ul.findings > li', { hasText: 'Sent from a different GLN than the buyer in the message' });
+  await expect(qc).toHaveCount(1);
+  await expect(qc).toHaveClass(/f-info/);
+  await expect(qc).toContainText('NAD+BY');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(__dirname, '..', 'fixtures', 'orders', 'unb-from-buyer.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toHaveText('ORDERS');
+  await expect(page.locator('#quickOverview')).not.toContainText('Sent from a different GLN');
+});
