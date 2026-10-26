@@ -188,6 +188,14 @@
   .verdict .vtitle{font-size:16px;font-weight:700;margin:0 0 2px;}
   .verdict.ok .vtitle{color:var(--ok);}.verdict.warn .vtitle{color:var(--warn);}.verdict.err .vtitle{color:var(--err);}
   .verdict .vsub{font-size:13px;color:var(--text-dim);line-height:1.45;}
+  /* headline (descriptive) → playful line (small) → "Where to look" (which
+     findings section to read first, derived from the findings' cat) */
+  .verdict .vplay{font-size:12.5px;color:var(--text-dim);font-style:italic;margin:1px 0 7px;}
+  .verdict .vwhere{font-size:13.5px;color:var(--text);line-height:1.5;}
+  .verdict .vwhere a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
+  .search-bar{margin:0 0 12px;}
+  .wc-group{margin-top:4px;}
+  .wc-cat{display:block;padding:14px 2px 6px;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:700;}
 
   .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px;}
   .stat{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;}
@@ -265,7 +273,7 @@
   details.wc-item>summary{list-style:none;cursor:pointer;padding:9px 12px;font-size:13px;line-height:1.45;display:flex;gap:9px;align-items:flex-start;background:none;border:none;color:var(--text);font-weight:400;}
   details.wc-item>summary::-webkit-details-marker{display:none;}
   details.wc-item>summary::before{content:none;}
-  .wc-ic{flex:none;margin-top:1px;}
+  .wc-ic{flex:none;margin-top:1px;color:var(--warn);font-weight:700;}
   .wc-title{font-weight:600;}
   .wc-body{padding:0 12px 12px 33px;}
   .wc-detail{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
@@ -402,6 +410,7 @@
         <div><span class="fi" style="color:var(--err)">⚠</span><span>Check this first.</span></div>
         <div><span class="fi" style="color:var(--warn)">!</span><span>Worth a closer look — not necessarily an error.</span></div>
         <div><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
+        <div><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim)">Worth checking</span><span>Findings group for a pattern that stands out from the rest of one message's lines, marked <span style="color:var(--warn);font-weight:700">!</span>. Not necessarily wrong; not counted in the verdict.</span></div>
         <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
     </details>
@@ -494,9 +503,28 @@
     <div id="results" class="hidden">
       <div id="factsBanners"></div>
       <div id="verdict"></div>
+      <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
+
+      <div class="panel" id="findingsPanel">
+        <h2>Findings</h2>
+        <ul class="findings" id="findings"></ul>
+        <div class="wc-group hidden" id="wcPanel">
+          <div class="findings-cat wc-cat" id="cfc-wc" title="ECHO noticed a pattern in one message that stands out from the rest of its lines — not necessarily wrong.">Worth checking</div>
+          <div class="wc-list" id="wcBody"></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="copyReportBtn">Copy report</button>
+          <button class="btn" id="copyTransusBtn" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal" onclick="copyTransusClick(this)">Copy for Transus</button>
+          <span class="lang-switch" role="group" aria-label="Report language">
+            <button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button>
+            <button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button>
+          </span>
+        </div>
+        <div id="eanBlockArea"></div>
+      </div>
+
       <div class="strip" id="strip"></div>
       <div id="hdrFields"></div>
-      <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
       <div class="panel" id="togglePanel">
         <div class="toggle-bar">
@@ -511,33 +539,14 @@
         <div class="actions"><button class="btn" id="copySummaryBtn" title="A short, high-level summary of accept/cancel/amendment — separate from the full findings report">Copy summary</button></div>
       </div>
 
-      <div class="panel" id="searchPanel">
-        <input type="search" id="resultSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search EAN, order, SSCC or article code…" oninput="applyResultSearch()">
+      <div class="search-bar" id="searchPanel">
+        <input type="search" id="resultSearchInput" class="mini-input" style="width:100%;box-sizing:border-box;" placeholder="Search the tables below: EAN, order, SSCC or article code…" oninput="applyResultSearch()">
         <div class="note-inline" id="resultSearchNote"></div>
       </div>
 
       <div class="panel hidden" id="backorderPanel">
         <h2>Amendment details</h2>
         <div id="backorderBody"></div>
-      </div>
-
-      <div class="panel">
-        <h2>Findings</h2>
-        <ul class="findings" id="findings"></ul>
-        <div class="actions">
-          <button class="btn" id="copyReportBtn">Copy report</button>
-          <button class="btn" id="copyTransusBtn" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal" onclick="copyTransusClick(this)">Copy for Transus</button>
-          <span class="lang-switch" role="group" aria-label="Report language">
-            <button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button>
-            <button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button>
-          </span>
-        </div>
-        <div id="eanBlockArea"></div>
-      </div>
-
-      <div class="panel hidden" id="wcPanel">
-        <h2 title="ECHO noticed something unusual — not necessarily wrong.">Worth checking 👁</h2>
-        <div class="wc-list" id="wcBody"></div>
       </div>
 
       <div class="panel">
@@ -2556,7 +2565,9 @@ function headerFieldsHtml(sup,bol,type){
   }).join('');
   if(!shown)return '';
   const sum=differ?`<span class="dim">(${differ} differ${differ===1?'s':''})</span>`:'<span class="dim">(all shared fields match)</span>';
-  return `<details class="hdr-fields"${differ?' open':''}><summary>Header fields ${sum}</summary><table class="hdr-tbl"><thead><tr><th>Field</th><th>Supplier</th><th>bol</th><th></th></tr></thead><tbody>${body}</tbody></table></details>`;
+  // Collapsed by default (layout: findings first, tables below); the
+  // summary line says how many fields differ.
+  return `<details class="hdr-fields"><summary>Header fields ${sum}</summary><table class="hdr-tbl"><thead><tr><th>Field</th><th>Supplier</th><th>bol</th><th></th></tr></thead><tbody>${body}</tbody></table></details>`;
 }
 
 /* Despatch date (DTM+11) and expected delivery date (DTM+132) compared
@@ -3053,7 +3064,7 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
   if(!notices.length)return '';
   return notices.map(n=>{
     const affected=n.affected.map(a=>`<li><span class="clickable-val" onclick="${jumpCall(a.jump)}">${esc(a.label)}</span></li>`).join('');
-    return `<details class="wc-item"><summary><span class="wc-ic">👁</span><span class="wc-title">${sideLabel?esc(sideLabel)+' — ':''}${n.title}</span></summary>
+    return `<details class="wc-item"><summary><span class="wc-ic">!</span><span class="wc-title">${sideLabel?esc(sideLabel)+' — ':''}${n.title}</span></summary>
       <div class="wc-body"><div class="wc-detail">${n.detail}</div><ul class="wc-affected">${affected}</ul></div>
     </details>`;
   }).join('');
@@ -3426,16 +3437,16 @@ function compare(bol,sup){
   bol.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].bol++;});
   sup.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].sup++;});
 
-  // The headline verdict is about the transformation, so only Transformation
-  // differences (cat 'diff') can make it "lost in translation". A Message
-  // check, even at err level (no PAC, RFF+BM too long, an ORDRSP action
-  // rule), is about one side's own message: it gives the calmer "mapping is
-  // correct, see Message checks" verdict instead (rule 7). render() picks
-  // the wording from verdict + whether a diff issue exists.
+  // The headline is about the transformation, so only Transformation
+  // differences (cat 'diff') can make it say bol's output differs ("lost in
+  // translation"). A Message check, even at err level (no PAC, RFF+BM too
+  // long, an ORDRSP action rule), is about one side's own message: the
+  // headline says the mapping looks right and points at Message checks
+  // (rule 7), but the icon still shows its level. See verdictModel().
   const isDiff=f=>(f.cat||'diff')==='diff';
-  let verdict='ok';
-  if(findings.some(f=>isDiff(f)&&f.level==='err'))verdict='err';
-  else if(findings.some(f=>f.level==='err'||f.level==='warn'))verdict='warn';
+  // Worst level among err/warn findings of any cat (an err Message check
+  // never hides behind "!"); the wording comes from verdictModel().
+  const verdict=findings.some(f=>f.level==='err')?'err':(findings.some(f=>f.level==='warn')?'warn':'ok');
   if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+(supHasAnyOrder&&bolHasAnyOrder?', order numbers':'')+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
@@ -5232,6 +5243,106 @@ function partyHtml(role,p,jumpCall){
   return `<div class="party"><div class="role">${esc(NAD_ROLE[role]||role)}</div>${bits.join('')}</div>`;
 }
 
+/* ---- Findings list + verdict, shared by Compare (ORDRSP/DESADV and
+   INVOIC) and, for the summary line, Quick check. One place for the icons,
+   the section order and the "Where to look" wording, so the three result
+   views can't drift apart (docs/ui-conventions.md). */
+const F_ICON={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
+const F_ORDER={err:0,warn:1,info:2,ok:3};
+const FINDING_CATS=[
+  {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
+  {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
+  {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
+];
+function findingLiHtml(f){return `<li class="f-${f.level}"><span class="fi">${F_ICON[f.level]||''}</span><span>${f.text}</span></li>`;}
+/* idPrefix gives each section heading an id ("cfc-diff"), which the
+   verdict's "Where to look" links scroll to. */
+function findingsListHtml(findings,idPrefix){
+  let fh='';
+  FINDING_CATS.forEach(c=>{
+    const items=findings.filter(f=>(f.cat||'diff')===c.key).sort((a,b)=>F_ORDER[a.level]-F_ORDER[b.level]);
+    if(!items.length)return;
+    fh+=`<li class="findings-cat" id="${idPrefix}-${c.key}" title="${esc(c.hint)}">${esc(c.title)}</li>`;
+    fh+=items.map(findingLiHtml).join('');
+  });
+  return fh;
+}
+function scrollToFindingsSection(id){
+  const el=document.getElementById(id);
+  if(el&&typeof el.scrollIntoView==='function')el.scrollIntoView({behavior:'smooth',block:'start'});
+  return false;
+}
+/* Which message a finding is about. Findings name their side in a label
+   prefix ("Supplier — ", "Bol — ", "Supplier (passed on unchanged to bol)
+   — ", "Neither message …"); f.side wins when a check sets it itself. */
+function findingSide(f){
+  if(f.side)return f.side;
+  const t=stripHtml(f.text).slice(0,80);
+  if(/^Supplier and bol\b/i.test(t)||/^Neither\b/.test(t))return 'both';
+  if(/^Supplier\b/.test(t))return 'sup';
+  if(/^Bol\b/.test(t))return 'bol';
+  return null;
+}
+/* The verdict (CLAUDE.md taxonomy, docs/ui-conventions.md "Verdict"):
+   - level/icon: the worst level among the err/warn findings, whatever their
+     cat — an err Message check never hides behind an orange "!";
+   - headline: descriptive. Only Transformation differences (cat 'diff')
+     can make it say bol's output differs; Message checks alone say the
+     mapping looks right and which message needs a look (rule 7);
+   - play: the playful line (subtitle), "Loud and clear" / "Almost in sync"
+     / "Something got lost in translation" (the last only for cat 'diff');
+   - where: one line pointing at the section to read first.
+   opts.kind: 'facts' (ORDRSP/DESADV) or 'invoice'; opts.prefix: the
+   section-heading id prefix; opts.wcCount: Worth-checking patterns. */
+function verdictModel(findings,opts){
+  const o=opts||{};
+  const inv=o.kind==='invoice';
+  const acting=findings.filter(f=>f.level==='err'||f.level==='warn');
+  const diffs=acting.filter(f=>(f.cat||'diff')==='diff');
+  const msgs=acting.filter(f=>f.cat==='message');
+  const infos=findings.filter(f=>f.level==='info');
+  const level=acting.some(f=>f.level==='err')?'err':(acting.length?'warn':'ok');
+  const supN=inv?'the supplier invoice':'the supplier message';
+  const bolN=inv?"bol's invoice":"bol's output";
+  const sides=new Set(msgs.map(findingSide).map(s=>s||'sup'));
+  const msgWhere=sides.has('both')||(sides.has('sup')&&sides.has('bol'))
+    ?'in both messages themselves'
+    :(sides.has('bol')?`in ${bolN} itself`:`in ${supN} itself`);
+  const pl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+  const link=(key,label)=>`<a href="#" onclick="return scrollToFindingsSection('${o.prefix||'cfc'}-${key}')">${label}</a>`;
+  let title,play,where,quipLevel;
+  if(diffs.length){
+    title=`${inv?"bol's invoice":"bol's output"} differs from ${supN}`;
+    play=diffs.some(f=>f.level==='err')?'Something got lost in translation.':'Almost in sync.';
+    quipLevel=diffs.some(f=>f.level==='err')?'err':'warn';
+    where=`${link('diff','Transformation differences')} (${diffs.length}) — values that changed between ${supN} and ${bolN}, so a mapping question. "Copy for Transus" collects them.`
+      +(msgs.length?` Also ${pl(msgs.length,'message check')} ${msgWhere}.`:'');
+  }else if(msgs.length){
+    title=`The mapping looks right; ${msgWhere==='in both messages themselves'?'both messages have':(sides.has('bol')?`${bolN} has`:`${supN} has`)} something worth a look`;
+    play='Almost in sync.';
+    quipLevel='warn';
+    where=`${link('message','Message checks')} (${msgs.length}) — ${msgWhere}, not in the mapping. Nothing here for Transus.`;
+  }else{
+    title=`${inv?"bol's invoice":"bol's output"} matches ${supN}`;
+    play='Loud and clear.';
+    quipLevel='ok';
+    const ref=[];
+    const msgInfo=infos.filter(f=>f.cat==='message').length,catInfo=infos.length-msgInfo;
+    if(msgInfo)ref.push(`${link('message','Message checks')} (${msgInfo})`);
+    if(catInfo)ref.push(`${link('info','Good to know')} (${catInfo})`);
+    where='Nothing to act on.'+(ref.length?` ${ref.join(' and ')} ${ref.length===1&&infos.length===1?'is':'are'} there for reference.`:'');
+  }
+  if(o.wcCount)where+=` ${link('wc','Worth checking')} lists ${pl(o.wcCount,'pattern')} that stand${o.wcCount===1?'s':''} out — not necessarily wrong.`;
+  return {level,title,play,where,quipLevel};
+}
+function verdictInnerHtml(m,hasWC){
+  return `<div class="icon">${F_ICON[m.level]}</div><div><div class="vtitle">${esc(m.title.charAt(0).toUpperCase()+m.title.slice(1))}</div><div class="vplay">${esc(m.play)}</div><div class="vwhere"><strong>Where to look:</strong> ${m.where}</div>${quipHtml(m.quipLevel,hasWC)}</div>`;
+}
+/* "Worth checking" as its own small group inside the Findings panel. */
+function worthCheckingGroupHtml(inner,id){
+  if(!inner)return '';
+  return `<div class="wc-group"><div class="findings-cat wc-cat"${id?` id="${id}"`:''} title="ECHO noticed a pattern in one message that stands out from the rest of its lines — not necessarily wrong.">Worth checking</div><div class="wc-list">${inner}</div></div>`;
+}
 /* Quick check's Findings list, shared by the INVOIC overview: same markup,
    order and icons as ORDRSP/DESADV Quick check (⚠ err, ! warn, ⓘ info,
    ✓ ok — docs/ui-conventions.md). When the findings carry a cat, they are
@@ -5798,22 +5909,6 @@ function render(result,bol,sup,notes){
   const notesPanel=document.getElementById('factsNotesPanel');
   if(notes&&notes.length){notesPanel.classList.remove('hidden');document.getElementById('factsNotes').innerHTML=notes.map(esc).join('<br>');}
   else{notesPanel.classList.add('hidden');document.getElementById('factsNotes').innerHTML='';}
-  // Whether the "worth a closer look" verdict is driven by an actual
-  // supplier ↔ bol mapping difference, or purely by a structural/data-quality
-  // note about the message itself (cat 'message') — these need very
-  // different follow-up from whoever's reading this, so the subtitle should
-  // say which one it is rather than a single generic "something to check".
-  // compare() only gives 'err' for a Transformation difference; a Message
-  // check alone gives 'warn' with the "mapping is correct" subtitle below.
-  const hasDiffIssue=result.findings.some(f=>(f.cat||'diff')==='diff'&&(f.level==='err'||f.level==='warn'));
-  const isD=result.type==='DESADV';
-  const vmap={ok:{i:'✓',t:'Loud and clear',s:isD?'All compared values and pallet mappings match.':'All compared values match between the supplier message and bol output.'},
-    warn:{i:'!',t:'Almost in sync',s:hasDiffIssue
-      ?'The compared values mostly match, but ECHO found something worth a closer look — see Transformation differences below.'
-      :(isD?(result.ssccResult.onlyBol.length||result.ssccResult.onlySup.length?'No transformation differences found.':'The transformation and pallet mappings match.'):'The mapping itself is correct — nothing to fix there.')+' ECHO noticed something worth checking in the message data itself — see Message checks below.'},
-    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences between the supplier message and bol output — see Transformation differences below.'}};
-  const v=vmap[result.verdict];
-  document.getElementById('verdict').className='verdict '+result.verdict;
   // Worth-checking is computed once here (moved up from further below) so both
   // the signal reaction/quip and the "Worth checking" panel can reuse it.
   let wcSup=[],wcBol=[];
@@ -5839,8 +5934,13 @@ function render(result,bol,sup,notes){
     wcBol=dropAlreadyFlagged(detectWorthChecking(bol.lines,wcCfg));
   }
   const hasWC=wcSup.length>0||wcBol.length>0;
-  echoSignalReact(echoReactionFor(result.verdict,hasWC));
-  document.getElementById('verdict').innerHTML=`<div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(result.verdict,hasWC)}</div>`;
+  // Verdict: descriptive headline, the playful line as subtitle, and a
+  // "Where to look" line derived from the findings' cat (verdictModel).
+  const vm=verdictModel(result.findings,{kind:'facts',prefix:'cfc',wcCount:wcSup.length+wcBol.length});
+  echoSignalReact(echoReactionFor(vm.quipLevel==='err'?'err':vm.level,hasWC));
+  const verdictEl=document.getElementById('verdict');
+  verdictEl.className='verdict '+vm.level;
+  verdictEl.innerHTML=verdictInnerHtml(vm,hasWC);
 
   const st=result.stats;const strip=[];
   strip.push(`<div class="stat"><div class="l">Type</div><div class="v">${result.type||'?'}</div></div>`);
@@ -5966,39 +6066,19 @@ function render(result,bol,sup,notes){
     backorderPanel.classList.add('hidden');
   }
 
-  // findings
-  const order={err:0,warn:1,info:2,ok:3};
-  const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
-  if(result.type==='DESADV'||result.type==='ORDRSP'){
-    // Split findings into three plain-language buckets so a preserved
-    // transformation and a supplier-message observation never blur together.
-    const cats=[
-      {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
-      {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
-      {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
-    ];
-    let fh='';
-    cats.forEach(c=>{
-      const items=result.findings.filter(f=>(f.cat||'diff')===c.key).sort((a,b)=>order[a.level]-order[b.level]);
-      if(!items.length)return;
-      fh+=`<li class="findings-cat" title="${esc(c.hint)}">${esc(c.title)}</li>`;
-      fh+=items.map(f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
-    });
-    document.getElementById('findings').innerHTML=fh;
-  }else{
-    const fs=[...result.findings].sort((a,b)=>order[a.level]-order[b.level]);
-    document.getElementById('findings').innerHTML=fs.map(f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
-  }
+  // findings: Message checks / Transformation differences / Good to know
+  document.getElementById('findings').innerHTML=findingsListHtml(result.findings,'cfc');
 
   // "Worth checking" — run once per side, since these are single-message
   // pattern observations, not a supplier-vs-bol comparison
+  // Shown as its own small group at the bottom of the Findings panel.
   const wcPanel=document.getElementById('wcPanel');
   if(result.type==='ORDRSP'||result.type==='DESADV'){
     const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToFactsSource('sup',${jsQuote(v)})`)
       +worthCheckingHtml('Bol',wcBol,v=>`jumpToFactsSource('bol',${jsQuote(v)})`);
-    if(wcHtml){wcPanel.classList.remove('hidden');document.getElementById('wcBody').innerHTML=wcHtml;}
-    else wcPanel.classList.add('hidden');
-  }else wcPanel.classList.add('hidden');
+    document.getElementById('wcBody').innerHTML=wcHtml;
+    wcPanel.classList.toggle('hidden',!wcHtml);
+  }else{wcPanel.classList.add('hidden');document.getElementById('wcBody').innerHTML='';}
 
   // "Copy for Transus" — a plain, non-technical report limited to findings
   // that reflect the supplier → bol mapping itself (cat 'diff'), since those
@@ -6620,17 +6700,14 @@ function renderInvoiceCompare(res,notes){
   const box=document.getElementById('invoiceResults');
   box.classList.remove('hidden');
   const cur=res.stats.currency;
-  const vmap={ok:{i:'✓',t:'Loud and clear',s:'All compared values match between the supplier invoice and bol output.'},
-    warn:{i:'!',t:'Almost in sync',s:'The main invoice details match, but ECHO found something worth a closer look.'},
-    err:{i:'⚠',t:'Something got lost in translation',s:'ECHO found differences in invoice details, lines, charges or totals. See findings.'}};
-  const v=vmap[res.verdict];
 
   /* "Worth checking" — computed here (rather than further below) so both the
      signal reaction/quip and the panel further down can reuse it. */
   const wcSup=detectWorthChecking(res.sup.lines,wcConfigInvoic());
   const wcBol=detectWorthChecking(res.bol.lines,wcConfigInvoic());
   const hasWC=wcSup.length>0||wcBol.length>0;
-  echoSignalReact(echoReactionFor(res.verdict,hasWC));
+  const vm=verdictModel(res.findings,{kind:'invoice',prefix:'ifc',wcCount:wcSup.length+wcBol.length});
+  echoSignalReact(echoReactionFor(vm.level,hasWC));
 
   // Copy for Transus (both languages) + quick EAN overview — computed up
   // front so the HTML string below can just call copyBlocksHtml().
@@ -6646,7 +6723,15 @@ function renderInvoiceCompare(res,notes){
   h+=concatenatedXmlBannerHtml(res.bol);
   h+=illegalXmlCharsBannerHtml(res.sup);
   h+=illegalXmlCharsBannerHtml(res.bol);
-  h+=`<div class="verdict ${res.verdict}"><div class="icon">${v.i}</div><div><div class="vtitle">${v.t}</div><div class="vsub">${v.s}</div>${quipHtml(res.verdict,hasWC)}</div></div>`;
+  h+=`<div class="verdict ${vm.level}" id="invVerdict">${verdictInnerHtml(vm,hasWC)}</div>`;
+  if(notes&&notes.length)h+=`<div class="panel"><div class="note-inline">${notes.map(esc).join('<br>')}</div></div>`;
+
+  /* findings first (same three sections as ORDRSP/DESADV), Worth checking
+     as its own small group inside the same panel */
+  const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
+    +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
+  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${findingsListHtml(res.findings,'ifc')}</ul>${worthCheckingGroupHtml(wcHtml,'ifc-wc')}`;
+  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
 
   /* statistics */
   const st=res.stats;
@@ -6660,36 +6745,11 @@ function renderInvoiceCompare(res,notes){
     <div class="stat ${totDiff?'diff':'match'}"><div class="l">Totals</div><div class="v">${totDiff?'Difference':'Match'}</div></div>
   </div>`;
 
-  if(notes&&notes.length)h+=`<div class="panel"><div class="note-inline">${notes.map(esc).join('<br>')}</div></div>`;
-
-  /* findings — split into the same three plain-language buckets ORDRSP/
-     DESADV already use, so a preserved transformation and a message-quality
-     observation (e.g. a malformed TAX segment) never blur together here either. */
-  const order={err:0,warn:1,info:2,ok:3};
-  const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
-  const clsOf={err:'f-err',warn:'f-warn',ok:'f-ok',info:'f-info'};
-  const cats=[
-    {key:'message',title:'Message checks',hint:'Observations about the supplier\'s or bol\'s own message structure — not a transformation issue.'},
-    {key:'diff',title:'Transformation differences',hint:'Whether the supplier → bol transformation preserved the business data correctly.'},
-    {key:'info',title:'Good to know',hint:'Expected, non-problematic behaviour worth being aware of.'}
-  ];
-  let fs='';
-  cats.forEach(c=>{
-    const items=res.findings.filter(f=>(f.cat||'diff')===c.key).sort((a,b)=>order[a.level]-order[b.level]);
-    if(!items.length)return;
-    fs+=`<li class="findings-cat" title="${esc(c.hint)}">${esc(c.title)}</li>`;
-    fs+=items.map(f=>`<li class="${clsOf[f.level]||''}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('');
-  });
-  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${fs}</ul>`;
-  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
-
-  /* "Worth checking" panel — sup/bol observations were already computed above */
-  const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
-    +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
-  if(wcHtml)h+=`<div class="panel"><h2 title="ECHO noticed something unusual — not necessarily wrong.">Worth checking 👁</h2><div class="wc-list">${wcHtml}</div></div>`;
-
-  /* header */
-  h+=`<div class="panel"><h2>Invoice details</h2><div class="inv-scroll"><table class="inv">
+  /* header: collapsed by default, the summary says how many fields differ */
+  const hdrDiffer=res.hdr.filter(r=>r.status==='diff').length;
+  const hdrOneSide=res.hdr.filter(r=>r.status==='info').length;
+  const hdrSum=hdrDiffer?`${hdrDiffer} differ${hdrDiffer===1?'s':''}`:'all shared fields match';
+  h+=`<details class="hdr-fields inv-hdr" id="invHdrDetails"><summary>Invoice details <span class="dim">(${hdrSum}${hdrOneSide?` · ${hdrOneSide} noted for info`:''})</span></summary><div class="inv-scroll" style="margin-top:8px"><table class="inv">
     <tr><th>Field</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
   h+=res.hdr.map(r=>{
     const pill=r.status==='ok'?pillMatch():(r.status==='diff'?pillDiff():(r.status==='na'?pillNA():pillInfo()));
@@ -6703,7 +6763,7 @@ function renderInvoiceCompare(res,notes){
     const copyBtn=(isOrderRow||isPackRow)?`<button type="button" class="mini-copy-btn" title="Copy" onclick="copyIconClick(${jsQuote(r.sup||r.bol||'')},this)">📋</button>`:'';
     return `<tr><td>${esc(r.label)}${copyBtn}</td><td class="mono">${supSpan}</td><td class="mono">${bolSpan}</td><td>${pill}</td></tr>`;
   }).join('');
-  h+=`</table></div></div>`;
+  h+=`</table></div></details>`;
 
   /* lines */
   h+=`<div class="panel"><h2>Line comparison (matched on EAN)</h2>`;

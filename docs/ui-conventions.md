@@ -41,14 +41,55 @@
 - Screen is assumed to be a phone: keep responses/labels short, this is a
   tool people glance at, not read end to end.
 
+## Verdict
+
+The verdict box at the top of Compare (ORDRSP/DESADV and INVOIC) has three
+lines, built by one helper (`verdictModel`):
+
+1. **Headline**, descriptive: "Bol's output differs from the supplier
+   message" (any `cat:'diff'` finding at err/warn), "The mapping looks
+   right; the supplier message has something worth a look" (only
+   `cat:'message'` at err/warn; names bol's output or both messages when
+   that's where the checks are), or "Bol's output matches the supplier
+   message". INVOIC says "invoice" instead of "message"/"output".
+2. **Playful line**, small and italic: "Something got lost in translation."
+   (only with a `cat:'diff'` finding at err), "Almost in sync." (any other
+   err/warn), "Loud and clear." (none). The rotating quip may follow it.
+3. **Where to look**, one line, derived from the findings' `cat`: the
+   section to read first with a count and a link that scrolls to it
+   (Transformation differences → mapping question, "Copy for Transus";
+   Message checks → which message, "Nothing here for Transus"; otherwise
+   "Nothing to act on", naming the sections that only hold notes). A
+   Worth-checking count is appended when there is one.
+
+The icon and colour are the worst level among the err/warn findings of any
+`cat`: an err Message check shows ⚠, never an orange "!". Only the
+headline and playful line stay calm for Message checks (rule 7).
+
+## Result layout
+
+Desktop first. Compare (ORDRSP/DESADV): verdict → Findings (Message
+checks, Transformation differences, Good to know, then a small **Worth
+checking** group, Copy buttons) → stats strip → Header fields (collapsed)
+→ action overview (ORDRSP) → search box → Amendment details → Line
+comparison → Pallet / SSCC overview → original messages. INVOIC: verdict →
+Findings → stats strip → Invoice details (collapsed) → Line comparison →
+Charges & allowances → Totals → overviews → original messages. Quick check
+follows the same idea (summary line, Findings, fields, search, tables).
+
+Worth checking items use the documented **!** icon (warn colour), not an
+eye; they never count towards the verdict.
+
 ## Header fields table
 
 In Compare (ORDRSP/DESADV), right under the stats: one row per header field,
 supplier value and bol value, each with the field it came from in small
 type. ✓ = same, ≠ = differs (row highlighted), · = only on one side. Only
 on one side is not flagged, because formats differ in what they carry. The
-table only shows values; findings come from their own checks. It is
-collapsed when every shared field matches.
+table only shows values; findings come from their own checks. It is always
+collapsed (findings come first); its summary line says how many fields
+differ ("3 differ") or "all shared fields match". INVOIC's Invoice details
+table is collapsed the same way.
 
 ## Short findings, details behind "More info"
 
