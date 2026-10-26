@@ -332,7 +332,11 @@ test('a pallet wrapper missing its own SSCC is flagged even though nested packag
 // Same fixture, Compare mode — parity rule: fires per side, stays a
 // Message check (never sent to Transus, since it's a property of one
 // side's own message construction, not a mapping question).
-test('the pallet-level SSCC gap is also flagged per side in Compare, as a Message check never sent to Transus', async ({ page }) => {
+// Same file on both sides: bol's output carries exactly the supplier's
+// finding, so it's reported once as passed on unchanged (it used to be one
+// per side — changed deliberately, docs/ui-conventions.md "One finding per
+// cause").
+test('the pallet-level SSCC gap is also flagged in Compare, once when passed on unchanged, as a Message check never sent to Transus', async ({ page }) => {
   const fixture = path.join(FIX, 'pallet-sscc-only-on-package.edi');
   await openApp(page);
   await runCompareFixtures(page, fixture, fixture);
@@ -340,9 +344,8 @@ test('the pallet-level SSCC gap is also flagged per side in Compare, as a Messag
 
   const buckets = await findingsByCategory(page);
   const wrapper = buckets.message.filter(t => /No SSCC at pallet level/i.test(t));
-  expect(wrapper).toHaveLength(2); // one per side
-  expect(wrapper.some(t => t.includes('Supplier —'))).toBe(true);
-  expect(wrapper.some(t => t.includes('Bol —'))).toBe(true);
+  expect(wrapper).toHaveLength(1);
+  expect(wrapper[0]).toContain('Supplier (passed on unchanged to bol) —');
   expect(buckets.diff.some(t => /No SSCC at pallet level/i.test(t))).toBe(false);
 });
 
@@ -414,7 +417,7 @@ test('the CSV DESADV dialect\'s arrival date is read and matches bol\'s DTM+132'
 // hard downstream limit bol's own DESADV documentation doesn't mention at
 // all (it only says the reference must be unique and visible on the
 // physical shipment, no length given).
-test('a Packing List Reference (RFF+BM) over 15 characters is flagged, per side', async ({ page }) => {
+test('a Packing List Reference (RFF+BM) over 15 characters is flagged, once when bol passed it on unchanged', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(
     page,
@@ -425,9 +428,9 @@ test('a Packing List Reference (RFF+BM) over 15 characters is flagged, per side'
 
   const buckets = await findingsByCategory(page);
   const tooLong = buckets.message.filter(t => /Packing List Reference too long/.test(t));
-  expect(tooLong).toHaveLength(2); // one per side
-  expect(tooLong.some(t => t.includes('Supplier —'))).toBe(true);
-  expect(tooLong.some(t => t.includes('Bol —'))).toBe(true);
+  // Same value on both sides: one finding about the supplier's message.
+  expect(tooLong).toHaveLength(1);
+  expect(tooLong[0]).toContain('Supplier (passed on unchanged to bol) —');
   tooLong.forEach(t => expect(t).toContain('17 characters'));
   // Never sent to Transus — it's a hard limit on the value itself, not a
   // mapping question.
@@ -466,26 +469,30 @@ test('an SSCC without a PAC segment is flagged as a confirmed cause of the SSCC 
   expect(noPac[0]).toContain('3 pallet groups');
   expect(buckets.diff.some(t => /SSCC present but no PAC segment/.test(t))).toBe(false);
 
-  const notEighteen = buckets.message.filter(t => /SSCC isn't 18 characters/.test(t));
-  expect(notEighteen).toHaveLength(1);
-  expect(notEighteen[0]).toContain('1 pallet group');
-  expect(notEighteen[0]).toContain('00000000000000000099');
+  // The SSCC-length observation on the same SSCCs is a line of the PAC
+  // finding (one cause, one finding), not a finding of its own.
+  expect(buckets.message.some(t => /SSCC isn't 18 characters/.test(t))).toBe(false);
+  expect(noPac[0]).toContain('00000000000000000099');
+  expect(noPac[0]).toMatch(/1 of them are 20 characters/);
 });
 
 // Real Supplier Golf DESADV: "9 SSCC(s) only in the supplier message" was an err
 // Transformation difference (sent to Transus), although every one of those
 // SSCCs sat in a CPS without PAC — the Transus-confirmed supplier-side
 // cause already flagged above. Now a Message check pointing there.
-test('SSCCs missing from bol only because their CPS has no PAC are a Message check, not a Transformation difference', async ({ page }) => {
+// One cause, one finding: the missing SSCCs (and bol's output having none
+// at all) are effect lines of the PAC finding, not separate findings.
+test('SSCCs missing from bol only because their CPS has no PAC are an effect line of the PAC finding, not a Transformation difference', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'sscc-no-pac.sup.edi'), path.join(FIX, 'sscc-no-pac.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /only in the supplier message/.test(t))).toBe(false);
-  const msg = buckets.message.filter(t => /3 SSCCs only in the supplier message/.test(t));
-  expect(msg).toHaveLength(1);
-  expect(msg[0]).toContain('all in CPS groups without PAC');
-  expect(msg[0]).toContain('see the PAC finding above');
+  expect(buckets.message.some(t => /only in the supplier message/.test(t))).toBe(false);
+  expect(buckets.message.some(t => /^\W*Bol — No SSCC/.test(t))).toBe(false);
+  const pac = buckets.message.filter(t => /SSCC present but no PAC segment/.test(t));
+  expect(pac).toHaveLength(1);
+  expect(pac[0]).toContain("None of these SSCCs is in bol's output, which has no SSCC at all.");
   const transus = await page.evaluate(() => lastTransusTextEn);
   expect(transus).not.toContain('only in the supplier message');
 
@@ -496,11 +503,13 @@ test('SSCCs missing from bol only because their CPS has no PAC are a Message che
   expect(b2.diff.some(t => /22 SSCCs only in the supplier message/.test(t))).toBe(true);
 });
 
-test('both SSCC checks also fire standalone in Quick check', async ({ page }) => {
+test('both SSCC observations also show standalone in Quick check, in one finding', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'sscc-no-pac.sup.edi'));
-  await expect(page.locator('#quickOverview')).toContainText('SSCC present but no PAC segment');
-  await expect(page.locator('#quickOverview')).toContainText("SSCC isn't 18 characters");
+  const pac = page.locator('#quickOverview ul.findings > li', { hasText: 'SSCC present but no PAC segment' });
+  await expect(pac).toHaveCount(1);
+  await expect(pac).toContainText('1 of them are 20 characters');
+  await expect(page.locator('#quickOverview')).not.toContainText("SSCC isn't 18 characters");
 });
 
 // A real TRANSUSXML DESADV (<Messages><Message>, no <?xml declaration) was
@@ -702,7 +711,9 @@ test('an EAN or SSCC with a wrong GS1 check digit is flagged, in Compare and Qui
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
   const hits = buckets.message.filter(t => /Check digit doesn't match/.test(t));
-  expect(hits).toHaveLength(2); // one per side
+  // Same file on both sides: reported once, as passed on unchanged.
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toContain('Supplier (passed on unchanged to bol) —');
   expect(hits[0]).toContain('8700000000015');
   expect(hits[0]).toContain('387000000000000012');
   expect(hits[0]).not.toContain('8700000000025');
@@ -953,16 +964,16 @@ test('the verdict is based on Transformation differences; Message checks alone g
   await runCompareFixtures(page, fixture, fixture);
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
-  expect(buckets.message.filter(t => /Packing List Reference too long/.test(t))).toHaveLength(2);
+  expect(buckets.message.filter(t => /Supplier \(passed on unchanged to bol\) — Packing List Reference too long/.test(t))).toHaveLength(1);
   expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
   // Headline calm (the mapping looks right), but the icon shows the worst
   // level: RFF+BM too long is err, so ⚠ — never hidden behind "!".
   const verdict = page.locator('#verdict');
   await expect(verdict).toHaveClass(/\berr\b/);
   await expect(verdict.locator('.icon')).toHaveText('⚠');
-  await expect(verdict.locator('.vtitle')).toHaveText('The mapping looks right; both messages have something worth a look');
+  await expect(verdict.locator('.vtitle')).toHaveText('The mapping looks right; the supplier message has something worth a look');
   await expect(verdict.locator('.vplay')).toHaveText('Almost in sync.');
-  await expect(verdict.locator('.vwhere')).toContainText('Message checks (2) — in both messages themselves, not in the mapping.');
+  await expect(verdict.locator('.vwhere')).toContainText('Message checks (1) — in the supplier message itself, not in the mapping.');
   await expect(verdict).not.toContainText('lost in translation');
   await expect(page.locator('#findings li.findings-cat', { hasText: 'Message checks' }))
     .toHaveAttribute('title', /supplier's or bol's own message/);
@@ -988,7 +999,7 @@ test('Copy report uses neutral marks per section, not [ERROR]', async ({ page })
   let report = await page.evaluate(() => lastReportText);
   expect(report).not.toContain('[ERROR]');
   expect(report).not.toContain('[WARNING]');
-  expect(report).toMatch(/\[CHECK\] Supplier — Packing List Reference too long/);
+  expect(report).toMatch(/\[CHECK\] Supplier \(passed on unchanged to bol\) — Packing List Reference too long/);
   expect(report).toMatch(/\[OK\] All compared values match/);
 
   await openApp(page);
@@ -1035,17 +1046,17 @@ test('pallet structure findings are grouped with tags, in Compare and Quick chec
   await runCompareFixtures(page, fixture, fixture);
   await expect(page.locator('#results')).toBeVisible();
   const buckets = await findingsByCategory(page);
-  const repeated = buckets.message.filter(t => /Supplier — Pallet EAN repeated as item/.test(t));
+  const repeated = buckets.message.filter(t => /Supplier \(passed on unchanged to bol\) — Pallet EAN repeated as item/.test(t));
   expect(repeated).toHaveLength(1);
   expect(repeated[0]).toContain('on 2 lines');
   expect(repeated[0]).toContain('CPS 2 · 8712345000134 (qty 1)');
   expect(repeated[0]).toContain('CPS 3 · 8712345000158 (qty 1)');
-  const unlinked = buckets.message.filter(t => /Supplier — Item not linked to a pallet/.test(t));
+  const unlinked = buckets.message.filter(t => /Supplier \(passed on unchanged to bol\) — Item not linked to a pallet/.test(t));
   expect(unlinked).toHaveLength(1);
   expect(unlinked[0]).toContain('on 2 lines');
   expect(unlinked[0]).toContain('8712345000011');
   expect(unlinked[0]).toContain('8712345000028');
-  const weight = page.locator('#findings li', { hasText: /Supplier — Shipment weight doesn't match the sum of its pallet weights/ });
+  const weight = page.locator('#findings li', { hasText: /Supplier \(passed on unchanged to bol\) — Shipment weight doesn't match the sum of its pallet weights/ });
   await expect(weight).toContainText('100 KGM vs 80 KGM');
   await expect(weight.locator('details.f-more')).toContainText('CPS 1');
 
@@ -1139,7 +1150,7 @@ test('the SSCC length finding says when a value is "00" + a valid SSCC or valid 
   const fixture = path.join(FIX, 'sscc-length-hints.edi');
   await runCompareFixtures(page, fixture, fixture);
   await expect(page.locator('#results')).toBeVisible();
-  const f = page.locator('#findings li', { hasText: "Supplier — SSCC isn't 18 characters" });
+  const f = page.locator('#findings li', { hasText: "Supplier (passed on unchanged to bol) — SSCC isn't 18 characters" });
   await expect(f).toContainText('00008712345000000013 (20 chars: "00" + a valid 18-digit SSCC)');
   await expect(f).toContainText('08712345000000020 (17 chars: valid as an SSCC with a leading 0)');
 

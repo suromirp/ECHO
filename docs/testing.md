@@ -363,6 +363,16 @@ actual test fixtures, don't just keep this list as prose:
   lines", a search match still shows; the status line says the overview is
   below; one-line XML is pretty-printed for display and jump-to-source lands
   on the value; "Import file" is a button.
+- **ORDRSP/DESADV/INVOIC**: one finding per cause — a per-side Message
+  check carried unchanged by bol's output is reported once as "Supplier
+  (passed on unchanged to bol)"; an SSCC without PAC is one finding whose
+  effect lines say the SSCCs aren't in bol's output and that the values are
+  20 characters (no separate "only in the supplier message", bol "No SSCC"
+  or SSCC-length finding, in either mode); ORDRSP's date-only action 6
+  carried as 5 is only the Good-to-know note (no Message check, no
+  Amendment details rows, badge "Actions match (see Good to know)"); INVOIC
+  rounding gaps on several lines are one finding with EAN tags, and
+  one-sided header rows / totals are table rows only.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

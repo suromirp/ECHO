@@ -811,8 +811,13 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   side is only action 6 with no `QTY+83`/`QTY+182`, and whose bol side is
   only action 5 with the same non-zero `QTY+12` and the same `DTM+67`, is
   no longer an action difference (`dateOnlyRemap` in `compare()`); it gets
-  one grouped Good-to-know note instead, and the action summary badge reads
-  "match (date-only 6 → 5)". A changed `DTM+67` or quantity still counts.
+  one grouped Good-to-know note instead. That note is the only place these
+  lines are mentioned in Compare: the supplier's "delivery-date-only
+  amendment" Message check, the Amendment details rows and a badge suffix
+  used to repeat the same fact (four places for one pattern); the badge now
+  reads "Actions match (see Good to know)". Quick check, with no bol side to
+  compare, still shows the Message check. A changed `DTM+67` or quantity
+  still counts.
   bol's own documentation only partially reflects this: the "Betekenis"
   column for action 6 already names two distinct sub-cases ("in backorder
   geplaatst *of* voorzien van een nieuwe leverdatum"), but the "Verplichte
@@ -881,8 +886,14 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   message" was also reported as an err Transformation difference (and so
   went to "Copy for Transus"), for the very SSCCs the PAC check explains.
   When every SSCC only on the supplier side sits in a PAC-less CPS group,
-  that finding is now a Message check pointing at the PAC finding. One
-  PAC-carrying pallet among them keeps it a Transformation difference, and
+  that is now an effect line of the PAC finding ("None of these SSCCs is in
+  bol's output, which has no SSCC at all"), not a finding of its own, and
+  bol's own "No SSCC anywhere" check is folded into the same line when
+  every supplier SSCC is PAC-less. The SSCC-length observation on the same
+  values is a line of that finding too ("Each value is 20 characters ("00" +
+  a valid 18-digit SSCC), not 18."), in both modes. Before, one real
+  message listed the same 9 SSCCs in three findings plus a pallet summary.
+  One PAC-carrying pallet among them keeps it a Transformation difference, and
   the Quoted CSV flattening (pallets with SSCCs, bol output with none) is
   unaffected, since that dialect has no PAC concept.
 - **The same real message also had a 20-character SSCC** (`GIN+BJ`'s value

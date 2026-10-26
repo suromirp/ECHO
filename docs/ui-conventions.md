@@ -116,6 +116,27 @@ whose visible text ran past ~150 characters (ORDRSP, DESADV and INVOIC).
 New findings follow the same shape: if the visible part needs more than
 one sentence, the rest belongs in `moreInfo`.
 
+## One finding per cause
+
+- A per-side Message check that bol's output carries unchanged (same text
+  apart from the side label) is reported once, as "Supplier (passed on
+  unchanged to bol) — …", jumping to both sides (`perSideOnce`, used for
+  every per-side check in Compare: GS1 check digit, RFF+BM length, pallet
+  structure, ORDRSP action rules, DTM duplicates, no price, blank LIN, TAX
+  issues, illegal characters, lines without an identifier, …). Only when
+  the two sides differ does each get its own.
+- Effects of one cause are sub-lines of its finding (`↳`, `.f-effects`),
+  not findings of their own: an SSCC in a CPS without PAC lists "None of
+  these SSCCs is in bol's output" and the SSCC-length note on the same
+  values as lines of the PAC finding.
+- One pattern is explained in one place: ORDRSP's date-only action 6 that
+  bol carries as action 5 is the Good-to-know note only (not also a Message
+  check, Amendment details rows and a badge suffix).
+- INVOIC header rows and totals that are only on one side live in their
+  table (Invoice details, Totals); a finding only exists when it adds an
+  explanation (the RFF+CO order note). Rounding gaps on two or more lines
+  are one grouped finding with a tag per EAN.
+
 ## Grouping repeated findings
 
 Repeated findings of the same underlying pattern are grouped into one
