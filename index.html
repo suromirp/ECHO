@@ -194,6 +194,7 @@
   .verdict .vwhere{font-size:13.5px;color:var(--text);line-height:1.5;}
   .verdict .vwhere a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
   .search-bar{margin:0 0 12px;}
+  .f-effects{margin-top:6px;font-size:12.5px;color:var(--text-dim);line-height:1.5;}
   .quick-summary{padding:10px 14px;margin:0 0 12px;align-items:center;}
   .quick-summary .icon{font-size:17px;margin-top:0;}
   .filebtn:focus-within{outline:2px solid var(--accent);outline-offset:1px;}
@@ -2432,16 +2433,36 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
 // none with PAC — bol's output collapsed to one flat CPS with zero SSCCs
 // anywhere, not just the 9 missing ones. Same grouped-tag shape as
 // checkPalletStructure's other findings.
-function checkMissingPacWithSscc(facts,label,add,jumpCall){
-  if(!facts.pallets||!facts.pallets.length)return;
-  const affected=facts.pallets.filter(p=>p.sscc&&!p.hasPac);
-  if(!affected.length)return;
+/* One cause, one finding: derived effects on the same SSCCs are sub-lines
+   of this finding, not findings of their own (real DESADV: the same 9 SSCCs
+   in the PAC finding, an "only in the supplier message" finding and an SSCC
+   length finding). opts.effects: effect lines from Compare (not in bol's
+   output). The SSCC-length observation on these values is folded in here;
+   the returned set tells the caller which SSCCs checkSsccLength can skip. */
+function checkMissingPacWithSscc(facts,label,add,jumpCall,opts){
+  const covered=new Set();
+  if(!facts.pallets||!facts.pallets.length)return covered;
+  const affected=[...new Map(facts.pallets.filter(p=>p.sscc&&!p.hasPac).map(p=>[p.sscc,p])).values()];
+  if(!affected.length)return covered;
   const n=affected.length;
   const tags=affected.map(p=>{
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)}</span></li>`;
   }).join('');
-  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message.`),'message');
+  const effects=[...((opts&&opts.effects)||[])];
+  const odd=affected.filter(p=>p.sscc.length!==18);
+  let lenInfo='';
+  if(odd.length){
+    odd.forEach(p=>covered.add(p.sscc));
+    const lens=[...new Set(odd.map(p=>p.sscc.length))].sort((a,b)=>a-b).join('/');
+    const hints=[...new Set(odd.map(p=>ssccLengthHint(p.sscc)))];
+    const hint=hints.length===1&&hints[0]?` (${hints[0]})`:'';
+    effects.push(`${odd.length===n?(n===1?'The value is':'Each value is'):`${odd.length} of them are`} ${lens} characters${hint}, not 18.`);
+    lenInfo=` ${SSCC_LENGTH_INFO}`;
+  }
+  const effHtml=effects.length?`<div class="f-effects">${effects.map(e=>`<div>↳ ${e}</div>`).join('')}</div>`:'';
+  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+effHtml+moreInfo(`Confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message.${lenInfo}`),'message');
+  return covered;
 }
 
 /* Packing reference (RFF+BM / PackingSlipNumber) and despatch advice number
@@ -2609,27 +2630,31 @@ function compareDesadvDates(sup,bol,add){
 // issue above, which already blocks the SSCC from arriving on its own, so
 // this alone hasn't been independently confirmed to cause a downstream
 // problem — only that it violates a rule bol states firmly and repeatedly.
-function checkSsccLength(facts,label,add,jumpCall){
+// Say what the value most likely is: "00" (the SSCC Application
+// Identifier) + a check-digit-valid SSCC-18, or a 17-digit value that is
+// valid with a leading 0 (dropped, e.g. by a spreadsheet). Real DESADV:
+// 20-character "00…" values.
+function ssccLengthHint(v){
+  if(/^00\d{18}$/.test(v)&&gs1CheckDigitOk(v.slice(2)))return '"00" + a valid 18-digit SSCC';
+  if(/^\d{17}$/.test(v)&&gs1CheckDigitOk('0'+v))return 'valid as an SSCC with a leading 0';
+  return '';
+}
+const SSCC_LENGTH_INFO="bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as \"00\".";
+/* skip (optional Set): SSCCs another finding already covers (the PAC
+   finding folds the length observation in for its own SSCCs). */
+function checkSsccLength(facts,label,add,jumpCall,skip){
   if(!facts.pallets||!facts.pallets.length)return;
-  const affected=facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18);
+  const affected=[...new Map(facts.pallets.filter(p=>p.sscc&&p.sscc.length!==18&&!(skip&&skip.has(p.sscc))).map(p=>[p.sscc,p])).values()];
   if(!affected.length)return;
   const n=affected.length;
-  // Say what the value most likely is: "00" (the SSCC Application
-  // Identifier) + a check-digit-valid SSCC-18, or a 17-digit value that is
-  // valid with a leading 0 (dropped, e.g. by a spreadsheet). Real Supplier Golf
-  // DESADV: 20-character "00…" values.
-  const hint=v=>{
-    if(/^00\d{18}$/.test(v)&&gs1CheckDigitOk(v.slice(2)))return '"00" + a valid 18-digit SSCC';
-    if(/^\d{17}$/.test(v)&&gs1CheckDigitOk('0'+v))return 'valid as an SSCC with a leading 0';
-    return '';
-  };
+  const hint=ssccLengthHint;
   let anyHint=false;
   const tags=affected.map(p=>{
     const jump=jumpCall?` onclick="${jumpCall(p.sscc)}"`:'';
     const h=hint(p.sscc);if(h)anyHint=true;
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars${h?': '+h:''})</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`bol's own documentation (the DESADV checklist and the dedicated SSCC page) specifies exactly 18 digits, with no Application Identifier prefix such as "00".${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
+  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`${SSCC_LENGTH_INFO}${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
@@ -3085,6 +3110,25 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
   }).join('');
 }
 
+/* One check, both sides: when bol's output carries exactly the supplier's
+   finding (same text apart from the side label and jump targets), it was
+   passed on unchanged and is reported once, as "Supplier (passed on
+   unchanged to bol) — …", jumping to both sides. Otherwise each side gets
+   its own. run(facts,label,add,jumpCall) is the per-side check;
+   jumpFor(side) builds the jump call for 'sup' / 'bol' / 'both'. Used for
+   every per-side Message check in Compare (docs/ui-conventions.md
+   "One finding per cause"). */
+const PASSED_ON_LABEL='Supplier (passed on unchanged to bol)';
+function perSideOnce(add,sup,bol,run,jumpFor){
+  const cap=(facts,label,side)=>{const out=[];run(facts,label,(...a)=>out.push(a),jumpFor(side));return out;};
+  const s=cap(sup,'Supplier','sup'),b=cap(bol,'Bol','bol');
+  const sig=arr=>arr.map(a=>a[0]+'|'+stripHtml(String(a[1])).replace(/^(Supplier|Bol)( —)?\s*/,'')).join('\n');
+  if(s.length&&sig(s)===sig(b)){run(sup,PASSED_ON_LABEL,add,jumpFor('both'));return 'once';}
+  s.forEach(a=>add(...a));b.forEach(a=>add(...a));
+  return 'per-side';
+}
+const factsJump=side=>v=>`jumpToFactsSource(${jsQuote(side)},${jsQuote(v)})`;
+const invJump=side=>v=>`jumpToInvSource(${jsQuote(side)},${jsQuote(v)})`;
 function compare(bol,sup){
   // count: how many items a finding stands for (a capped "N more" summary
   // stands for N), so Copy for Transus can say how many are left out.
@@ -3201,7 +3245,7 @@ function compare(bol,sup){
     const n=remapped.length;
     const lis=remapped.map(r=>{const v=r.gtin||r.art||'';return `<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(v)})">${esc(r.art||r.gtin||'?')}</span></li>`;}).join('');
     const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
-    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 with no backorder or cancellation; bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference.`),'info');
+    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 (accepted with amendment) with no backorder or cancellation and the full quantity confirmed: a delivery-date-only amendment, a recognised use of action 6. bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference. This note is the one place these lines are mentioned: they aren't repeated under Message checks or Amendment details.`),'info');
   }
   // The supplier states order numbers and bol's output has none at all: a
   // real transformation question, but one fact, so one grouped finding
@@ -3236,12 +3280,24 @@ function compare(bol,sup){
   // data — a real supplier complaint traced this to a stray empty "LIN'"
   // Transus inserted right before every genuine LIN in a test order,
   // which the receiving system then reads as a blank item line.
-  if(sup.blankLinCount)add('warn',`Supplier — ${sup.blankLinCount} blank LIN segment${sup.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`)+``,'message');
-  if(bol.blankLinCount)add('warn',`Bol — ${bol.blankLinCount} blank LIN segment${bol.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`)+``,'message');
+  perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — ${f.blankLinCount} blank LIN segment${f.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`),'message');},factsJump);
 
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
   const ssccResult={onlyBol:[...bSscc].filter(x=>!sSscc.has(x)),onlySup:[...sSscc].filter(x=>!bSscc.has(x)),common:[...bSscc].filter(x=>sSscc.has(x))};
+  // SSCCs in supplier CPS groups without PAC (Transus-confirmed: they don't
+  // reach bol). When that explains every supplier-only SSCC — and, if bol's
+  // output has no SSCC at all, that too — those are effects of one cause:
+  // shown as sub-lines of the PAC finding, not as findings of their own
+  // (real DESADV: the same 9 SSCCs used to appear in 3 findings).
+  const pacLessSup=new Set((sup.pallets||[]).filter(p=>p.sscc&&!p.hasPac).map(p=>p.sscc));
+  const pacExplainsOnlySup=type==='DESADV'&&ssccResult.onlySup.length>0&&ssccResult.onlySup.every(s=>pacLessSup.has(s));
+  const pacExplainsBolNone=type==='DESADV'&&!bol.ssccs.length&&bol.lines.length>0&&sup.ssccs.length>0&&sup.ssccs.every(s=>pacLessSup.has(s));
+  const pacEffects=[];
+  if(pacExplainsOnlySup){
+    const m=ssccResult.onlySup.length;
+    pacEffects.push(`${m===pacLessSup.size?(m===1?'This SSCC isn\'t':'None of these SSCCs is'):`${m} of them aren't`} in bol's output${pacExplainsBolNone?', which has no SSCC at all':''}.`);
+  }
   if(bol.ssccs.length||sup.ssccs.length){
     // Affected SSCCs as clickable tags, collapsed past ~20
     // (docs/ui-conventions.md), instead of one long inline list.
@@ -3264,7 +3320,7 @@ function compare(bol,sup){
         otherHtml:`<div style="margin-top:6px">bol's output has ${ssccResult.onlyBol.length} SSCC${ssccResult.onlyBol.length===1?'':'s'}:${ssccTags(ssccResult.onlyBol,'bol')}</div>`,
         otherInfo:`bol's output does carry SSCCs. They aren't in the supplier message, so they aren't counted as a transformation difference.`});
     }
-    if(type==='DESADV'&&!bol.ssccs.length&&bol.lines.length)checkNoSsccAnywhere(bol,'Bol',add,v=>`jumpToFactsSource('bol',${jsQuote(v)})`);
+    if(type==='DESADV'&&!bol.ssccs.length&&bol.lines.length&&!pacExplainsBolNone)checkNoSsccAnywhere(bol,'Bol',add,v=>`jumpToFactsSource('bol',${jsQuote(v)})`);
     if(ssccResult.onlyBol.length&&!supLacksSscc)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol'),'diff');
     // When every one of these SSCCs sits in a CPS group without PAC, the
     // cause is already flagged (checkMissingPacWithSscc, Transus-confirmed:
@@ -3272,11 +3328,8 @@ function compare(bol,sup){
     // message, not a mapping question, so it's a Message check pointing
     // there rather than a Transformation difference sent to Transus (real
     // Supplier Golf DESADV, 9 SSCCs). A PAC-carrying pallet still counts as a diff.
-    const pacLess=new Set((sup.pallets||[]).filter(p=>p.sscc&&!p.hasPac).map(p=>p.sscc));
-    if(ssccResult.onlySup.length&&ssccResult.onlySup.every(s=>pacLess.has(s))){
-      add('warn',`Supplier — ${ssccHead(ssccResult.onlySup.length,'supplier message')}, all in CPS groups without PAC`+ssccTags(ssccResult.onlySup,'sup')+moreInfo(`Each of these SSCCs sits in a CPS group that has no PAC segment (see the PAC finding above). Transus support confirmed that without PAC the SSCC doesn't reach bol, so their absence from bol's output follows from the supplier message.`),'message');
-    }
-    else if(ssccResult.onlySup.length)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
+    // All in PAC-less CPS groups: an effect line on the PAC finding (pacEffects).
+    if(ssccResult.onlySup.length&&!pacExplainsOnlySup)add('err',ssccHead(ssccResult.onlySup.length,'supplier message')+ssccTags(ssccResult.onlySup,'sup'),'diff');
     if(!ssccResult.onlyBol.length&&!ssccResult.onlySup.length)add('ok',`All ${ssccResult.common.length} SSCCs are present in both messages.`,'diff');
   }else if(type==='DESADV'&&(sup.lines.length||bol.lines.length)){
     // Neither side has any SSCC at all — "Quantities: Match" only means the
@@ -3299,30 +3352,24 @@ function compare(bol,sup){
     // "No SSCC found" would repeat the same fact.
     const supNoSscc=!sup.ssccs.length&&sup.lines.length>0,bolNoSscc=!bol.ssccs.length&&bol.lines.length>0;
     const noSsccAnywhere=!bol.ssccs.length&&!sup.ssccs.length;
-    checkPalletStructure(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere||supNoSscc});
-    checkPalletStructure(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,{skipNoSscc:noSsccAnywhere||bolNoSscc});
-    checkPackingReferenceLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkPackingReferenceLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    // Each per-side check reported once when bol's output carries exactly
+    // the supplier's finding (perSideOnce).
+    perSideOnce(add,sup,bol,(f,label,a,j)=>checkPalletStructure(f,label,a,j,{skipNoSscc:noSsccAnywhere||(f===sup?supNoSscc:bolNoSscc)}),factsJump);
+    perSideOnce(add,sup,bol,checkPackingReferenceLength,factsJump);
     compareDesadvDates(sup,bol,add);
-    // Same near-miss on both sides means bol's output passed the supplier's
-    // values on unchanged: say it once, about the supplier's message.
-    if(packingRefNearMiss(sup)&&packingRefNearMiss(bol)&&sup.billOfLadingRef===bol.billOfLadingRef&&sup.docNumber===bol.docNumber){
-      checkPackingRefNearMatch(sup,'Supplier (passed on unchanged to bol)',add,v=>`jumpToFactsSource('both',${jsQuote(v)})`);
-    }else{
-      checkPackingRefNearMatch(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-      checkPackingRefNearMatch(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
-    }
-    checkMissingPacWithSscc(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkMissingPacWithSscc(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
-    checkSsccLength(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkSsccLength(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
+    // The SSCC-length observation on SSCCs the PAC finding already lists
+    // becomes a line of that finding (one cause, one finding).
+    const pacCoveredSup=checkMissingPacWithSscc(sup,'Supplier',add,factsJump('sup'),{effects:pacEffects});
+    const pacCoveredBol=checkMissingPacWithSscc(bol,'Bol',add,factsJump('bol'));
+    if(!pacCoveredSup.size&&!pacCoveredBol.size)perSideOnce(add,sup,bol,checkSsccLength,factsJump);
+    else{checkSsccLength(sup,'Supplier',add,factsJump('sup'),pacCoveredSup);checkSsccLength(bol,'Bol',add,factsJump('bol'),pacCoveredBol);}
     comparePalletMapping(bol,sup,add,keyFn);
     // a packing reference not being found is worth surfacing explicitly rather
     // than silently not appearing anywhere in the comparison — but BGM's
     // document number often already serves as the packing reference for
     // DESADV, so only flag this when that's ALSO missing
-    if(sup.lines.length&&!hasPackingRef(sup))add('info','Supplier — no packing reference found in this message.','message');
-    if(bol.lines.length&&!hasPackingRef(bol))add('info','Bol — no packing reference found in this message.','message');
+    perSideOnce(add,sup,bol,(f,label,a)=>{if(f.lines.length&&!hasPackingRef(f))a('info',`${label} — no packing reference found in this message.`,'message');},factsJump);
   }
 
   // ORDRSP rule validation (validate supplier + bol lines). Grouped by which
@@ -3333,31 +3380,35 @@ function compare(bol,sup){
   // down doesn't repeat the same items again with a vaguer description.
   const flaggedActionItems=new Set();
   if(type==='ORDRSP'){
+    // A supplier action 6 that bol's output carries as a date-only action 5
+    // (dateOnlyRemap) is explained once, by the Good-to-know note above; its
+    // "delivery-date-only amendment" rule isn't repeated here.
+    const remapKeys=new Set(rows.filter(r=>r.dateOnlyRemap).map(r=>r.key));
+    let addTo=add;
     const validate=(facts,lab)=>{
       const entries=[];
-      const side=lab==='Supplier'?'sup':'bol';
+      const side=lab==='Supplier'?'sup':(lab==='Bol'?'bol':'both');
       facts.lines.forEach(l=>{
         const res=validateOrdrspLine(facts.bgmFunc,l);
         if(res.level!=='ok'){
           const itemKey=l.art||l.gtin||l.lineNo;
           flaggedActionItems.add(itemKey);
           const jumpVal=l.gtin||l.art||l.lineNo||'';
-          res.keys.forEach(k=>entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`}));
+          const remapped=remapKeys.has(keyFn(l));
+          res.keys.forEach(k=>{if(remapped&&k==='action6-no-backorder-has-confirmed')return;entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`});});
         }
       });
-      groupActionFindings(entries).forEach(g=>add(g.level,`${lab} — ${g.text}`,'message'));
+      groupActionFindings(entries).forEach(g=>addTo(g.level,`${lab} — ${g.text}`,'message'));
     };
-    validate(sup,'Supplier');validate(bol,'Bol');
+    perSideOnce(add,sup,bol,(f,label,a)=>{addTo=a;validate(f,label);},factsJump);
   }
 
   // Single-message consistency check (parity rule: also runs standalone in
   // Quick check, see checkSplitItemPriceGap below) — per side, independent
   // of the cross-side price comparison further down.
   if(type==='ORDRSP'){
-    checkNoPriceAnywhere(sup,'Supplier',add);
-    checkNoPriceAnywhere(bol,'Bol',add);
-    checkSplitItemPriceGap(sup,'Supplier',add);
-    checkSplitItemPriceGap(bol,'Bol',add);
+    perSideOnce(add,sup,bol,checkNoPriceAnywhere,factsJump);
+    perSideOnce(add,sup,bol,checkSplitItemPriceGap,factsJump);
   }
 
   // DTM qualifier repeated with different values within one LIN group —
@@ -3368,12 +3419,10 @@ function compare(bol,sup){
     {const sm=orderNearMisses(sup).map(h=>h.short).join('|'),bm=orderNearMisses(bol).map(h=>h.short).join('|');
      if(sm&&sm===bm)checkOrderNearMiss(sup,'Supplier (passed on unchanged to bol)',add,v=>`jumpToFactsSource('both',${jsQuote(v)})`);
      else{checkOrderNearMiss(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNearMiss(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);}}
-    {const fs=factsGs1Finding(sup,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);if(fs)add('warn','Supplier — '+fs,'message');
-     const fb=factsGs1Finding(bol,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);if(fb)add('warn','Bol — '+fb,'message');}
+    perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     checkZeroGtin(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`,bolZeroExplained);
-    checkDtmDuplicateQualifier(sup,'Supplier',add,v=>`jumpToFactsSource(${jsQuote('sup')},${jsQuote(v)})`);
-    checkDtmDuplicateQualifier(bol,'Bol',add,v=>`jumpToFactsSource(${jsQuote('bol')},${jsQuote(v)})`);
+    perSideOnce(add,sup,bol,checkDtmDuplicateQualifier,factsJump);
   }
 
   // ORDRSP price comparison (PRI+AAA net price). Bucketed per item key +
@@ -4574,13 +4623,24 @@ function invoiceArithmeticEntries(inv,jumpFor){
 function arithmeticSignature(entries){
   return entries.map(e=>`${normalizeGtin(e.itemLabel)}|${Math.abs(e.ar.expected).toFixed(2)}|${Math.abs(e.ar.diff).toFixed(2)}`).sort().join(';');
 }
+function roundingGapGroupText(entries,cur){
+  const n=entries.length;
+  const max=Math.max(...entries.map(e=>Math.abs(e.ar.diff)));
+  const tags=entries.map(e=>`<li><span class="clickable-val" onclick="${e.jump}">${esc(e.itemLabel)}: ${esc(fmtAmt(e.ar.expected+e.ar.diff,cur))} vs ${esc(fmtAmt(e.ar.expected,cur))}</span></li>`).join('');
+  return `<strong>Line amount differs from quantity × net price by a rounding difference</strong> on ${n} lines (at most ${esc(fmtAmt(max,cur))}). <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Each tag shows the stated line amount, then quantity × net price. Every gap is within what rounding the net price to 2 decimals could explain, so this is noted for reference only.`);
+}
 /* Entries -> [{level,text}]: a uniform-percentage pattern grouped into one
    finding, the rest individually, capped at 5 with a pointer to the table. */
 function invoiceArithmeticFindings(entries,cur,prefix,tableName){
   const out=[];
   const {grouped,rest}=groupUniformArithmeticGap(entries);
   if(grouped)out.push({level:'warn',text:prefix+uniformArithmeticGapText(grouped)});
-  const ind=rest.map(e=>({level:e.ar.withinRounding?'info':'warn',
+  // Gaps within rounding on two or more lines: one cause, one finding with
+  // a tag per item (real invoice: three separate rounding notes).
+  const rounding=rest.filter(e=>e.ar.withinRounding);
+  const restInd=rounding.length>=2?rest.filter(e=>!e.ar.withinRounding):rest;
+  if(rounding.length>=2)out.push({level:'info',text:prefix+roundingGapGroupText(rounding,cur)});
+  const ind=restInd.map(e=>({level:e.ar.withinRounding?'info':'warn',
     text:prefix+lineArithmeticFindingText(e.itemLabel,e.qty,e.netPrice,e.ar,cur,e.grossPrice)}));
   const CAP=5;
   out.push(...ind.slice(0,CAP));
@@ -4809,12 +4869,9 @@ function compareInvoice(sup,bol){
   // side's own message, not a supplier↔bol mapping difference — so it's
   // kept out of the Transus report (cat 'message') the same way a missing
   // SSCC is: it's whichever side sent it that needs to fix it, not Transus.
-  taxIssueFindings(sup.taxIssues).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
-  taxIssueFindings(bol.taxIssues).forEach(t=>add('warn',`Bol — ${t}`,'message'));
-  if(sup.taxRateEncodingMismatch)add('warn',`Supplier — ${taxRateEncodingMismatchText()}`,'message');
-  if(bol.taxRateEncodingMismatch)add('warn',`Bol — ${taxRateEncodingMismatchText()}`,'message');
-  illegalTextCharFindings(sup.illegalTextChars,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`).forEach(t=>add('warn',`Supplier — ${t}`,'message'));
-  illegalTextCharFindings(bol.illegalTextChars,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`).forEach(t=>add('warn',`Bol — ${t}`,'message'));
+  perSideOnce(add,sup,bol,(f,label,a)=>taxIssueFindings(f.taxIssues).forEach(t=>a('warn',`${label} — ${t}`,'message')),invJump);
+  perSideOnce(add,sup,bol,(f,label,a)=>{if(f.taxRateEncodingMismatch)a('warn',`${label} — ${taxRateEncodingMismatchText()}`,'message');},invJump);
+  perSideOnce(add,sup,bol,(f,label,a,j)=>illegalTextCharFindings(f.illegalTextChars,j).forEach(t=>a('warn',`${label} — ${t}`,'message')),invJump);
   // MOA+131 vs the ALC amounts: one side's own numbers, per side, once when
   // bol's output carries the same (only EDIFACT states MOA+131).
   {
@@ -4826,12 +4883,10 @@ function compareInvoice(sup,bol){
       if(bi)add('warn','Bol — '+invoiceChargeTotalText(bi,cur,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`),'message');
     }
   }
-  {const fs=gs1CheckDigitFinding(gs1CheckDigitIssues(sup.lines.map(l=>l.gtin),[]));if(fs)add('warn','Supplier — '+fs,'message');
-   const fb=gs1CheckDigitFinding(gs1CheckDigitIssues(bol.lines.map(l=>l.gtin),[]));if(fb)add('warn','Bol — '+fb,'message');}
+  perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=gs1CheckDigitFinding(gs1CheckDigitIssues(f.lines.map(l=>l.gtin),[]),j);if(t)a('warn',`${label} — ${t}`,'message');},invJump);
   // Blank LIN segments and no order number anywhere: single-message checks
   // ORDRSP/DESADV already run (parity rule), per side here.
-  if(sup.blankLinCount)add('warn','Supplier — '+invoiceBlankLinText(sup.blankLinCount),'message');
-  if(bol.blankLinCount)add('warn','Bol — '+invoiceBlankLinText(bol.blankLinCount),'message');
+  perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — `+invoiceBlankLinText(f.blankLinCount),'message');},invJump);
   {
     const so=invoiceHasOrder(sup)||!sup.lines.length,bo=invoiceHasOrder(bol)||!bol.lines.length;
     if(!so&&!bo)add('warn','<strong>Neither message has an order number</strong> anywhere.'+INVOICE_NO_ORDER_INFO,'message');
@@ -4915,8 +4970,10 @@ function compareInvoice(sup,bol){
 
   hdr.forEach(h=>{
     if(h.status==='diff')add('err',`<strong>${h.label}</strong> differs — supplier <span class="val-sup">${esc(h.sup??'—')}</span> vs bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
+    // A soft row (e.g. a VAT number or GLN on one side only) is shown in the
+    // Invoice details table, not repeated as a finding; only a row with an
+    // explanation of its own (infoText) gets one.
     else if(h.status==='info'&&h.infoText)add('info',h.infoText,'info');
-    else if(h.status==='info')add('info',`<strong>${h.label}</strong>: supplier <span class="val-sup">${esc(h.sup??'—')}</span>, bol <span class="val-bol">${esc(h.bol??'—')}</span>.`,'info');
   });
 
   /* ---- lines: match on GTIN, never guess a match ---- */
@@ -5111,8 +5168,7 @@ function compareInvoice(sup,bol){
   // one side's own message lacking an identifier: a Message check. An
   // all-zeros EAN already has its own finding, so it isn't counted twice.
   const noKeyN=g=>g.noKey.filter(l=>!l.gtinZeroed).length;
-  if(noKeyN(gs))add('warn',`Supplier — ${noKeyN(gs)} line(s) without an EAN or item number — these could not be matched.`,'message');
-  if(noKeyN(gb))add('warn',`Bol — ${noKeyN(gb)} line(s) without an EAN or item number — these could not be matched.`,'message');
+  perSideOnce(add,sup,bol,(f,label,a)=>{const n=noKeyN(f===sup?gs:gb);if(n)a('warn',`${label} — ${n} line(s) without an EAN or item number — these could not be matched.`,'message');},invJump);
 
   /* fields bol doesn't send at all: report informatively, not as an error */
   const naNotes=[];
@@ -5213,7 +5269,7 @@ function compareInvoice(sup,bol){
     else status=(isCredit?amtEq(Math.abs(s),Math.abs(b)):amtEq(s,b))?'ok':'diff';
     totRows.push({label,sup:s,bol:b,status});
     if(status==='diff')add('err',`<strong>${label}</strong> differs — supplier <span class="val-sup">${fmtAmt(s,cur)}</span> vs bol <span class="val-bol">${fmtAmt(b,cur)}</span>.`);
-    else if(status==='na')add('info',`<strong>${label}</strong> isn't sent on one side, so it can't be compared — supplier <span class="val-sup">${s===null?'—':fmtAmt(s,cur)}</span>, bol <span class="val-bol">${b===null?'—':fmtAmt(b,cur)}</span>.`,'info');
+    // sent on one side only: the Totals table shows it ("Only on one side"), no separate finding
   };
   tcmp('Total line amounts','lineTotal');
   tcmp('Taxable amount','taxable');
@@ -5601,8 +5657,8 @@ function factsOverviewHtml(facts){
     checkPalletStructure(facts,'This message',qcAdd,jumpCall,{skipNoSscc:noSscc});
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
-    checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
-    checkSsccLength(facts,'This message',qcAdd,jumpCall);
+    const pacCovered=checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
+    checkSsccLength(facts,'This message',qcAdd,jumpCall,pacCovered);
   }else if(type==='ORDRSP'){
     // Grouped by which rule fired: a supplier that sends action 6 on every
     // line gets ONE block explaining that pattern with every affected item
@@ -6048,7 +6104,8 @@ function render(result,bol,sup,notes){
     const shift=m.accept.bol-m.accept.sup;
     const remapOnly=!exact&&result.dateOnlyRemaps>0&&st.actionMatch&&shift>0&&shift===m.backorder.sup-m.backorder.bol&&m.cancel.bol===m.cancel.sup;
     const allMatch=exact||remapOnly;
-    sumBadge.textContent='Supplier sends: '+(seen.join(' + ')||'—')+(exact?' · match':(remapOnly?' · match (date-only 6 → 5)':' · DIFFERENCE'));
+    // A date-only remap is explained once, in Good to know; the badge just says the actions match.
+    sumBadge.textContent=remapOnly?'Actions match (see Good to know)':'Supplier sends: '+(seen.join(' + ')||'—')+(exact?' · match':' · DIFFERENCE');
     sumBadge.style.color=allMatch?'var(--ok)':'var(--err)';
     renderActionMatrix();
     const boLines=result.rows.filter(r=>actionBucket((r.supActions||[])[0])==='backorder'||(r.supActions||[]).includes('6')).map(r=>{
@@ -6064,7 +6121,11 @@ function render(result,bol,sup,notes){
   // Shown regardless of match status: a backorder/amendment is a business
   // event worth knowing about even when everything transformed correctly,
   // and Line comparison below hides matching lines by default.
+  // Lines whose action 6 bol's output carries as a date-only action 5
+  // (dateOnlyRemap) are explained once, by the Good-to-know note, so they
+  // aren't listed here a second time.
   const backorderRows=result.rows.filter(r=>{
+    if(r.dateOnlyRemap)return false;
     const has83=r.qtys.some(x=>x.q==='83'&&((Number(x.bol)||0)!==0||(Number(x.sup)||0)!==0));
     const hasAction6=(r.bolActions&&r.bolActions.includes('6'))||(r.supActions&&r.supActions.includes('6'));
     return has83||hasAction6;

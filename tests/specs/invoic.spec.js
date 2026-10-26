@@ -582,8 +582,9 @@ test('one-side findings are Message checks, info notes are Good to know, absent-
   );
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const b = await invoiceFindingsByCategory(page);
-  expect(b.message.some(t => /Supplier — 1 line\(s\) without an EAN/.test(t))).toBe(true);
-  expect(b.message.some(t => /Bol — 1 line\(s\) without an EAN/.test(t))).toBe(true);
+  // The same count on both sides is reported once, as passed on unchanged.
+  expect(b.message.some(t => /Supplier \(passed on unchanged to bol\) — 1 line\(s\) without an EAN/.test(t))).toBe(true);
+  expect(b.message.some(t => /Bol — 1 line\(s\) without an EAN/.test(t))).toBe(false);
   expect(b.message.some(t => /Supplier — Order reference is ambiguous on 1 EAN/.test(t) && t.includes('8710000000017'))).toBe(true);
   expect(b.diff.some(t => /without an EAN|ambiguous/.test(t))).toBe(false);
   const packRow = page.locator('#invoiceResults tr', { hasText: 'Packing reference(s)' }).first();
@@ -832,4 +833,38 @@ test('RFF+CO is read as an order reference; bol not carrying it is Good to know'
   await expect(page.locator('#quickOverview .ov-type')).toHaveText('CREDIT NOTE');
   await expect(page.locator('#quickOverview')).not.toContainText('No order number');
   await expect(page.locator('#quickOverview .field', { hasText: 'Order(s)' })).toContainText(/ABCD10000001.*RFF\+CO/);
+});
+
+// One finding per cause: line-amount gaps within rounding on several lines
+// are one grouped finding with a tag per EAN (a real invoice showed three
+// separate rounding notes), reported once when bol's output carries the same.
+test('rounding gaps on several lines are one grouped finding with EAN tags, in Compare and Quick check', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'rounding-gaps.sup.edi'), path.join(FIX, 'rounding-gaps.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const arith = b.message.filter(t => /quantity × net price/.test(t));
+  expect(arith).toHaveLength(1);
+  expect(arith[0]).toContain('Supplier (passed on unchanged to bol) — Line amount differs from quantity × net price by a rounding difference on 3 lines');
+  expect(arith[0]).toContain('8712345001018: 123.20 EUR vs 123.00 EUR');
+  expect(arith[0]).toContain('8712345001032');
+  await expect(page.locator('#invVerdict .vwhere')).toContainText('Nothing to act on.');
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'rounding-gaps.sup.edi'));
+  await expect(page.locator('#quickOverview ul.findings > li', { hasText: 'rounding difference' })).toHaveCount(1);
+});
+
+// A soft header row (a VAT number or GLN on one side only) is shown in the
+// Invoice details table; it used to be repeated as a Good-to-know finding.
+// A total sent on one side only is in the Totals table, not also a finding.
+test('one-sided header values and totals are table rows, not also findings', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'rounding-gaps.sup.edi'), path.join(FIX, 'rounding-gaps.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const texts = await page.locator('#invoiceResults ul.findings > li').allInnerTexts();
+  expect(texts.some(t => /\((VAT|GLN)\):/.test(t))).toBe(false);
+  expect(texts.some(t => /isn't sent on one side, so it can't be compared/.test(t))).toBe(false);
+  await expect(page.locator('#invoiceResults table.inv tr', { hasText: 'Buyer (GLN)' })).toContainText('8712423020597');
+  await expect(page.locator('#invoiceResults table.inv tr', { hasText: 'Taxable amount' })).toContainText('253.23');
 });

@@ -31,18 +31,16 @@ test('action-6-without-backorder findings are grouped, not repeated per line', a
   const texts = await findings.allInnerTexts();
   const groupedLines = texts.filter(t => t.includes('delivery-date-only amendment'));
 
-  // One grouped block per side (Supplier, Bol) — never one per affected line
-  // (there are 3 lines per side, so a per-line implementation would produce 6).
-  // Each <li> renders an icon in its own leading span (e.g. "!\nSupplier — ..."),
-  // so match on "Supplier —"/"Bol —" rather than a literal startsWith.
-  expect(groupedLines).toHaveLength(2);
-  expect(groupedLines.some(t => t.includes('Supplier —'))).toBe(true);
-  expect(groupedLines.some(t => t.includes('Bol —'))).toBe(true);
+  // One grouped block — never one per affected line (3 lines). Same file on
+  // both sides, so it's reported once as passed on unchanged (it used to be
+  // one block per side).
+  expect(groupedLines).toHaveLength(1);
+  expect(groupedLines[0]).toContain('Supplier (passed on unchanged to bol) —');
   groupedLines.forEach(t => expect(t).toContain('(3 lines)'));
 
   // The grouped block lists every affected line as its own clickable tag.
   const tagCount = await page.locator('#findings .wc-affected li').count();
-  expect(tagCount).toBe(6); // 3 lines x 2 sides
+  expect(tagCount).toBe(3);
 });
 
 // docs/testing.md: "ORDRSP: an item split across two lines with different
@@ -200,10 +198,11 @@ test('a message with no net price on any accepted line is flagged, not read as a
   await expect(page.locator('#results')).toBeVisible();
 
   const buckets = await findingsByCategory(page);
-  const supFinding = buckets.message.filter(t => /none of the 3 accepted lines/i.test(t) && t.includes('Supplier —'));
+  // bol's output has the same gap: one finding, as passed on unchanged.
+  const supFinding = buckets.message.filter(t => /none of the 3 accepted lines/i.test(t) && t.includes('Supplier (passed on unchanged to bol) —'));
   const bolFinding = buckets.message.filter(t => /none of the 3 accepted lines/i.test(t) && t.includes('Bol —'));
   expect(supFinding).toHaveLength(1);
-  expect(bolFinding).toHaveLength(1);
+  expect(bolFinding).toHaveLength(0);
   expect(supFinding[0]).toContain('Unit price is unknown');
 
   // Never a mapping question — it's a property of the message itself, not
@@ -379,10 +378,14 @@ test('a flat quoted-CSV ORDRSP dialect is read, not routed to the DESADV parser'
 
   // The real example this is based on showed every supplier line sent as
   // action 6 (date-only amendment), remapped to action 5 in bol's own
-  // output — a genuine, expected action-code difference, correctly
-  // explained by the date-only Message check rather than read as an error.
+  // output — an expected action-code difference, explained in one place:
+  // the Good-to-know note (no longer also a Message check, Amendment
+  // details rows and a badge suffix).
   const buckets = await findingsByCategory(page);
-  expect(buckets.message.some(t => /delivery-date-only amendment/.test(t))).toBe(true);
+  expect(buckets.info.some(t => /date-only amendment carried as action 5/.test(t))).toBe(true);
+  expect(buckets.message.some(t => /delivery-date-only amendment/.test(t))).toBe(false);
+  await expect(page.locator('#backorderPanel')).toBeHidden();
+  await expect(page.locator('#actionSummaryBadge')).toHaveText('Actions match (see Good to know)');
 });
 
 // Same fixture, Quick check on the supplier file alone — detectMsgType must
@@ -423,11 +426,11 @@ test('each ORDRSP action rule keeps its own level, in Compare and Quick check', 
   await runCompareFixtures(page, fixture, fixture);
   await expect(page.locator('#results')).toBeVisible();
   const levelOf = async (root, re) => page.locator(`${root} li`, { hasText: re }).first().getAttribute('class');
-  expect(await levelOf('#findings', /Supplier — Action 5 without a delivery date \(DTM\+67\)/)).toBe('f-warn');
-  expect(await levelOf('#findings', /Supplier — Action 5 with a backorder quantity/)).toBe('f-err');
-  expect(await levelOf('#findings', /Supplier — Action 6 used as a delivery-date-only amendment/)).toBe('f-info');
+  expect(await levelOf('#findings', /Supplier \(passed on unchanged to bol\) — Action 5 without a delivery date \(DTM\+67\)/)).toBe('f-warn');
+  expect(await levelOf('#findings', /Supplier \(passed on unchanged to bol\) — Action 5 with a backorder quantity/)).toBe('f-err');
+  expect(await levelOf('#findings', /Supplier \(passed on unchanged to bol\) — Action 6 used as a delivery-date-only amendment/)).toBe('f-info');
   // Short headline visible, the explanation behind "More info".
-  const dateRule = page.locator('#findings li', { hasText: /Supplier — Action 5 without a delivery date/ }).first();
+  const dateRule = page.locator('#findings li', { hasText: /Supplier \(passed on unchanged to bol\) — Action 5 without a delivery date/ }).first();
   await expect(dateRule.locator('details.f-more')).toContainText('normally states');
   const verdict = page.locator('#verdict');
   await expect(verdict.locator('.vplay')).toHaveText('Almost in sync.');

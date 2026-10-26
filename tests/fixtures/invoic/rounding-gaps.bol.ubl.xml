@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>INV3101</cbc:ID>
+  <cbc:IssueDate>2026-03-01</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:OrderReference><cbc:ID>4500001</cbc:ID></cac:OrderReference>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount>253.23</cbc:LineExtensionAmount>
+    <cbc:PayableAmount>253.23</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity>100</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>123.20</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Item A</cbc:Name><cac:SellersItemIdentification><cbc:ID>8712345001018</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>1.23</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity>40</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>100.05</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Item B</cbc:Name><cac:SellersItemIdentification><cbc:ID>8712345001025</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>2.50</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>3</cbc:ID>
+    <cbc:InvoicedQuantity>10</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount>29.98</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Item C</cbc:Name><cac:SellersItemIdentification><cbc:ID>8712345001032</cbc:ID></cac:SellersItemIdentification></cac:Item>
+    <cac:Price><cbc:PriceAmount>3.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>
