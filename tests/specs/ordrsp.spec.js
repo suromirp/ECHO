@@ -568,3 +568,181 @@ test('an order number missing from bol\'s output is one grouped difference plus 
   expect(transus).toContain("No order number in bol's output");
   await expect(page.locator('#lineTable tr.row-diff')).toHaveCount(3);
 });
+
+// bol's ORDRSP guidelines pair the header's message function with the line
+// actions: BGM+29 (accepted without amendment) with action 5 only, BGM+27
+// (not accepted) with action 2 only. A cancelled line under BGM+29 is a
+// grouped Message check (never for Transus); a date-only action 6 under
+// BGM+29 stays the existing info rule (Transus converts it to 5), with the
+// header named in More info, not a second finding.
+test('BGM+29 with a cancelled line is one grouped Message check; a date-only action 6 under it stays info', async ({ page }) => {
+  const fixture = path.join(FIX, 'bgm-accepted-with-cancelled-line.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hdr = buckets.message.filter(t => /Header says 'accepted' but some lines are cancelled/.test(t));
+  expect(hdr).toHaveLength(1);
+  expect(hdr[0]).toContain('Supplier (passed on unchanged to bol) —');
+  expect(hdr[0]).toContain('(1 line)');
+  expect(hdr[0]).toContain('8712345610029');
+  expect(hdr[0]).not.toContain('8712345610012');
+  const levelOf = async (root, re) => page.locator(`${root} li`, { hasText: re }).first().getAttribute('class');
+  expect(await levelOf('#findings', /Header says 'accepted'/)).toBe('f-warn');
+  const dateOnly = buckets.message.filter(t => /delivery-date-only amendment/.test(t));
+  expect(dateOnly).toHaveLength(1);
+  expect(dateOnly[0]).toContain('8712345610036');
+  expect(dateOnly[0]).toContain('Transus converts these lines to action 5');
+  expect(await levelOf('#findings', /delivery-date-only amendment/)).toBe('f-info');
+  // One finding per line fact: the date-only line isn't also a header finding.
+  expect(hdr[0]).not.toContain('8712345610036');
+  expect(buckets.diff.some(t => /Header says/.test(t))).toBe(false);
+  const transus = await page.evaluate(() => lastTransusTextEn);
+  expect(transus).not.toContain('Header says');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText("Header says 'accepted' but some lines are cancelled");
+  expect(await levelOf('#quickOverview', /Header says 'accepted'/)).toBe('f-warn');
+  expect(await levelOf('#quickOverview', /delivery-date-only amendment/)).toBe('f-info');
+});
+
+test('BGM+27 (not accepted) with an accepted line is flagged in Compare and Quick check', async ({ page }) => {
+  const fixture = path.join(FIX, 'bgm-not-accepted-with-accepted-line.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hdr = buckets.message.filter(t => /Header says 'not accepted' but some lines are accepted/.test(t));
+  expect(hdr).toHaveLength(1);
+  expect(hdr[0]).toContain('8712345610050');
+  expect(hdr[0]).not.toContain('8712345610043');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText("Header says 'not accepted' but some lines are accepted");
+});
+
+// A date-only action 6 under BGM+29 that bol's output carries as 5 is still
+// only the Good-to-know note in Compare; its More info names the header.
+test('the date-only remap note names the supplier\'s BGM+29 header', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'action6-remapped-to-5.sup.edi'), path.join(FIX, 'action6-remapped-to-5.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const note = buckets.info.filter(t => /Action 6 date-only amendment carried as action 5/.test(t));
+  expect(note).toHaveLength(1);
+  expect(note[0]).toContain('BGM+29');
+  expect(buckets.message.some(t => /Header says/.test(t))).toBe(false);
+});
+
+// QTY+83 on action 6 without DTM+506 → warn; with DTM+506 → nothing.
+// QTY+83 above 0 on a cancelled line (action 2) → warn; QTY+83:0 → nothing.
+test('backorder quantity without a backorder date, and a backorder on a cancelled line, are Message checks', async ({ page }) => {
+  const fixture = path.join(FIX, 'backorder-rules.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const noDate = buckets.message.filter(t => /Backorder quantity \(QTY\+83\) without a backorder date \(DTM\+506\)/.test(t));
+  expect(noDate).toHaveLength(1);
+  expect(noDate[0]).toContain('8712345610067');
+  expect(noDate[0]).not.toContain('8712345610074');
+  const cancelled = buckets.message.filter(t => /Action 2 with a backorder quantity \(QTY\+83\)/.test(t));
+  expect(cancelled).toHaveLength(1);
+  expect(cancelled[0]).toContain('8712345610081');
+  expect(cancelled[0]).not.toContain('8712345610098');
+  expect(buckets.diff.some(t => /QTY\+83|DTM\+506/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('without a backorder date (DTM+506)');
+  await expect(page.locator('#quickOverview')).toContainText('Action 2 with a backorder quantity (QTY+83)');
+});
+
+// Some accepted lines without PRI+AAA while the rest carry one; and an
+// accepted line without DTM+67 when the header has no delivery date either.
+test('a net price missing on only some accepted lines, and a missing delivery date, are Message checks in both modes', async ({ page }) => {
+  const fixture = path.join(FIX, 'partial-price-and-date.edi');
+  await openApp(page);
+  await runCompareFixtures(page, fixture, fixture);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const price = buckets.message.filter(t => /Net price \(PRI\+AAA\) missing on some accepted lines/.test(t));
+  expect(price).toHaveLength(1);
+  expect(price[0]).toContain('(1 of 4)');
+  expect(price[0]).toContain('8712345610029');
+  // The cancelled line (action 2) isn't an accepted line.
+  expect(price[0]).not.toContain('8712345610050');
+  // Not also the all-lines finding.
+  expect(buckets.message.some(t => /none of the .* accepted lines carry a net price/.test(t))).toBe(false);
+  const date = buckets.message.filter(t => /Action 5 without a delivery date \(DTM\+67\)/.test(t));
+  expect(date).toHaveLength(1);
+  expect(date[0]).toContain('8712345610043');
+  expect(date[0]).not.toContain('8712345610012');
+
+  await openApp(page);
+  await runQuickFixture(page, fixture);
+  await expect(page.locator('#quickOverview')).toContainText('Net price (PRI+AAA) missing on some accepted lines');
+  await expect(page.locator('#quickOverview')).toContainText('Action 5 without a delivery date (DTM+67)');
+});
+
+// The no-price-anywhere case keeps its own finding and never also gets the
+// partial one; a bol line whose price the supplier did send stays only the
+// "Net price is missing on the bol side" Transformation difference.
+test('the partial-price check does not double up with the all-lines or cross-side price findings', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'no-price-anywhere.sup.edi'), path.join(FIX, 'no-price-anywhere.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  let buckets = await findingsByCategory(page);
+  expect(buckets.message.some(t => /missing on some accepted lines/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'cascading-price-shift.sup.edi'), path.join(FIX, 'cascading-price-shift.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  buckets = await findingsByCategory(page);
+  expect(buckets.diff.filter(t => /Net price is missing on the bol side/.test(t))).toHaveLength(1);
+  expect(buckets.message.some(t => /missing on some accepted lines/.test(t))).toBe(false);
+
+  // Quick check on bol's output alone has no supplier side to compare with,
+  // so there it is the Message check.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'cascading-price-shift.bol.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('Net price (PRI+AAA) missing on some accepted lines');
+});
+
+// Negative cases: a normal BGM+29 / action 5 message with prices and dates,
+// lines dated only by a header DTM+2, and an XML dialect whose
+// <HeaderStatus> isn't a confirmed BGM code and whose lines carry no dates
+// at all get none of the new findings.
+test('a normal ORDRSP, a header-only delivery date and an XML dialect without these fields stay quiet', async ({ page }) => {
+  const NEW = /Header says|without a delivery date|without a backorder date|with a backorder quantity|missing on some accepted lines/;
+  const cases = [['normal-accepted.edi', 3], ['header-delivery-date.edi', 2], ['xml-headerstatus-not-bgm.xml', 3]];
+  for (const [f, lines] of cases) {
+    await openApp(page);
+    await runCompareFixtures(page, path.join(FIX, f), path.join(FIX, f));
+    await expect(page.locator('#results')).toBeVisible();
+    const buckets = await findingsByCategory(page);
+    expect([...buckets.message, ...buckets.diff, ...buckets.info].some(t => NEW.test(t)), f).toBe(false);
+    expect(buckets.message, f).toHaveLength(0);
+
+    await openApp(page);
+    await runQuickFixture(page, path.join(FIX, f));
+    await expect(page.locator('#quickOverview')).toBeVisible();
+    await expect(page.locator('#quickOverview')).toContainText('Nothing unusual found');
+    await expect(page.locator('#quickOverview')).toContainText(`${lines} lines`);
+  }
+});
+
+// The quoted-CSV dialect carries a BGM function (HDR field 3) and line
+// delivery dates, so its date-only action 6 under 29 gets the BGM+29 More
+// info, and its HDR dates keep the delivery-date rule quiet.
+test('the CSV ORDRSP dialect gets the BGM+29 explanation and no new noise', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'csv-dialect.sup.ORD'));
+  await expect(page.locator('#quickOverview')).toBeVisible();
+  const li = page.locator('#quickOverview li', { hasText: /delivery-date-only amendment/ }).first();
+  await expect(li.locator('details.f-more')).toContainText('BGM+29');
+  await expect(page.locator('#quickOverview')).not.toContainText('Header says');
+  await expect(page.locator('#quickOverview')).not.toContainText('without a delivery date');
+});

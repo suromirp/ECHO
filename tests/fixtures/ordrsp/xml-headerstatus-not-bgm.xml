@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<OrderResponse>
+  <Order>
+    <OrderNumberBuyer>PO9507</OrderNumberBuyer>
+    <HeaderStatus>29</HeaderStatus>
+    <OrderLines>
+      <OrderLine>
+        <LineNumber>1</LineNumber>
+        <GTIN>8712345610012</GTIN>
+        <Status>5</Status>
+        <DeliveredQuantity>10</DeliveredQuantity>
+      </OrderLine>
+      <OrderLine>
+        <LineNumber>2</LineNumber>
+        <GTIN>8712345610029</GTIN>
+        <Status>6</Status>
+        <DeliveredQuantity>4</DeliveredQuantity>
+        <BackOrderQuantity>2</BackOrderQuantity>
+      </OrderLine>
+      <OrderLine>
+        <LineNumber>3</LineNumber>
+        <GTIN>8712345610036</GTIN>
+        <Status>2</Status>
+        <CancelledQuantity>6</CancelledQuantity>
+      </OrderLine>
+    </OrderLines>
+  </Order>
+</OrderResponse>

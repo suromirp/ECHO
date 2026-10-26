@@ -222,6 +222,17 @@ actual test fixtures, don't just keep this list as prose:
   backorder/cancel) is one grouped Good-to-know note, not N "action codes
   differ" errors; a line whose `DTM+67` changed is still an action
   difference. Compare-only (needs both sides).
+- **ORDRSP**: header function vs line actions — `BGM+29` with a cancelled
+  line and `BGM+27` with an accepted line are grouped warn Message checks
+  (never Copy for Transus); a date-only action 6 under `BGM+29` stays the
+  info rule, its More info naming the header (and the Compare remap note
+  naming `BGM+29`). `QTY+83` on action 6 without `DTM+506`, and `QTY+83` on
+  action 2, are warn; an accepted line without `DTM+67` is warn only when the
+  header has no delivery date; a net price missing on some (not all)
+  accepted lines is warn, never doubled with the all-lines finding or the
+  cross-side "Net price is missing" difference. A normal message, a
+  header-only `DTM+2` and an XML dialect without a BGM function or line
+  dates stay quiet. Compare and Quick check.
 - **ORDRSP**: "Worth checking" counts any of QTY+12/83/182 as a quantity,
   so a cancelled line (action 2, QTY+182 only) isn't "Quantity missing".
 - **ORDRSP/DESADV**: message values in Compare findings (article code,
