@@ -357,6 +357,12 @@ actual test fixtures, don't just keep this list as prose:
   headline). Layout is findings-first: verdict → Findings (Worth checking
   inside, "!" icon) → stats → Header fields / Invoice details (collapsed,
   "N differ") → search → tables → raw messages.
+- **UI (Quick check)**: a summary line above the Findings says "Nothing
+  unusual found" or "N things to look at" (ORDRSP/DESADV/ORDERS and INVOIC);
+  long order lists and Lines tables collapse past 20 with "Show all N
+  lines", a search match still shows; the status line says the overview is
+  below; one-line XML is pretty-printed for display and jump-to-source lands
+  on the value; "Import file" is a button.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 

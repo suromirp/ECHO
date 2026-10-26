@@ -127,14 +127,14 @@
   select,.mini-input{background:var(--panel-2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 10px;border-radius:7px;}
 
   .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center;}
-  button.btn{font-family:var(--sans);font-size:13px;font-weight:600;border-radius:7px;padding:9px 16px;cursor:pointer;border:1px solid var(--border);background:var(--panel-2);color:var(--text);transition:background .15s,border-color .15s,transform .05s;}
-  button.btn:hover{background:var(--panel-3);border-color:var(--border-strong);}
-  button.btn:active{transform:translateY(1px);}
-  button.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
-  button.btn.primary:hover{background:#0000c4;border-color:#0000c4;}
+  .btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--sans);font-size:13px;font-weight:600;border-radius:7px;padding:9px 16px;cursor:pointer;border:1px solid var(--border);background:var(--panel-2);color:var(--text);transition:background .15s,border-color .15s,transform .05s;}
+  .btn:hover{background:var(--panel-3);border-color:var(--border-strong);}
+  .btn:active{transform:translateY(1px);}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .btn.primary:hover{background:#0000c4;border-color:#0000c4;}
   button.btn:disabled{opacity:.4;cursor:not-allowed;}
   button.btn.primary:disabled{opacity:.4;cursor:not-allowed;}
-  button.btn.ghost{background:transparent;}
+  .btn.ghost{background:transparent;}
   .filebtn{position:relative;overflow:hidden;display:inline-flex;}
   .filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
 
@@ -194,6 +194,9 @@
   .verdict .vwhere{font-size:13.5px;color:var(--text);line-height:1.5;}
   .verdict .vwhere a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
   .search-bar{margin:0 0 12px;}
+  .quick-summary{padding:10px 14px;margin:0 0 12px;align-items:center;}
+  .quick-summary .icon{font-size:17px;margin-top:0;}
+  .filebtn:focus-within{outline:2px solid var(--accent);outline-offset:1px;}
   .wc-group{margin-top:4px;}
   .wc-cat{display:block;padding:14px 2px 6px;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:700;}
 
@@ -439,7 +442,7 @@
       </div>
       <div class="actions">
         <button class="btn primary" id="quickFormatBtn">Analyze &amp; show</button>
-        <span class="btn ghost filebtn">Import file
+        <span class="btn filebtn" title="Open a message file from your computer">📂 Import file…
           <input type="file" id="quickFileInput" accept=".txt,.edi,.dat,.edifact,.xml">
         </span>
         <button class="btn ghost" id="quickClearBtn">Clear</button>
@@ -863,9 +866,21 @@ function quickColorizeSegment(seg,delims){
   if(tm){html=html.replace(esc(tm[1]),'<span class="seg-tag">'+esc(tm[1])+'</span>');}
   return html;
 }
+/* XML sent on one long line (common for bol's UBL and some Transus XML) is
+   indented for display only, so jump-to-source lands on the line with the
+   value instead of the one line holding the whole file. Copy keeps the
+   original text. */
+function xmlDisplayLines(raw){
+  const lines=String(raw||'').split(/\r?\n/);
+  const longest=lines.reduce((m,l)=>Math.max(m,l.length),0);
+  if(isXmlText(raw)&&longest>400){
+    try{const pretty=indentXml(raw);if(pretty)return pretty.split('\n');}catch(e){}
+  }
+  return lines;
+}
 function renderQuickRawXml(raw){
   const container=document.getElementById('quickOutput');
-  const lines=raw.split(/\r?\n/);
+  const lines=xmlDisplayLines(raw);
   container.innerHTML=lines.map((ln,i)=>'<div class="edi-row"><span class="gutter">'+(i+1)+'</span><span>'+esc(ln)+'</span></div>').join('');
   quickPlain=raw;
   return lines.length;
@@ -941,7 +956,7 @@ function quickFormat(){
     const n=renderQuickRawXml(raw);
     lg.innerHTML='<span class="chip chip-strong">'+esc(msgType||(isCsvDesadv?'DESADV':'XML'))+'</span><span class="chip">'+(isCsvDesadv?'CSV':'XML')+'</span><span class="chip">'+n+' lines</span>';
     if(xmlErr)quickSetStatus('This file couldn’t be read as XML — see the note above. The original text is shown below.',true);
-    else quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview above, original message below.'));
+    else quickSetStatus((msgType?msgType+' read. ':'')+(ovNote||'Overview and findings below; the original message is at the bottom.'));
     return;
   }
   const mode=document.getElementById('quickMode').value;
@@ -979,7 +994,7 @@ function quickFormat(){
   h+='<span class="chip chip-term">'+esc(delims.term)+' terminator</span>';
   h+='<span class="chip">'+segs.length+' segments</span>';
   lg.innerHTML=h;
-  quickSetStatus(ovNote||(segs.length+' segments'+(msgType?' ('+msgType+')':'')+' — overview above, original message below.'));
+  quickSetStatus(ovNote||(segs.length+' segments'+(msgType?' ('+msgType+')':'')+' — overview and findings below; the original message is at the bottom.'));
 }
 function quickSetStatus(m,e){const el=document.getElementById('quickStatus');el.textContent=m||'';el.className='status'+(e?' error':'');}
 
@@ -991,7 +1006,7 @@ document.getElementById('quickFileInput').addEventListener('change',e=>{
     document.getElementById('quickInput').value=t;
     quickFormat();
     // Keep quickFormat's own error status (e.g. unreadable XML) visible.
-    if(!document.getElementById('quickStatus').classList.contains('error'))quickSetStatus('File loaded: '+f.name+' — overview above, original message below.');
+    if(!document.getElementById('quickStatus').classList.contains('error'))quickSetStatus('File loaded: '+f.name+' — overview and findings below; the original message is at the bottom.');
   });
   e.target.value='';
 });
@@ -5348,8 +5363,9 @@ function worthCheckingGroupHtml(inner,id){
    ✓ ok — docs/ui-conventions.md). When the findings carry a cat, they are
    split into the same Message checks / Good to know sections Compare uses
    (Quick check has no Transformation differences: nothing to compare). */
-function quickFindingsHtml(findings){
-  if(!findings||!findings.length)return '';
+function quickFindingsHtml(findings,wcInner){
+  if((!findings||!findings.length)&&!wcInner)return '';
+  findings=findings||[];
   const order={err:0,warn:1,info:2,ok:3};const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
   const li=f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`;
   const sorted=list=>[...list].sort((a,b)=>order[a.level]-order[b.level]);
@@ -5362,7 +5378,39 @@ function quickFindingsHtml(findings){
       body+=`<li class="findings-cat" title="${esc(c.hint)}">${esc(c.title)}</li>`+sorted(items).map(li).join('');
     });
   }else body=sorted(findings).map(li).join('');
-  return `<div class="sec-h">Findings</div><ul class="findings">${body}</ul>`;
+  return `<div class="sec-h">Findings</div>${body?`<ul class="findings">${body}</ul>`:''}${worthCheckingGroupHtml(wcInner||'')}`;
+}
+/* Quick check's one-line summary at the top of the overview, so a clean
+   result reads as "checked, nothing unusual" and never as "not checked".
+   what: e.g. "this DESADV (12 lines)". */
+function quickSummaryHtml(findings,wcCount,what){
+  const acting=findings.filter(f=>f.level==='err'||f.level==='warn');
+  const notes=findings.filter(f=>f.level==='info').length;
+  const level=worstFindingLevel(findings);
+  const pl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+  let txt=acting.length
+    ?`<strong>${pl(acting.length,'thing')} to look at</strong> in ${what} — see Findings below.`
+    :`<strong>Nothing unusual found.</strong> ECHO ran its checks on ${what}${notes?`; ${pl(notes,'note')} below for reference`:''}.`;
+  if(wcCount)txt+=` Worth checking lists ${pl(wcCount,'pattern')} that stand${wcCount===1?'s':''} out — not necessarily wrong.`;
+  return `<div class="verdict quick-summary ${level}"><div class="icon">${F_ICON[level]}</div><div class="vwhere">${txt}</div></div>`;
+}
+/* Long tables (Quick check's Lines / Invoice lines) show the first
+   LONG_TABLE_ROWS rows, the rest behind "Show all N lines"
+   (docs/ui-conventions.md: lists collapse past ~20). Rows past the limit
+   carry class "row-extra"; a search match always shows (applyQuickSearch). */
+const LONG_TABLE_ROWS=20;
+function longTableButtonHtml(n,label){
+  return n>LONG_TABLE_ROWS?`<div class="actions"><button type="button" class="btn ghost long-table-btn" data-n="${n}" data-label="${esc(label)}" onclick="toggleLongTable(this)">Show all ${n} ${esc(label)}</button></div>`:'';
+}
+function toggleLongTable(btn){
+  const wrap=btn.closest('.long-table');
+  const table=wrap&&wrap.querySelector('table');
+  if(!table)return;
+  const expanded=table.dataset.expanded==='1';
+  table.dataset.expanded=expanded?'0':'1';
+  btn.textContent=expanded?`Show all ${btn.dataset.n} ${btn.dataset.label}`:'Show fewer';
+  if(table.id==='quickLinesTable'){applyQuickSearch();return;}
+  table.querySelectorAll('tr.row-extra').forEach(r=>r.classList.toggle('hidden',expanded));
 }
 function worstFindingLevel(findings){
   if(findings.some(f=>f.level==='err'))return 'err';
@@ -5444,7 +5492,12 @@ function invoiceOverviewHtml(inv,opts={}){
   // Inside Compare's per-side overview (opts.side) every one of these
   // already sits in Compare's own Findings, per side, so it isn't
   // repeated there.
-  if(!opts.side)h+=quickFindingsHtml(qcFindings);
+  // Worth checking is part of the Findings panel (its own small group).
+  const wcNotices=inv.lines.length?detectWorthChecking(inv.lines,wcConfigInvoic()):[];
+  if(!opts.side){
+    h+=quickSummaryHtml(qcFindings,wcNotices.length,`this ${isCredit?'credit note':'invoice'} (${inv.lines.length} line${inv.lines.length===1?'':'s'})`);
+    h+=quickFindingsHtml(qcFindings,wcNotices.length?worthCheckingHtml('',wcNotices,jumpCall):'');
+  }
   else if(qcFindings.length)h+=`<div class="note-inline">${qcFindings.length} check${qcFindings.length===1?'':'s'} on this message, listed under Findings above.</div>`;
   if(fh)h+=`<div class="fields">${fh}</div>`;
 
@@ -5464,7 +5517,7 @@ function invoiceOverviewHtml(inv,opts={}){
     th+=`<th>Line amount</th>`;
     if(showVat)th+=`<th>VAT%</th>`;
     th+=`</tr>`;
-    const body=inv.lines.map(l=>{
+    const body=inv.lines.map((l,idx)=>{
       const eanCell=l.gtin?`<span class="clickable-val" onclick="${jumpCall(l.gtin)}">${esc(l.gtin)}</span>${summaLink(l.gtin)}`:'—';
       let t=`<td class="mono">${esc(l.lineNo||'')}</td><td class="mono">${eanCell}</td>`;
       if(showArt)t+=`<td class="mono">${esc(l.art||'—')}</td>`;
@@ -5474,11 +5527,9 @@ function invoiceOverviewHtml(inv,opts={}){
       if(showGross)t+=`<td class="num">${esc(fmtAmt(l.grossPrice)??'—')}</td>`;
       t+=`<td class="num">${esc(fmtAmt(l.lineAmount)??'—')}</td>`;
       if(showVat)t+=`<td class="num">${l.vatPct===null?'—':esc(l.vatPct+'%')}</td>`;
-      return `<tr>${t}</tr>`;
+      return idx>=LONG_TABLE_ROWS?`<tr class="row-extra hidden">${t}</tr>`:`<tr>${t}</tr>`;
     }).join('');
-    h+=`<div class="sec-h">Invoice lines (${inv.lines.length})</div><div class="inv-scroll"><table class="inv">${th}${body}</table></div>`;
-    const wcNotices=detectWorthChecking(inv.lines,wcConfigInvoic());
-    if(wcNotices.length)h+=`<div class="sec-h" title="ECHO noticed something unusual here — not necessarily wrong.">Worth checking</div><div class="wc-list">${worthCheckingHtml('',wcNotices,jumpCall)}</div>`;
+    h+=`<div class="long-table"><div class="sec-h">Invoice lines (${inv.lines.length})</div><div class="inv-scroll"><table class="inv">${th}${body}</table></div>${longTableButtonHtml(inv.lines.length,'invoice lines')}</div>`;
     // opts.side is only set when this function is reused inside Compare's
     // "show invoice overview" detail — the signal already reacted once for
     // the comparison result there, so it shouldn't react again here.
@@ -5578,20 +5629,10 @@ function factsOverviewHtml(facts){
   if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
-  let h='';
-  h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
-  if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;
-  if(facts.docDate)h+=`<span class="ov-sub">${esc(showDate(facts.docDate))}</span>`;
-  h+=`<span class="ov-sub">${esc(facts.format)}</span></div>`;
-
-  if(qcFindings.length){
-    const order={err:0,warn:1,info:2,ok:3};const fi={err:'⚠',warn:'!',info:'ⓘ',ok:'✓'};
-    const sorted=[...qcFindings].sort((a,b)=>order[a.level]-order[b.level]);
-    h+=`<div class="sec-h">Findings</div><ul class="findings">${sorted.map(f=>`<li class="f-${f.level}"><span class="fi">${fi[f.level]}</span><span>${f.text}</span></li>`).join('')}</ul>`;
-  }
-
+  // Worth checking first (it goes into the Findings panel as its own group).
+  let wcNotices=[];
   if(type==='ORDRSP'||type==='DESADV'){
-    let wcNotices=detectWorthChecking(facts.lines,wcConfigOrdrspDesadv(type));
+    wcNotices=detectWorthChecking(facts.lines,wcConfigOrdrspDesadv(type));
     // Don't repeat lines already called out by name above with a more
     // specific explanation — a generic "N of M lines differ" restates the
     // same fact with less information.
@@ -5605,12 +5646,21 @@ function factsOverviewHtml(facts){
         title:`Action: ${affected.length} more line${affected.length===1?'':'s'} also differ from the rest`,
         detail:`Not already covered above — ${affected.length} more line${affected.length===1?'':'s'} use a different action value than the majority.`};
     }).filter(Boolean);
-    if(wcNotices.length)h+=`<div class="sec-h" title="ECHO noticed something unusual here — not necessarily wrong.">Worth checking</div><div class="wc-list">${worthCheckingHtml('',wcNotices,jumpCall)}</div>`;
     const qcLevel=qcFindings.some(f=>f.level==='err')?'err':(qcFindings.some(f=>f.level==='warn')?'warn':'ok');
     pendingEyeReaction=echoReactionFor(qcLevel,wcNotices.length>0);
   }else{
     pendingEyeReaction=null;
   }
+
+  // Layout: header line → summary → Findings (Worth checking inside) →
+  // fields → parties → actions → search → tables (docs/ui-conventions.md).
+  let h='';
+  h+=`<div class="ov-head"><span class="ov-type">${esc(type)}</span>`;
+  if(facts.docNumber)h+=`<span class="ov-sub">no. <strong>${esc(facts.docNumber)}</strong></span>`;
+  if(facts.docDate)h+=`<span class="ov-sub">${esc(showDate(facts.docDate))}</span>`;
+  h+=`<span class="ov-sub">${esc(facts.format)}</span></div>`;
+  h+=quickSummaryHtml(qcFindings,wcNotices.length,`this ${esc(type)} (${facts.lines.length} line${facts.lines.length===1?'':'s'})`);
+  h+=quickFindingsHtml(qcFindings,wcNotices.length?worthCheckingHtml('',wcNotices,jumpCall):'');
 
   const isD=type==='DESADV';
   const clickField=v=>v?`<span class="clickable-val" onclick="${jumpCall(v)}">${esc(v)}</span>`:'';
@@ -5623,7 +5673,9 @@ function factsOverviewHtml(facts){
   f.push(fieldHtml(isD?'Packing reference number':'Document number',clickField(isD?(facts.billOfLadingRef||facts.docNumber):facts.docNumber),null,true));
   f.push(fieldHtml('Document date',clickDateField(facts.docDate),null,true));
   const orders=[...new Set([...(facts.orderRefsHeader||[]),...facts.lines.flatMap(l=>[...(l.orders||[])])])];
-  const orderVal=orders.length?orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}`).join(', '):'';
+  const orderList=orders.map(o=>`<span class="clickable-val" onclick="${jumpCall(o)}">${esc(o)}</span>${purpleLink(o)}`).join(', ');
+  // Past ~20 the list collapses, like Compare's strip (real case: 81 orders).
+  const orderVal=!orders.length?'':(orders.length>20?`<details class="order-list"><summary>${orders.length} orders</summary>${orderList}</details>`:orderList);
   f.push(fieldHtml('Order(s)',orderVal,null,true));
   // ORDERS: the header's requested delivery date (DTM+2). When only the
   // lines state one (bol's own ORDERS), say so rather than leave it out.
@@ -5742,7 +5794,7 @@ function factsOverviewHtml(facts){
     if(type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length))th+=`<th>Date</th>`;
     th+=`</tr>`;
     const showLineDate=type==='DESADV'&&facts.lines.some(l=>l.dtm&&Object.keys(l.dtm).length);
-    const body=facts.lines.map(l=>{
+    const body=facts.lines.map((l,idx)=>{
       const eanCell=l.gtin?`<span class="clickable-val" onclick="${jumpCall(l.gtin)}">${esc(l.gtin)}</span>${summaLink(l.gtin)}`:'—';
       let t=`<td class="mono">${esc(l.lineNo||'')}</td><td class="mono">${eanCell}</td>`;
       if(showArt)t+=`<td class="mono">${esc(l.art||'—')}</td>`;
@@ -5764,9 +5816,10 @@ function factsOverviewHtml(facts){
         t+=`<td class="mono">${d?esc(showDate(normDate(d))):'—'}</td>`;
       }
       const searchAttr=esc([l.gtin,l.art,...(l.orders||[])].filter(Boolean).join(' ').toLowerCase());
-      return `<tr data-search="${searchAttr}">${t}</tr>`;
+      const extra=idx>=LONG_TABLE_ROWS;
+      return `<tr data-search="${searchAttr}"${extra?' class="row-extra hidden"':''}>${t}</tr>`;
     }).join('');
-    h+=`<div class="sec-h">Lines (${facts.lines.length})</div><div class="inv-scroll"><table class="inv" id="quickLinesTable">${th}${body}</table></div>`;
+    h+=`<div class="long-table"><div class="sec-h">Lines (${facts.lines.length})</div><div class="inv-scroll"><table class="inv" id="quickLinesTable">${th}${body}</table></div>${longTableButtonHtml(facts.lines.length,'lines')}</div>`;
   }
 
   // pallet/SSCC overview (single-message mode: no Mapping column, since
@@ -5787,7 +5840,7 @@ function factsOverviewHtml(facts){
 function renderRawEdifact(facts,elId){
   const el=document.getElementById(elId);
   if(facts.format==='Transus XML'){
-    const lines=(facts.rawXml||'').split(/\r?\n/);
+    const lines=xmlDisplayLines(facts.rawXml||'');
     el.innerHTML=lines.map((ln,i)=>'<div class="rl"><span class="g">'+(i+1)+'</span><span>'+esc(ln)+'</span></div>').join('');
     return;
   }
@@ -6281,17 +6334,22 @@ function applyQuickSearch(){
   const searchEl=document.getElementById('quickSearchInput');
   if(!searchEl)return;
   const q=searchEl.value.trim().toLowerCase();
+  const table=document.getElementById('quickLinesTable');
+  const expanded=table&&table.dataset.expanded==='1';
   const rows=[...document.querySelectorAll('#quickLinesTable tr[data-search]')];
   let hidden=0;
   rows.forEach(r=>{
-    const show=!q||(r.dataset.search||'').includes(q);
+    // A search match always shows, even past the collapsed first 20 rows.
+    const show=q?(r.dataset.search||'').includes(q):(expanded||!r.classList.contains('row-extra'));
     r.classList.toggle('hidden',!show);
     if(!show)hidden++;
   });
+  const btn=table&&table.closest('.long-table')&&table.closest('.long-table').querySelector('.long-table-btn');
+  if(btn)btn.parentElement.classList.toggle('hidden',!!q);
   const note=document.getElementById('quickSearchNote');
   if(note&&rows.length){
     if(q&&hidden===rows.length)note.innerHTML=`No lines match "${esc(searchEl.value.trim())}".`;
-    else if(hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} lines matching "${esc(searchEl.value.trim())}".`;
+    else if(q&&hidden>0)note.innerHTML=`Showing ${rows.length-hidden} of ${rows.length} lines matching "${esc(searchEl.value.trim())}".`;
     else note.innerHTML='';
   }
   document.querySelectorAll('#quickOverview .pallet-block').forEach(block=>{
