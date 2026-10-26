@@ -47,6 +47,21 @@ Distribution: public repo `suromirp/ECHO`, GitHub Pages.
 7. **A finding that could read as "you did something wrong" needs a
    generous tolerance and neutral framing, or it shouldn't exist.**
 
+## No real supplier data in the repo
+
+The repo is public. Nothing from a real message may be committed: not in
+code, comments, docs, tests, fixtures, file names or commit messages.
+
+- No supplier or person names. Refer to a real case as "a supplier" or a
+  placeholder ("Supplier Alfa", "Supplier Bravo", …).
+- No real EANs, SSCCs, GLNs, order, packing-slip, invoice or document
+  numbers, message IDs or file names. Invent values that keep the
+  property that matters (same length, a missing leading digit, a wrong
+  check digit). bol's own public GLNs are the only exception.
+- Fixtures are always synthetic, written from scratch, never an edited
+  copy of a real file.
+- Real files for analysis stay outside the repo.
+
 ## Finding taxonomy
 
 Every finding has a `level` (icon) and a `cat` (section + Transus
