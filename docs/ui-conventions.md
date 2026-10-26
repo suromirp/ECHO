@@ -38,8 +38,9 @@
   ("Not applicable" used as a catch-all for anything unclear).
 - The legend block stays in sync with whatever terms are actually in use
   elsewhere in the UI — if wording changes anywhere, check the legend.
-- Screen is assumed to be a phone: keep responses/labels short, this is a
-  tool people glance at, not read end to end.
+- Desktop first (colleagues use it on a laptop/desktop); mobile is not a
+  priority beyond no horizontal page scroll. Still keep labels short: this
+  is a tool people glance at, not read end to end.
 
 ## Verdict
 
@@ -76,6 +77,17 @@ comparison → Pallet / SSCC overview → original messages. INVOIC: verdict →
 Findings → stats strip → Invoice details (collapsed) → Line comparison →
 Charges & allowances → Totals → overviews → original messages. Quick check
 follows the same idea (summary line, Findings, fields, search, tables).
+
+Quick check opens with a one-line summary above its Findings ("Nothing
+unusual found. ECHO ran its checks on this DESADV (12 lines)" or "3 things
+to look at … — see Findings below"), so a clean result never reads as "not
+checked". Its Order(s) field collapses past ~20 orders and its Lines /
+Invoice lines tables show the first 20 rows behind "Show all N lines" (a
+search match still shows). The status line under the input says the
+overview is *below*. XML on one long line is indented for display only
+(Quick check and Compare's original messages), so jump-to-source lands on
+the line with the value; Copy keeps the original text. "Import file" is
+styled as a button.
 
 Worth checking items use the documented **!** icon (warn colour), not an
 eye; they never count towards the verdict.
