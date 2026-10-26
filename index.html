@@ -1121,7 +1121,11 @@ function parseFactsEdifact(raw){
   segs.forEach(seg=>{
     const el=splitEsc(seg,delims.elem,delims.rel);const tag=el[0];
     if(tag==='UNH'){const mi=splitEsc(el[2]||'',delims.comp,delims.rel);f.msgType=mi[0]||null;}
-    else if(tag==='BGM'){f.bgmFunc=el[3]||el[el.length-1]||null;f.docNumber=el[2]||null;}
+    // BGM+231+<doc>+29: the message function code is element 3 only. It
+    // used to fall back to the last element, so a BGM without a function
+    // code read its document number as the function (ORDRSP's header-vs-
+    // line action rules read this field).
+    else if(tag==='BGM'){f.bgmFunc=splitEsc(el[3]||'',delims.comp,delims.rel)[0]||null;f.docNumber=el[2]||null;}
     else if(tag==='CPS'){
       push();cur=null;
       if(currentCps)f.pallets.push(currentCps);
@@ -1357,6 +1361,11 @@ function parseFactsCsvOrdrsp(raw){
       f.docNumber=row[2]||null;
       f.bgmFunc=row[3]||null;
       if(row[4]){f.docDate=row[4];f.headerDtm['137']=row[4];}
+      // Fields 6-8 carry further header dates (the one real message had
+      // its lines' delivery date in all three). Their exact meaning isn't
+      // confirmed, so they're only used to keep the "no delivery date"
+      // line rule quiet (ordrspRuleCtx), never shown as a specific date.
+      f.headerDeliveryDate=row[6]||row[7]||row[8]||null;
       if(row[9])f.orderRefsHeader.add(row[9]);
       if(row[13])f.parties.SU={gln:row[13],name:null,vat:null};
       if(row[15])f.parties.BY={gln:row[15],name:null,vat:null};
@@ -1763,19 +1772,35 @@ function aggregate(facts,keyFn){
    worst one, so a line tripping an err rule and a warn rule showed both
    groups as err: a rule could read as an error because of an unrelated
    rule on the same line. action6-no-backorder-has-confirmed is info: a
-   recognised pattern (docs/formats-and-quirks.md), not a problem. */
+   recognised pattern (docs/formats-and-quirks.md), not a problem.
+   The bgm* rules compare the header's message function (BGM+29 accepted
+   without amendment, BGM+27 not accepted) with the line action codes, as
+   bol's ORDRSP guidelines pair them. A date-only action 6 under BGM+29 is
+   the same recognised pattern as above (Transus converts it to 5), so it
+   keeps that rule's headline at info level, with the header named in More
+   info (action6-date-only-bgm29) instead of a second finding. */
+const ACTION6_DATE_ONLY_MORE='Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity covering the full amount. This reads as a delivery-date-only amendment, a recognised use of action 6.';
+const BGM_PAIRING_MORE=(bgm,lines,advice)=>`The header's message function is BGM+${bgm}, which bol's ORDRSP guidelines pair with ${bgm==='29'?'action 5':'action 2'} on every line. ${lines} ${advice}`;
 const ACTION_RULE_EXPLAIN={
   'action5-missing-confirmed':{level:'err',h:'Action 5 without a confirmed quantity (QTY+12)',more:'Action 5 (fully accepted) normally states the confirmed quantity in QTY+12. None is present on these lines.'},
   'action5-confirmed-zero':{level:'warn',h:'Action 5 with confirmed quantity 0',more:"Action 5 (fully accepted) with QTY+12 explicitly 0 reads more like a cancellation than a full accept. This alone doesn't affect the mapping."},
-  'action5-missing-date':{level:'warn',h:'Action 5 without a delivery date (DTM+67)',more:'These lines carry other dates, but no DTM+67, the delivery date an accepted line normally states.'},
+  'action5-missing-date':{level:'warn',h:'Action 5 without a delivery date (DTM+67)',more:"These lines confirm a quantity but carry no DTM+67, the delivery date an accepted line normally states, and the header has no delivery date either. bol's ORDRSP guidelines ask for it on every accepted line."},
+  'action6-missing-date':{level:'warn',h:'Action 6 without a delivery date (DTM+67)',more:"These lines confirm a quantity but carry no DTM+67, the delivery date an accepted line normally states, and the header has no delivery date either. bol's ORDRSP guidelines ask for it on every accepted line."},
   'action5-has-backorder':{level:'err',h:'Action 5 with a backorder quantity (QTY+83)',more:'Action 5 means fully accepted, and these lines also carry a backorder quantity. Action 6 is the code bol uses for an accept with a backorder.'},
   'action5-has-cancelled':{level:'err',h:'Action 5 with a cancelled quantity (QTY+182)',more:'Action 5 means fully accepted, and these lines also carry a cancelled quantity. Action 6 is the code bol uses for a partial cancellation.'},
-  'action6-no-backorder-has-confirmed':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:'Action 6 (accepted with amendment), with no backorder or cancellation and the confirmed quantity covering the full amount. This reads as a delivery-date-only amendment, a recognised use of action 6.'},
+  'action6-no-backorder-has-confirmed':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:ACTION6_DATE_ONLY_MORE},
+  'action6-date-only-bgm29':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:ACTION6_DATE_ONLY_MORE+" The header says BGM+29 (accepted without amendment), which bol's ORDRSP guidelines pair with action 5 only. Transus converts these lines to action 5 in bol's output, so this is expected."},
   'action6-no-backorder-no-data':{level:'warn',h:'Action 6 without any quantity',more:"Action 6 (accepted with amendment), but no backorder, cancelled or confirmed quantity is present, so these lines don't show what was amended."},
+  'action6-backorder-no-date':{level:'warn',h:'Backorder quantity (QTY+83) without a backorder date (DTM+506)',more:"These lines carry a backorder quantity but no DTM+506, the date bol's ORDRSP guidelines ask for to say when the backordered units are expected. Without it there's no date for the backordered part."},
   'action2-missing-cancelled':{level:'err',h:'Action 2 without a cancelled quantity (QTY+182)',more:'Action 2 (cancelled) normally states the cancelled quantity in QTY+182. None is present on these lines.'},
   'action2-cancelled-zero':{level:'warn',h:'Action 2 with cancelled quantity 0',more:"QTY+182 is explicitly 0 on a cancelled line. This alone doesn't affect the mapping."},
-  'action2-has-confirmed':{level:'err',h:'Action 2 with a confirmed quantity (QTY+12)',more:'Action 2 means cancelled, and these lines also carry a confirmed quantity. Action 6 is the code bol uses for a partial accept.'}
+  'action2-has-confirmed':{level:'err',h:'Action 2 with a confirmed quantity (QTY+12)',more:'Action 2 means cancelled, and these lines also carry a confirmed quantity. Action 6 is the code bol uses for a partial accept.'},
+  'action2-has-backorder':{level:'warn',h:'Action 2 with a backorder quantity (QTY+83)',more:"Action 2 means the line is cancelled, and these lines also carry a backorder quantity above 0, so it's unclear whether units are still coming. Action 6 is the code bol uses for a line with a backorder."},
+  'bgm29-has-cancelled':{level:'warn',h:"Header says 'accepted' but some lines are cancelled",more:BGM_PAIRING_MORE('29','These lines carry action 2 (cancelled).',"A response with cancelled or changed lines usually goes out as BGM+4 (change). Worth checking which of the two is the intended answer.")},
+  'bgm29-has-amended':{level:'warn',h:"Header says 'accepted' but some lines are backordered or partly cancelled",more:BGM_PAIRING_MORE('29','These lines carry action 6 with a backorder (QTY+83) or cancelled (QTY+182) quantity.',"A response with cancelled or changed lines usually goes out as BGM+4 (change). Worth checking which of the two is the intended answer.")},
+  'bgm27-has-accepted':{level:'warn',h:"Header says 'not accepted' but some lines are accepted",more:BGM_PAIRING_MORE('27','These lines carry action 5 or 6 (accepted).',"Worth checking which of the two is the intended answer.")}
 };
+const ACTION6_DATE_ONLY_KEYS=new Set(['action6-no-backorder-has-confirmed','action6-date-only-bgm29']);
 function actionRule(key){
   if(key.startsWith('action-unknown:')){
     const code=key.slice('action-unknown:'.length);
@@ -1783,10 +1808,37 @@ function actionRule(key){
   }
   return ACTION_RULE_EXPLAIN[key]||{level:'warn',h:esc(key),more:''};
 }
+/* What one ORDRSP message's dialect lets the line rules rely on. A rule
+   about a field the dialect doesn't carry at all stays silent rather than
+   reporting it "missing":
+   - bgm: the header's message function code. EDIFACT BGM element 3 and
+     the quoted-CSV HDR field 3 (29 on the real message, matching bol's own
+     BGM+29). Transus XML's <HeaderStatus> isn't confirmed to use the same
+     code list, and the <Article> dialect has none, so null there.
+   - lineDates: the dialect reads per-line dates (DTM+67/DTM+506) at all.
+     The XML parsers never fill line.dtm, so a missing date there says
+     nothing about the message.
+   - headerDelivery: a header-level delivery date exists (EDIFACT header
+     DTM+2/17/63/64/67/69/76/132, or the CSV HDR's further dates). Generous
+     on purpose: the line date rule only fires when there's no delivery
+     date anywhere. */
+const HEADER_DELIVERY_DTM=['2','17','63','64','67','69','76','132'];
+function ordrspRuleCtx(facts){
+  const codes=!!facts&&(facts.format==='EDIFACT'||facts.format==='Quoted CSV');
+  const hd=(facts&&facts.headerDtm)||{};
+  return {
+    bgm:codes?(facts.bgmFunc||null):null,
+    lineDates:codes,
+    headerDelivery:HEADER_DELIVERY_DTM.some(q=>hd[q])||!!(facts&&facts.headerDeliveryDate),
+    headerBackorderDate:!!hd['506']
+  };
+}
 /* Returns the rule keys a line trips, and the line's worst rule level
    ('ok' when none) — only used to know whether the line was flagged at
-   all; each grouped finding takes its own rule's level (actionRule). */
-function validateOrdrspLine(bgmFunc,line){
+   all; each grouped finding takes its own rule's level (actionRule).
+   ctx comes from ordrspRuleCtx(facts). */
+function validateOrdrspLine(ctx,line){
+  ctx=ctx||{};
   const keys=[];let level='ok';const a=line.action;
   const has=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]!==''&&line.qty[q]!=='0';
   // Distinguishes "the field isn't in the message at all" from "the field is
@@ -1795,12 +1847,17 @@ function validateOrdrspLine(bgmFunc,line){
   // "no quantity is present" message, even when a quantity clearly was
   // present, just zero.
   const isZero=q=>Object.prototype.hasOwnProperty.call(line.qty,q)&&line.qty[q]==='0';
-  const hasDtm=d=>Object.prototype.hasOwnProperty.call(line.dtm,d);
+  const above0=q=>{const n=parseFloat(line.qty[q]);return !isNaN(n)&&n>0;};
+  const hasDtm=d=>!!(line.dtm&&line.dtm[d]);
+  // Accepted lines (a confirmed quantity above 0) without a delivery date
+  // anywhere: not on the line, not in the header (ordrspRuleCtx).
+  const noDeliveryDate=ctx.lineDates&&above0('12')&&!hasDtm('67')&&!ctx.headerDelivery;
   if(a==='5'){
     if(!has('12'))keys.push(isZero('12')?'action5-confirmed-zero':'action5-missing-confirmed');
-    if(line.dtm && Object.keys(line.dtm).length && !hasDtm('67'))keys.push('action5-missing-date');
+    if(noDeliveryDate)keys.push('action5-missing-date');
     if(has('83'))keys.push('action5-has-backorder');
     if(has('182'))keys.push('action5-has-cancelled');
+    if(ctx.bgm==='27')keys.push('bgm27-has-accepted');
   }else if(a==='6'){
     // amendment: needs backorder qty>0 and new delivery date, OR a
     // cancelled quantity (partial cancellation is also a valid reason for
@@ -1810,11 +1867,20 @@ function validateOrdrspLine(bgmFunc,line){
     // meant to be action 5" even though the cancellation was the whole
     // reason for the amendment. Transus XML may express as delivered 0 + backorder.
     if(!has('83')&&!has('182')&&!(line.qty['12']==='0')){
-      keys.push(line.qty['12']?'action6-no-backorder-has-confirmed':'action6-no-backorder-no-data');
+      keys.push(line.qty['12']?(ctx.bgm==='29'?'action6-date-only-bgm29':'action6-no-backorder-has-confirmed'):'action6-no-backorder-no-data');
     }
+    if(noDeliveryDate)keys.push('action6-missing-date');
+    // Only action 6: on action 5 / 2 the backorder quantity itself already
+    // has its own rule, so asking for its date too would be a second
+    // finding about the same QTY+83.
+    if(ctx.lineDates&&above0('83')&&!hasDtm('506')&&!ctx.headerBackorderDate)keys.push('action6-backorder-no-date');
+    if(ctx.bgm==='29'&&(above0('83')||above0('182')))keys.push('bgm29-has-amended');
+    if(ctx.bgm==='27')keys.push('bgm27-has-accepted');
   }else if(a==='2'){
     if(!has('182'))keys.push(isZero('182')?'action2-cancelled-zero':'action2-missing-cancelled');
     if(has('12'))keys.push('action2-has-confirmed');
+    if(above0('83'))keys.push('action2-has-backorder');
+    if(ctx.bgm==='29')keys.push('bgm29-has-cancelled');
   }else keys.push(`action-unknown:${a??'(none)'}`);
   const rank={ok:0,info:1,warn:2,err:3};
   keys.forEach(k=>{const l=actionRule(k).level;if(rank[l]>rank[level])level=l;});
@@ -2169,10 +2235,16 @@ function palletsBySSCC(facts){
    one. A single-message observation — no second message needed — so it's
    called standalone in Quick check and per-side in Compare (CLAUDE.md's
    parity rule). */
-function checkNoPriceAnywhere(facts,label,add){
+const hasNetPrice=l=>l.netPrice!==null&&l.netPrice!==undefined;
+function noPriceAnywhere(facts){
   const accepted=facts.lines.filter(l=>l.action==='5');
-  if(accepted.length<2)return; // one line alone isn't enough to call it a pattern
-  if(accepted.some(l=>l.netPrice!==null&&l.netPrice!==undefined))return; // at least one has a price — not a total gap
+  if(accepted.length<2)return null; // one line alone isn't enough to call it a pattern
+  if(accepted.some(hasNetPrice))return null; // at least one has a price — not a total gap
+  return accepted;
+}
+function checkNoPriceAnywhere(facts,label,add){
+  const accepted=noPriceAnywhere(facts);
+  if(!accepted)return;
   add('warn',`${label} — <strong>none of the ${accepted.length} accepted lines carry a net price</strong>`+moreInfo(`No PRI+AAA on any accepted line. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) rejects the message outright rather than accepting it without one. Worth reporting to whoever generates this feed.`),'message');
 }
 /* A single message's own internal consistency (ORDRSP): the same item
@@ -2185,7 +2257,9 @@ function checkNoPriceAnywhere(facts,label,add){
    not "cancelled lines never get a price". A single-message observation
    — no second message needed — so it's called standalone in Quick check
    and per-side in Compare (CLAUDE.md's parity rule). */
-function checkSplitItemPriceGap(facts,label,add){
+/* The groups checkSplitItemPriceGap reports: one item on two or more lines,
+   some with a net price and some without. */
+function splitItemPriceGapGroups(facts){
   const groups=new Map();
   facts.lines.forEach(l=>{
     const id=(l.art&&l.art.trim())||(l.gtin?normalizeGtin(l.gtin):null);
@@ -2193,15 +2267,47 @@ function checkSplitItemPriceGap(facts,label,add){
     if(!groups.has(id))groups.set(id,[]);
     groups.get(id).push(l);
   });
-  groups.forEach(lines=>{
-    if(lines.length<2)return; // only relevant once the same item is genuinely split across lines
-    const withPrice=lines.filter(l=>l.netPrice!==null&&l.netPrice!==undefined);
-    if(!withPrice.length||withPrice.length===lines.length)return; // all or none have a price — nothing inconsistent
+  return [...groups.values()].filter(lines=>{
+    if(lines.length<2)return false; // only relevant once the same item is genuinely split across lines
+    const n=lines.filter(hasNetPrice).length;
+    return n>0&&n<lines.length; // all or none have a price — nothing inconsistent
+  });
+}
+function checkSplitItemPriceGap(facts,label,add){
+  splitItemPriceGapGroups(facts).forEach(lines=>{
+    const withPrice=lines.filter(hasNetPrice);
     const ref=lines[0];
     const actionsPresent=[...new Set(withPrice.map(l=>l.action||'?'))].join(', ');
     const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
     add('warn',`${label} — <strong>net price missing on part of item</strong> <code>${esc(ref.art||ref.gtin||'?')}</code>: present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}`+moreInfo(`This item appears on ${lines.length} lines (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price. Worth checking whether the price should be there on every occurrence of this item.`),'message');
   });
+}
+
+/* A single message's own internal consistency (ORDRSP): most accepted
+   lines carry a net price (PRI+AAA), some don't. bol's ORDRSP guidelines
+   ask for PRI+AAA on every accepted line, and a line without one is the
+   same "Unit price is unknown" cause as checkNoPriceAnywhere, just for a
+   few items. Accepted = action 5 or 6 with a confirmed quantity above 0.
+   Stays silent when no accepted line has a price (a price-free message,
+   or checkNoPriceAnywhere's case), and leaves out lines another finding
+   already names: an item split across lines with a price on only some of
+   them (checkSplitItemPriceGap), and in Compare `skip`, the lines whose
+   price the other side does carry ("Net price is missing on the … side",
+   a Transformation difference). Both modes (parity rule). */
+function checkSomeLinesWithoutPrice(facts,label,add,jumpCall,skip){
+  const accepted=facts.lines.filter(l=>(l.action==='5'||l.action==='6')&&parseFloat(l.qty&&l.qty['12'])>0);
+  if(!accepted.some(hasNetPrice)||noPriceAnywhere(facts))return;
+  const split=new Set(splitItemPriceGapGroups(facts).flat());
+  const missing=accepted.filter(l=>!hasNetPrice(l)&&!split.has(l)&&!(skip&&skip.has(l)));
+  if(!missing.length)return;
+  const n=missing.length;
+  const tags=missing.map(l=>{
+    const lbl=l.art||l.gtin||('Line '+(l.lineNo||'?'));
+    const jump=jumpCall?` onclick="${jumpCall(l.gtin||l.art||l.lineNo||'')}"`:'';
+    return `<li><span class="clickable-val"${jump}>${esc(lbl)}</span></li>`;
+  }).join('');
+  const ul=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  add('warn',`${label} — <strong>Net price (PRI+AAA) missing on some accepted lines</strong> <span class="dim">(${n} of ${accepted.length})</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The other accepted lines in this message carry a net price; these don't. bol's ORDRSP guidelines ask for PRI+AAA on every accepted line, and a downstream system that needs a price per confirmed line can report "Unit price is unknown" for these items. Worth checking whether the price should be there.`),'message');
 }
 
 /* An EAN made up entirely of zeros (e.g. LIN+1++0000000000000:EN) carries
@@ -3285,7 +3391,7 @@ function compare(bol,sup){
     const n=remapped.length;
     const lis=remapped.map(r=>{const v=r.gtin||r.art||'';return `<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(v)})">${esc(r.art||r.gtin||'?')}</span></li>`;}).join('');
     const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
-    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 (accepted with amendment) with no backorder or cancellation and the full quantity confirmed: a delivery-date-only amendment, a recognised use of action 6. bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference. This note is the one place these lines are mentioned: they aren't repeated under Message checks or Amendment details.`),'info');
+    add('info',`<strong>Action 6 date-only amendment carried as action 5 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 6 (accepted with amendment) with no backorder or cancellation and the full quantity confirmed: a delivery-date-only amendment, a recognised use of action 6. bol's output has action 5 with the same confirmed quantity (QTY+12) and delivery date (DTM+67). Transus maps this pattern to 5 on purpose, so it isn't counted as an action code difference.${ordrspRuleCtx(sup).bgm==='29'?" The supplier's header says BGM+29 (accepted without amendment), which bol's ORDRSP guidelines pair with action 5, so bol's output matches its own header.":''} This note is the one place these lines are mentioned: they aren't repeated under Message checks or Amendment details.`),'info');
   }
   // The supplier states order numbers and bol's output has none at all: a
   // real transformation question, but one fact, so one grouped finding
@@ -3428,14 +3534,15 @@ function compare(bol,sup){
     const validate=(facts,lab)=>{
       const entries=[];
       const side=lab==='Supplier'?'sup':(lab==='Bol'?'bol':'both');
+      const ctx=ordrspRuleCtx(facts);
       facts.lines.forEach(l=>{
-        const res=validateOrdrspLine(facts.bgmFunc,l);
+        const res=validateOrdrspLine(ctx,l);
         if(res.level!=='ok'){
           const itemKey=l.art||l.gtin||l.lineNo;
           flaggedActionItems.add(itemKey);
           const jumpVal=l.gtin||l.art||l.lineNo||'';
           const remapped=remapKeys.has(keyFn(l));
-          res.keys.forEach(k=>{if(remapped&&k==='action6-no-backorder-has-confirmed')return;entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`});});
+          res.keys.forEach(k=>{if(remapped&&ACTION6_DATE_ONLY_KEYS.has(k))return;entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`});});
         }
       });
       groupActionFindings(entries).forEach(g=>addTo(g.level,`${lab} — ${g.text}`,'message'));
@@ -3449,6 +3556,14 @@ function compare(bol,sup){
   if(type==='ORDRSP'){
     perSideOnce(add,sup,bol,checkNoPriceAnywhere,factsJump);
     perSideOnce(add,sup,bol,checkSplitItemPriceGap,factsJump);
+    // A line whose price only the other side carries is the "Net price is
+    // missing on the … side" Transformation difference below (same
+    // (item, action) bucket), so it isn't repeated as a Message check.
+    const priceKey=l=>keyFn(l)+'|'+(l.action??'?');
+    const pricedKeys=f=>new Set(f.lines.filter(hasNetPrice).map(priceKey));
+    const supPriced=pricedKeys(sup),bolPriced=pricedKeys(bol);
+    const supSkip=new Set(sup.lines.filter(l=>bolPriced.has(priceKey(l)))),bolSkip=new Set(bol.lines.filter(l=>supPriced.has(priceKey(l))));
+    perSideOnce(add,sup,bol,(f,label,a,j)=>checkSomeLinesWithoutPrice(f,label,a,j,f===sup?supSkip:bolSkip),factsJump);
   }
 
   // DTM qualifier repeated with different values within one LIN group —
@@ -5713,8 +5828,9 @@ function factsOverviewHtml(facts){
     // line gets ONE block explaining that pattern with every affected item
     // listed as a tag, not one near-identical paragraph per line.
     const entries=[];
+    const ruleCtx=ordrspRuleCtx(facts);
     facts.lines.forEach(l=>{
-      const res=validateOrdrspLine(facts.bgmFunc,l);
+      const res=validateOrdrspLine(ruleCtx,l);
       if(res.level!=='ok'){
         const itemKey=l.art||l.gtin||l.lineNo;
         flaggedActionItems.add(itemKey);
@@ -5725,6 +5841,7 @@ function factsOverviewHtml(facts){
     groupActionFindings(entries).forEach(g=>qcAdd(g.level,g.text));
     checkNoPriceAnywhere(facts,'This message',qcAdd);
     checkSplitItemPriceGap(facts,'This message',qcAdd);
+    checkSomeLinesWithoutPrice(facts,'This message',qcAdd,jumpCall);
   }
   // Checks on the message's own LIN groups apply to ORDERS too: Quick check
   // is the only mode that reads it, and a supplier complaint about a

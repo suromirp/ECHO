@@ -839,6 +839,59 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   this was found via a real supplier integration question (not a visible
   ECHO bug), there's no fixture-worthy "before" state to test against —
   the test suite only asserts the current, corrected wording.
+- **ORDRSP single-message checks taken from bol's ORDRSP guidelines**
+  (Message checks, `cat:'message'`, Quick check and per side in Compare).
+  All of them sit in `validateOrdrspLine` / `ACTION_RULE_EXPLAIN`, so they
+  group per rule with a tag per line and get `perSideOnce`'s "passed on
+  unchanged" treatment, except the partial price, which sits next to its
+  siblings (`checkSomeLinesWithoutPrice`).
+  - **Header function vs line actions.** `BGM+29` (accepted without
+    amendment) goes with action 5 only, `BGM+27` (not accepted) with action
+    2 only. `BGM+29` with an action 2 line ("Header says 'accepted' but some
+    lines are cancelled"), `BGM+29` with an action 6 line that has a
+    backorder or cancelled quantity ("… some lines are backordered or partly
+    cancelled") and `BGM+27` with an action 5/6 line ("Header says 'not
+    accepted' but some lines are accepted") are warn. `BGM+4` and other
+    codes: nothing. A date-only action 6 under `BGM+29` is the recognised
+    pattern above (Transus converts it to 5): it stays the existing info
+    rule, keyed `action6-date-only-bgm29` so its More info names the header,
+    and in Compare the Good-to-know remap note names `BGM+29` too. No
+    second finding for the same line.
+  - **`QTY+83` above 0 on action 6 without `DTM+506`** (and no header
+    `DTM+506`): warn. Only action 6: on action 5 the backorder quantity
+    already has its own err rule, on action 2 the next one, so its date
+    isn't asked for as well. `QTY+83:0` (bol's output adds it to every line)
+    never counts.
+  - **`QTY+83` above 0 on an action 2 line**: warn.
+  - **Accepted line (action 5/6, `QTY+12` above 0) without `DTM+67`**:
+    warn, but only when the header has no delivery date either (`DTM+2`,
+    `17`, `63`, `64`, `67`, `69`, `76`, `132`). This replaces the older
+    `action5-missing-date`, which only fired when the line carried some other
+    `DTM`, and adds `action6-missing-date`.
+  - **Net price missing on some accepted lines** while others carry one:
+    warn, one grouped finding. Silent when no accepted line has a price
+    (`checkNoPriceAnywhere`'s case, or a price-free flow), for lines of an
+    item split across lines (`checkSplitItemPriceGap`), and in Compare for a
+    line whose (item, action) bucket the other side prices (the "Net price is
+    missing on the … side" Transformation difference).
+  - **Dialects.** `ordrspRuleCtx` says what a dialect carries. The header
+    function is read from EDIFACT `BGM` element 3 and the quoted-CSV `HDR`
+    field 3 (`29` on the real message, matching bol's own `BGM+29`). Transus
+    XML's `<HeaderStatus>` isn't confirmed to use the same code list and
+    the `<Article>` dialect derives its actions from quantities, so the
+    header rules stay silent for XML. The XML parsers read no line dates,
+    so the two date rules stay silent there too. The CSV `HDR` fields 6-8
+    hold further dates (all equal to the line delivery date on the real
+    message); any of them counts as a header delivery date, so the
+    `DTM+67` rule stays quiet unless they're empty. `parseFactsEdifact`
+    used to fall back to the BGM's last element when element 3 was absent,
+    reading the document number as the function code; it's element 3 or
+    nothing now.
+  - **Fixture fallout.** `order-lost-in-bol`, `order-only-on-bol` and
+    `amendment-details-collapse` have no `DTM` at all and now also get the
+    `DTM+67` (and, for the collapse fixture, `DTM+506`) finding. Correct
+    for those messages; their tests are about other things and are
+    unchanged.
 - **DESADV's `RFF+BM` (Bill of lading number), when present, is the
   leading/authoritative source for what ECHO shows as "Packing
   reference"** — confirmed against bol's own data sources, overriding an
