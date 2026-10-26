@@ -195,6 +195,31 @@
   .verdict .vplay{font-size:12.5px;color:var(--text-dim);font-style:italic;margin:1px 0 7px;}
   .verdict .vwhere{font-size:13.5px;color:var(--text);line-height:1.5;}
   .verdict .vwhere a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
+  /* "Got an error message?" picklist (ERROR_CATALOGUE): one slim bar under
+     the verdict (Compare) / above the Overview (Quick check); the card
+     with meaning, where to look and related findings opens under it. */
+  .fkey{display:none;}
+  .err-pick{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:16px;}
+  .err-pick-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:13px;}
+  .err-pick-row .err-pick-label{font-weight:600;color:var(--text);}
+  .err-pick select,.err-pick .mini-input{font-family:var(--sans);padding:6px 9px;}
+  .err-pick select{max-width:100%;}
+  .err-pick .mini-input{flex:1 1 220px;min-width:0;}
+  .err-pick .btn{padding:6px 12px;}
+  .err-card{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13.5px;line-height:1.5;}
+  .err-card .err-title{font-weight:700;margin-bottom:4px;}
+  .err-card .err-title .dim{font-weight:400;font-size:12.5px;}
+  .err-card .err-row{margin-top:5px;}
+  .err-card .err-row>.err-k{color:var(--text-dim);font-weight:600;}
+  .err-card a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
+  .err-related{list-style:none;margin:4px 0 0;padding:0;}
+  .err-related li{margin:3px 0;}
+  .err-related .fi{display:inline-block;width:16px;}
+  .err-choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .err-choices .btn{font-size:12.5px;padding:4px 10px;}
+  @keyframes fPulse{0%{box-shadow:0 0 0 3px rgba(255,224,76,.85);}70%{box-shadow:0 0 0 3px rgba(255,224,76,.5);}100%{box-shadow:0 0 0 3px rgba(255,224,76,0);}}
+  .f-pulse{animation:fPulse 2s ease-out;}
+  @media (prefers-reduced-motion: reduce){.f-pulse{animation:none;box-shadow:0 0 0 3px rgba(255,224,76,.85);}}
   .search-bar{margin:0 0 12px;}
   .f-effects{margin-top:6px;font-size:12.5px;color:var(--text-dim);line-height:1.5;}
   .quick-summary{padding:10px 14px;margin:0 0 12px;align-items:center;}
@@ -460,6 +485,7 @@
       <div class="status" id="quickStatus"></div>
     </div>
 
+    <div id="quickErrPick"></div>
     <div id="quickOverview"></div>
 
     <div class="panel">
@@ -515,6 +541,7 @@
     <div id="results" class="hidden">
       <div id="factsBanners"></div>
       <div id="verdict"></div>
+      <div id="errPickFacts"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
       <div class="panel" id="findingsPanel">
@@ -914,6 +941,7 @@ function quickFactsPanelHtml(i){
 function quickShowFactsDoc(i){
   if(!quickFactsList[i])return;
   document.getElementById('quickOverview').innerHTML=quickFactsPanelHtml(i);
+  errPickRender('quick'); // the related findings are this message's now
 }
 function quickFormat(){
   const raw=document.getElementById('quickInput').value;
@@ -959,6 +987,7 @@ function quickFormat(){
     ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">Couldn't build an overview: ${esc(err.message)}. The original message is shown below.</div></div>`;
   }
   ovBox.innerHTML=ovHtml;
+  errPickMount('quick',document.getElementById('quickErrPick'),ovHtml?{scope:ovBox,msgType,raws:[raw],jump:v=>`jumpToQuickSource(${jsQuote(v)})`}:null);
   if(pendingEyeReaction)echoSignalReact(pendingEyeReaction);
 
   /* ---------- 2. original message ---------- */
@@ -1024,6 +1053,7 @@ document.getElementById('quickFileInput').addEventListener('change',e=>{
 document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickInput').value='';
   document.getElementById('quickOverview').innerHTML='';
+  errPickMount('quick',document.getElementById('quickErrPick'),null);
   document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
 });
@@ -1923,7 +1953,7 @@ function taxIssueFindings(taxIssues){
   return order.map(key=>{
     const g=groups.get(key);
     const n=g.refs.length;
-    return `<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong>: ${g.refs.map(esc).join(', ')}.`+moreInfo(`EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one.`);
+    return fkey('tax-no-rate')+`<strong>${n} tax segment${n===1?'':'s'} (${esc(g.taxType)}, category ${esc(g.category)}) ${n===1?'has':'have'} no rate specified</strong>: ${g.refs.map(esc).join(', ')}.`+moreInfo(`EDIFACT normally expects an explicit rate here (e.g. 0 for an exempt category); some validators (including Transus) reject a blank one.`);
   });
 }
 /* GS1 check digit (mod 10, weights 3/1 from the right) for GTIN-8/12/13/14
@@ -1957,7 +1987,8 @@ function gs1CheckDigitFinding(bad,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall(b.code)}"`:'';
     return `<li><span class="clickable-val"${jump}>${b.kind} ${esc(b.code)}</span></li>`;
   }).join('');
-  return `<strong>Check digit doesn't match</strong> on ${n} code${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Under the GS1 standard the last digit of an EAN/GTIN and of an SSCC is a check digit calculated from the other digits. For ${n===1?'this code':'these codes'} it doesn't match, which usually means a typo or a digit dropped or swapped somewhere upstream. A scanner or receiving system can reject such a code or match it to nothing.`);
+  const keys=[...new Set(bad.map(b=>b.kind==='SSCC'?'sscc-check-digit':'ean-check-digit'))];
+  return fkey(...keys)+`<strong>Check digit doesn't match</strong> on ${n} code${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Under the GS1 standard the last digit of an EAN/GTIN and of an SSCC is a check digit calculated from the other digits. For ${n===1?'this code':'these codes'} it doesn't match, which usually means a typo or a digit dropped or swapped somewhere upstream. A scanner or receiving system can reject such a code or match it to nothing.`);
 }
 function factsGs1Finding(facts,jumpCall){
   return gs1CheckDigitFinding(gs1CheckDigitIssues(facts.lines.map(l=>l.gtin),(facts.pallets||[]).map(p=>p.sscc).concat(facts.ssccs||[])),jumpCall);
@@ -1977,7 +2008,7 @@ function illegalTextCharFindings(issues,jumpCall){
     const jump=jumpCall&&i.jump?` onclick="${jumpCall(i.jump)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(i.ref)}</span></li>`;
   }).join('');
-  return [`<strong>${n} segment${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}). <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Valid in EDIFACT text, but not inside XML: an XML parser (including the one converting this message to bol's invoice document) refuses the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file". Every field is checked: item descriptions (IMD), names and addresses (NAD), free text (FTX) and the rest.`)];
+  return [fkey('illegal-char')+`<strong>${n} segment${n===1?'':'s'} contain${n===1?'s':''} an illegal control character</strong> (${esc(codes)}). <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Valid in EDIFACT text, but not inside XML: an XML parser (including the one converting this message to bol's invoice document) refuses the whole file because of it, not just this field. A confirmed real cause of "Couldn't parse XML content of the file". Every field is checked: item descriptions (IMD), names and addresses (NAD), free text (FTX) and the rest.`)];
 }
 /* A message can state the VAT rate at the standard TAX-segment position on
    its line-level segments, but at a different position on its summary-level
@@ -1989,7 +2020,7 @@ function illegalTextCharFindings(issues,jumpCall){
    it's a question about how the supplier's own message is built, not a
    mapping question. */
 function taxRateEncodingMismatchText(){
-  return "<strong>VAT rate in a non-standard position</strong> in the summary TAX segment"+moreInfo("The summary-level TAX segment states the VAT rate in a different position than the line-level TAX segments. ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message. The rate belongs in the 4th sub-component of the C243 composite, e.g. <code>TAX+7+VAT+++:::21+S'</code> rather than <code>TAX+7+VAT+++21:S'</code>.");
+  return fkey('tax-rate-position')+"<strong>VAT rate in a non-standard position</strong> in the summary TAX segment"+moreInfo("The summary-level TAX segment states the VAT rate in a different position than the line-level TAX segments. ECHO can still read it, but some downstream validators (including Transus) only accept the standard position and may reject the message. The rate belongs in the 4th sub-component of the C243 composite, e.g. <code>TAX+7+VAT+++:::21+S'</code> rather than <code>TAX+7+VAT+++21:S'</code>.");
 }
 /* Groups {label,missSide,jump} entries from the ORDRSP price comparison
    into one block per side missing the price — every affected line/action
@@ -2008,7 +2039,7 @@ function priceMissingFindings(entries){
     const n=g.items.length;
     const haveSide=g.missSide==='bol'?'supplier':'bol';
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.label)}</span></li>`).join('');
-    return `<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+    return fkey('price-missing-side')+`<strong>Net price is missing on the ${g.missSide} side for ${n} line${n===1?'':'s'}</strong> — present on the ${haveSide} side. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
   });
 }
 /* Detects the run(s) of consecutive lines described by
@@ -2080,7 +2111,7 @@ function cascadePriceShiftFindings(runs){
     const originNote=(origin&&origin.hasDtmConflict)
       ?` This starts right after <code>${esc(origin.label)}</code>, which is flagged above for a duplicate DTM qualifier — a confirmed real cause (per Transus support) of exactly this kind of shift on every line after it.`
       :'';
-    return `<strong>Prices shifted one line down</strong> on ${n} consecutive lines: one shift, not ${n} separate differences. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`On each of these lines bol's net price equals the supplier's price for the line before it, so this reads as a single price shifted one line too far down the message.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones.`);
+    return fkey('price-shift')+`<strong>Prices shifted one line down</strong> on ${n} consecutive lines: one shift, not ${n} separate differences. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`On each of these lines bol's net price equals the supplier's price for the line before it, so this reads as a single price shifted one line too far down the message.${originNote} The last of these (<code>${esc(lastLoses.label)}</code>) loses its own price (supplier: <span class="val-sup">${esc(lastLoses.sup.toFixed(2))}</span>) entirely, since there's no further line for it to shift onto. Worth reporting to Transus as one pattern rather than ${n} separate ones.`);
   });
 }
 
@@ -2114,7 +2145,7 @@ function orderShiftFindings(runs){
     const lis=lines.map(x=>{const l=x.line;const v=l.gtin||l.art||l.lineNo||'';
       return `<li><span class="clickable-val" onclick="jumpToFactsSource('bol',${jsQuote(v)})">line ${esc(l.lineNo||'?')} · ${esc(l.art||l.gtin||'?')}: ${esc(x.sup||'—')} → ${esc(x.bol)}</span></li>`;}).join('');
     const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
-    return {n,text:`<strong>Order numbers shifted one line down in bol's output</strong> on ${n} lines. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`On each of these lines bol's order number (RFF+ON) is the one the supplier sent for the line before it, so this reads as one shift rather than ${n} separate order-number differences. Shown as supplier → bol per line.`)};
+    return {n,text:fkey('order-diff')+`<strong>Order numbers shifted one line down in bol's output</strong> on ${n} lines. ${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`On each of these lines bol's order number (RFF+ON) is the one the supplier sent for the line before it, so this reads as one shift rather than ${n} separate order-number differences. Shown as supplier → bol per line.`)};
   });
 }
 
@@ -2129,7 +2160,7 @@ function concatenatedXmlBannerHtml(inv){
   const diffRows=c.diffs.length
     ?c.diffs.map(d=>`<li><code>${esc(d.path)}</code>: <span class="val-sup">${esc(d.from)}</span> → <span class="val-bol">${esc(d.to)}</span></li>`).join('')
     :'<li>No field-level differences found between the documents.</li>';
-  return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+  return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">${fkey('xml-concatenated')}
     <div>⚠ <strong>This file contains ${c.total} concatenated XML documents</strong> — not valid XML as a whole. This is very likely why delivery to Transus failed ("Couldn't parse XML content of the file"); it looks like a send/retry bug upstream, not a data issue on its own. ECHO used the last parseable document (#${c.usedIndex+1} of ${c.total}) for this comparison — the delivery itself still needs fixing.</div>
     <div style="margin-top:8px;font-weight:600;">What changed between the last two documents:</div>
     <ul style="margin:4px 0 0 18px;">${diffRows}</ul>
@@ -2147,7 +2178,7 @@ function illegalXmlCharsBannerHtml(inv){
   const c=inv.illegalXmlChars;
   const codeList=c.codes.map(code=>'0x'+code.toString(16).toUpperCase().padStart(2,'0')).join(', ');
   return `<div class="note-inline" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-    ⚠ <strong>This file contains ${c.count} illegal control character${c.count===1?'':'s'}</strong> (${codeList}) — not valid inside XML text content, even though the byte itself is a perfectly ordinary one in EDIFACT free text. This is very likely why delivery failed ("Couldn't parse XML content of the file") — usually traced back to a free-text field (e.g. an item description) in the original EDIFACT message carried straight through. ECHO stripped ${c.count===1?'it':'them'} to still show this comparison — the delivery itself still needs fixing upstream.
+    ${fkey('illegal-char-file')}⚠ <strong>This file contains ${c.count} illegal control character${c.count===1?'':'s'}</strong> (${codeList}) — not valid inside XML text content, even though the byte itself is a perfectly ordinary one in EDIFACT free text. This is very likely why delivery failed ("Couldn't parse XML content of the file") — usually traced back to a free-text field (e.g. an item description) in the original EDIFACT message carried straight through. ECHO stripped ${c.count===1?'it':'them'} to still show this comparison — the delivery itself still needs fixing upstream.
   </div>`;
 }
 /* The XML itself couldn't be read (parseXmlDoc's error). Shown INSTEAD of a
@@ -2157,7 +2188,7 @@ function xmlParseErrorBannerHtml(err,who){
   if(!err)return '';
   const where=err.line?` at line ${err.line}, column ${err.col}`:'';
   return `<div class="note-inline xml-error-banner" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-    ⚠ <strong>${esc(who)} couldn't be read as XML</strong> — the XML reader stopped${where}: <code>${esc(err.msg||'unknown error')}</code>. Nothing from this file can be shown or compared until that spot is looked at. Common causes are a file that was cut off, edited by hand, or exported with a character XML doesn't allow; a strict XML reader on the receiving side would most likely stop at the same place.
+    ${fkey('xml-unreadable')}⚠ <strong>${esc(who)} couldn't be read as XML</strong> — the XML reader stopped${where}: <code>${esc(err.msg||'unknown error')}</code>. Nothing from this file can be shown or compared until that spot is looked at. Common causes are a file that was cut off, edited by hand, or exported with a character XML doesn't allow; a strict XML reader on the receiving side would most likely stop at the same place.
   </div>`;
 }
 /* Text before the <?xml declaration (prepareXmlText skips it). Warn-level,
@@ -2167,7 +2198,7 @@ function leadingJunkBannerHtml(x,who){
   if(!x||!x.leadingJunk)return '';
   const s=x.leadingJunk,shown=s.length>80?s.slice(0,80)+'…':s;
   return `<div class="note-inline" style="color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-    ! <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
+    ${fkey('xml-leading-text')}! <strong>${esc(who||'This file')} has text before its XML declaration</strong> (<code>${esc(shown)}</code>). XML allows nothing before <code>&lt;?xml …?&gt;</code>, so a strict XML reader would most likely refuse the whole file. ECHO skipped that text to show the contents.
   </div>`;
 }
 /* Every "read, but with a caveat" banner for one XML file, in one place. */
@@ -2196,6 +2227,14 @@ function palletQtyEff(v){if(v===undefined||v===null||v==='')return 0;const n=par
 /* Findings stay short in the panel: headline + affected values up front,
    the why/what-to-do behind a "More info" toggle (docs/ui-conventions.md). */
 function moreInfo(html){return `<details class="f-more"><summary>More info</summary><div>${html}</div></details>`;}
+/* Finding keys: a stable id on a finding, used by the error picklist
+   (ERROR_CATALOGUE) to find the findings related to an error message.
+   fkey('order-near-miss') is an empty marker element at the start of the
+   finding's HTML, so it travels through every add() wrapper, perSideOnce
+   and the renderers unchanged; it shows nothing and stripHtml drops it.
+   Several keys: fkey('a','b'). Never match findings on headline text. */
+function fkey(...keys){return `<span class="fkey" data-fkey="${keys.join(' ')}"></span>`;}
+function findingKeys(html){const out=[];String(html||'').replace(/data-fkey="([^"]*)"/g,(m,k)=>{out.push(...k.split(' '));return m;});return out;}
 
 /* One entry per SSCC. Several CPS groups (or XML DespatchUnits) can carry
    the same SSCC: a real Supplier Charlie DESADV sent one DespatchUnit per
@@ -2245,7 +2284,7 @@ function noPriceAnywhere(facts){
 function checkNoPriceAnywhere(facts,label,add){
   const accepted=noPriceAnywhere(facts);
   if(!accepted)return;
-  add('warn',`${label} — <strong>none of the ${accepted.length} accepted lines carry a net price</strong>`+moreInfo(`No PRI+AAA on any accepted line. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) rejects the message outright rather than accepting it without one. Worth reporting to whoever generates this feed.`),'message');
+  add('warn',fkey('price-none')+`${label} — <strong>none of the ${accepted.length} accepted lines carry a net price</strong>`+moreInfo(`No PRI+AAA on any accepted line. A downstream system that requires a price per confirmed line (confirmed real cause of a "Unit price is unknown" delivery failure) rejects the message outright rather than accepting it without one. Worth reporting to whoever generates this feed.`),'message');
 }
 /* A single message's own internal consistency (ORDRSP): the same item
    split across multiple lines with different actions — e.g. one line
@@ -2279,7 +2318,7 @@ function checkSplitItemPriceGap(facts,label,add){
     const ref=lines[0];
     const actionsPresent=[...new Set(withPrice.map(l=>l.action||'?'))].join(', ');
     const actionsMissing=[...new Set(lines.filter(l=>!withPrice.includes(l)).map(l=>l.action||'?'))].join(', ');
-    add('warn',`${label} — <strong>net price missing on part of item</strong> <code>${esc(ref.art||ref.gtin||'?')}</code>: present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}`+moreInfo(`This item appears on ${lines.length} lines (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price. Worth checking whether the price should be there on every occurrence of this item.`),'message');
+    add('warn',fkey('price-partial')+`${label} — <strong>net price missing on part of item</strong> <code>${esc(ref.art||ref.gtin||'?')}</code>: present for action ${esc(actionsPresent)}, missing for action ${esc(actionsMissing)}`+moreInfo(`This item appears on ${lines.length} lines (actions ${esc([...new Set(lines.map(l=>l.action||'?'))].join(', '))}), but only some carry a net price. Worth checking whether the price should be there on every occurrence of this item.`),'message');
   });
 }
 
@@ -2307,7 +2346,7 @@ function checkSomeLinesWithoutPrice(facts,label,add,jumpCall,skip){
     return `<li><span class="clickable-val"${jump}>${esc(lbl)}</span></li>`;
   }).join('');
   const ul=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
-  add('warn',`${label} — <strong>Net price (PRI+AAA) missing on some accepted lines</strong> <span class="dim">(${n} of ${accepted.length})</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The other accepted lines in this message carry a net price; these don't. bol's ORDRSP guidelines ask for PRI+AAA on every accepted line, and a downstream system that needs a price per confirmed line can report "Unit price is unknown" for these items. Worth checking whether the price should be there.`),'message');
+  add('warn',fkey('price-some-lines')+`${label} — <strong>Net price (PRI+AAA) missing on some accepted lines</strong> <span class="dim">(${n} of ${accepted.length})</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`The other accepted lines in this message carry a net price; these don't. bol's ORDRSP guidelines ask for PRI+AAA on every accepted line, and a downstream system that needs a price per confirmed line can report "Unit price is unknown" for these items. Worth checking whether the price should be there.`),'message');
 }
 
 /* An EAN made up entirely of zeros (e.g. LIN+1++0000000000000:EN) carries
@@ -2330,7 +2369,7 @@ function checkZeroGtin(facts,label,add,jumpCall,skip){
     const jump=jumpCall?` onclick="${jumpCall('LIN+'+(l.lineNo||''))}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(lbl)}</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>EAN is all zeros</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`These lines carry 0000000000000 instead of a real EAN, so the item can't be identified by EAN downstream.`),'message');
+  add('warn',fkey('ean-zeroed')+`${label} — <strong>EAN is all zeros</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`These lines carry 0000000000000 instead of a real EAN, so the item can't be identified by EAN downstream.`),'message');
 }
 function compareZeroGtin(sup,bol,add){
   const supByLine=new Map();
@@ -2344,7 +2383,7 @@ function compareZeroGtin(sup,bol,add){
   if(pairs.length){
     const n=pairs.length;
     const tags=pairs.map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo)} · ${esc(s.gtin)}</span></li>`).join('');
-    add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as line · supplier's EAN), but bol's output says 0000000000000, so bol can't tell which item ${n===1?'this is':'these are'}. Confirmed twice as a setting in Transus's data source for that supplier.`),'diff');
+    add('warn',fkey('ean-zeroed-in-output')+`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as line · supplier's EAN), but bol's output says 0000000000000, so bol can't tell which item ${n===1?'this is':'these are'}. Confirmed twice as a setting in Transus's data source for that supplier.`),'diff');
   }
   return new Set(pairs.map(p=>p[0]));
 }
@@ -2380,7 +2419,7 @@ function checkDtmDuplicateQualifier(facts,label,add,jumpCall){
     const g=groups.get(qual);
     const n=g.items.length;
     const tags=g.items.map(it=>`<li><span class="clickable-val" onclick="${it.jump}">${esc(it.itemLabel)}</span></li>`).join('');
-    add('warn',`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Some EDI processors only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed.`),'message');
+    add('warn',fkey('dtm-duplicate')+`${label} — <strong>DTM+${esc(qual)} appears more than once with different dates</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`Some EDI processors only support one occurrence of a given DTM qualifier per line and may silently drop other fields, such as price, as a result. Worth reporting to whoever generates this feed.`),'message');
   });
 }
 
@@ -2425,7 +2464,7 @@ function checkNoSsccAnywhere(facts,label,add,jumpCall,opts){
   const list=noSsccPallets(facts);
   const n=list.length;
   const pallets=n?`<div style="margin-top:6px">${n} pallet group${n===1?'':'s'} without SSCC${cpsTagListHtml(list,jumpCall,'pallet groups')}</div>`:'';
-  add('warn',`${label} — <strong>No SSCC</strong> <span class="seg">(GIN+BJ)</span> anywhere in the message.`+pallets+(o.otherHtml||'')+moreInfo(`Pallets can't be matched by SSCC, so pallet-level structure can't be verified from this message alone.${o.otherInfo?' '+o.otherInfo:''}`),'message');
+  add('warn',fkey('sscc-none')+`${label} — <strong>No SSCC</strong> <span class="seg">(GIN+BJ)</span> anywhere in the message.`+pallets+(o.otherHtml||'')+moreInfo(`Pallets can't be matched by SSCC, so pallet-level structure can't be verified from this message alone.${o.otherInfo?' '+o.otherInfo:''}`),'message');
 }
 /* opts.skipNoSscc: Compare already reports "Neither message contains an
    SSCC" with these pallets listed, so the per-side "No SSCC found" would
@@ -2447,7 +2486,7 @@ function checkPalletStructure(facts,label,add,jumpCall,opts){
   const bodyFor=list=>cpsTagListHtml(list,jumpCall);
   if(flatNoSscc.length){
     const n=flatNoSscc.length;
-    add('warn',`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS). ${bodyFor(flatNoSscc)}`+moreInfo(`${n===1?'This CPS group contains':'Each of these CPS groups contains'} item lines, but no GIN+BJ SSCC was found, so the pallet can't be matched by SSCC.`),'message');
+    add('warn',fkey('sscc-pallet-missing')+`${label} — <strong>No SSCC found</strong> on ${n} pallet group${n===1?'':'s'} (CPS). ${bodyFor(flatNoSscc)}`+moreInfo(`${n===1?'This CPS group contains':'Each of these CPS groups contains'} item lines, but no GIN+BJ SSCC was found, so the pallet can't be matched by SSCC.`),'message');
   }
   // A CPS group can wrap other CPS groups instead of carrying items
   // directly (a genuine pallet, with its actual contents nested one level
@@ -2480,7 +2519,7 @@ function checkPalletStructure(facts,label,add,jumpCall,opts){
     p.parentCps&&p.hasPac&&!palletIsNested(p,byCps)&&!p.sscc&&hasItemsBeneath(p)&&hasNestedSscc(p));
   if(wrapperNoSscc.length){
     const n=wrapperNoSscc.length;
-    add('warn',`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'}. ${bodyFor(wrapperNoSscc)}`+moreInfo(`${n===1?'This pallet wraps':'Each of these pallets wraps'} nested package(s) that carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, so this pallet has no usable SSCC. Worth confirming with whoever generates this feed that the pallet's GIN+BJ isn't being dropped.`),'message');
+    add('warn',fkey('sscc-pallet-missing')+`${label} — <strong>No SSCC at pallet level</strong> on ${n} pallet group${n===1?'':'s'}. ${bodyFor(wrapperNoSscc)}`+moreInfo(`${n===1?'This pallet wraps':'Each of these pallets wraps'} nested package(s) that carry their own SSCC, but the pallet itself doesn't. bol's system only reads the SSCC at pallet level, so this pallet has no usable SSCC. Worth confirming with whoever generates this feed that the pallet's GIN+BJ isn't being dropped.`),'message');
   }
   // A pallet EAN (GIN+SRV) reused as an item EAN on the same pallet, and
   // items outside every CPS group: one grouped finding each, with the
@@ -2543,7 +2582,7 @@ function checkPackingReferenceLength(facts,label,add,jumpCall){
   const ref=facts.billOfLadingRef;
   if(!ref||ref.length<=15)return;
   const jump=jumpCall?` onclick="${jumpCall(ref)}"`:'';
-  add('err',`${label} — <strong>Packing reference too long</strong> <span class="seg">(RFF+BM)</span>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline (its error calls it "Packing List Reference"); a message like this fails to deliver entirely.`),'message');
+  add('err',fkey('packref-length')+`${label} — <strong>Packing reference too long</strong> <span class="seg">(RFF+BM)</span>: <span class="clickable-val"${jump}>${esc(ref)}</span> (${ref.length} characters, max 15)`+moreInfo(`RFF+BM over 15 characters is rejected by bol's delivery pipeline (its error calls it "Packing List Reference"); a message like this fails to deliver entirely.`),'message');
 }
 
 // A CPS group that carries its own SSCC (GIN+BJ) but never declared itself
@@ -2583,7 +2622,7 @@ function checkMissingPacWithSscc(facts,label,add,jumpCall,opts){
     lenInfo=` ${SSCC_LENGTH_INFO}`;
   }
   const effHtml=effects.length?`<div class="f-effects">${effects.map(e=>`<div>↳ ${e}</div>`).join('')}</div>`:'';
-  add('err',`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+effHtml+moreInfo(`Confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message.${lenInfo}`),'message');
+  add('err',fkey('pac-missing')+`${label} — <strong>SSCC present but no PAC segment</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+effHtml+moreInfo(`Confirmed by Transus support: without PAC, the SSCC (and the packaging structure around it) doesn't reach bol at all, even though it's in the supplier's own message.${lenInfo}`),'message');
   return covered;
 }
 
@@ -2611,7 +2650,7 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
   if(!packingRefNearMiss(facts))return;
   const ref=facts.billOfLadingRef,doc=facts.docNumber;
   const v=s=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(s)}">${esc(s)}</span>`:`<code>${esc(s)}</code>`;
-  add('warn',`${label?label+' — ':''}<strong>Packing reference almost matches the document number</strong>: ${v(ref)} vs ${v(doc)}`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing reference, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is on the packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing reference = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
+  add('warn',fkey('packref-near-match')+`${label?label+' — ':''}<strong>Packing reference almost matches the document number</strong>: ${v(ref)} vs ${v(doc)}`+moreInfo(`The two numbers are almost the same, which can mean one has a typo or a missing character. bol matches the delivery on the packing reference, so it must be exactly what's printed on the physical packing slip. Check with the supplier which one is on the packing slip. The Transus portal can show the document number instead, so a delivery can look fine there while bol's system rejects it (e.g. as a duplicate reference). Packing reference = RFF+BM / PackingSlipNumber; document number = BGM / DespatchAdviceNumber.`),'message');
 }
 
 /* Header fields side by side: what the supplier sent, what bol's output
@@ -2660,7 +2699,7 @@ function checkOrderNearMiss(facts,label,add,jumpCall){
     const jump=jumpCall?` onclick="${jumpCall(h.short)}"`:'';
     return `<li><span class="clickable-val"${jump}>${esc(h.short)} → ${esc(h.full)}?${h.lines.length?' (line '+esc(h.lines.join(', '))+')':''}</span></li>`;
   }).join('');
-  add('warn',`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),'message');
+  add('warn',fkey('order-near-miss')+`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),'message');
 }
 /* No order number (RFF+ON) in the header or on any line: a fact about one
    side's own message, so it runs in Quick check and per side in Compare
@@ -2671,7 +2710,7 @@ function checkOrderNearMiss(facts,label,add,jumpCall){
    differences sent to Transus. */
 function checkNoOrderAnywhere(label,add,opts){
   const o=opts||{};
-  add('warn',`${label} — <strong>No order number</strong> <span class="seg">(RFF+ON)</span> in the header or on any line.`+(o.otherHtml||'')+moreInfo(`Worth checking whether that's expected for this message.${o.otherInfo?' '+o.otherInfo:''}`),'message');
+  add('warn',fkey('order-missing')+`${label} — <strong>No order number</strong> <span class="seg">(RFF+ON)</span> in the header or on any line.`+(o.otherHtml||'')+moreInfo(`Worth checking whether that's expected for this message.${o.otherInfo?' '+o.otherInfo:''}`),'message');
 }
 /* Clickable value tags, collapsed past ~20 (docs/ui-conventions.md). */
 function valueTagsHtml(values,jumpCall,what){
@@ -2776,7 +2815,7 @@ function checkSsccLength(facts,label,add,jumpCall,skip){
     const h=hint(p.sscc);if(h)anyHint=true;
     return `<li><span class="clickable-val"${jump}>${esc(p.sscc)} (${p.sscc.length} chars${h?': '+h:''})</span></li>`;
   }).join('');
-  add('warn',`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`${SSCC_LENGTH_INFO}${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
+  add('warn',fkey('sscc-length')+`${label} — <strong>SSCC isn't 18 characters</strong> on ${n} pallet group${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`${SSCC_LENGTH_INFO}${anyHint?' Where noted, the 18-digit SSCC inside the value has a matching check digit, so the extra "00" or the missing leading 0 is the likely difference.':''}`),'message');
 }
 
 /* cross-side comparison of SSCC → item GTIN → quantity mapping.
@@ -3367,8 +3406,8 @@ function compare(bol,sup){
     }
     else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
   addCapped('err',missingItems,
-    m=>`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
-    rest=>`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
+    m=>fkey('item-one-side')+`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
+    rest=>fkey('item-one-side')+`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
 
   // Order numbers shifted one line down (findOrderShiftRuns): one grouped
   // finding per run; its items are left out of the per-item list below.
@@ -3400,10 +3439,10 @@ function compare(bol,sup){
   if(supHasAnyOrder&&!bolHasAnyOrder&&orderDiffs.length){
     const n=orderDiffs.length;
     const supOrds=[...new Set(orderDiffs.flatMap(({r})=>r.supOrders))].sort();
-    add('err',`<strong>No order number in bol's output</strong> on ${n} item${n===1?'':'s'}; the supplier message has:`+valueTagsHtml(supOrds,v=>`jumpToFactsSource('sup',${jsQuote(v)})`,'order numbers')+moreInfo(`The supplier message states an order number (RFF+ON) for ${n===1?'this item':'these items'}; bol's output has none in the header or on any line. bol links the message to its purchase order through this number. The Line comparison below shows it per item.`),'diff',n);
+    add('err',fkey('order-diff')+`<strong>No order number in bol's output</strong> on ${n} item${n===1?'':'s'}; the supplier message has:`+valueTagsHtml(supOrds,v=>`jumpToFactsSource('sup',${jsQuote(v)})`,'order numbers')+moreInfo(`The supplier message states an order number (RFF+ON) for ${n===1?'this item':'these items'}; bol's output has none in the header or on any line. bol links the message to its purchase order through this number. The Line comparison below shows it per item.`),'diff',n);
   }else addCapped('err',orderDiffs,
-    ({label,r})=>`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
-    rest=>`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
+    ({label,r})=>fkey('order-diff')+`Item <code>${esc(label)}</code>: order numbers differ — supplier [${esc(r.supOrders.join(', ')||'—')}] vs bol [${esc(r.bolOrders.join(', ')||'—')}].`,
+    rest=>fkey('order-diff')+`<strong>${rest} more item(s) also show an order-number difference</strong> — see the Line comparison below for the full list.`);
 
   // No order number (RFF+ON) anywhere. Both sides: one "Neither message"
   // finding (the per-item check only flags a DIFFERENCE, so two equally
@@ -3412,7 +3451,7 @@ function compare(bol,sup){
   // reader sees it's about that message, not only a cross-side "—".
   if(sup.lines.length||bol.lines.length){
     if(!supHasAnyOrder&&!bolHasAnyOrder){
-      add('warn',"Neither message references an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.",'message');
+      add('warn',fkey('order-missing')+"Neither message references an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.",'message');
     }else if(!supHasAnyOrder&&sup.lines.length){
       checkNoOrderAnywhere('Supplier',add,{
         otherHtml:`<div style="margin-top:6px">bol's output has:${valueTagsHtml(headerOrders(bol),v=>`jumpToFactsSource('bol',${jsQuote(v)})`,'order numbers')}</div>`,
@@ -3426,7 +3465,7 @@ function compare(bol,sup){
   // data — a real supplier complaint traced this to a stray empty "LIN'"
   // Transus inserted right before every genuine LIN in a test order,
   // which the receiving system then reads as a blank item line.
-  perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — ${f.blankLinCount} blank LIN segment${f.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`),'message');},factsJump);
+  perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',fkey('blank-lin')+`${label} — ${f.blankLinCount} blank LIN segment${f.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`),'message');},factsJump);
 
   // SSCC (DESADV)
   const bSscc=new Set(bol.ssccs),sSscc=new Set(sup.ssccs);
@@ -3452,7 +3491,7 @@ function compare(bol,sup){
       const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
       return list.length>20?`<details><summary>Show ${list.length} SSCCs</summary>${ul}</details>`:ul;
     };
-    const ssccHead=(n,where)=>`<strong>${n} SSCC${n===1?'':'s'} only in the ${where}</strong>`;
+    const ssccHead=(n,where)=>fkey('sscc-one-side')+`<strong>${n} SSCC${n===1?'':'s'} only in the ${where}</strong>`;
     // Only one side has any SSCC: that side's own Message check, the same
     // one Quick check runs (parity rule), listing its SSCC-less pallet
     // groups (so checkPalletStructure's "No SSCC found" is skipped for it
@@ -3488,7 +3527,7 @@ function compare(bol,sup){
     // below (checkPalletStructure opts.skipNoSscc), its pallets listed here.
     const sNo=noSsccPallets(sup),bNo=noSsccPallets(bol);
     const part=(list,who,side)=>list.length?`<div style="margin-top:6px">${who}: ${list.length} pallet group${list.length===1?'':'s'} without SSCC${cpsTagListHtml(list,v=>`jumpToFactsSource(${jsQuote(side)},${jsQuote(v)})`,`${who.toLowerCase()} pallet groups`)}</div>`:'';
-    add('warn',"<strong>Neither message contains an SSCC</strong> <span class=\"seg\">(GIN+BJ)</span>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
+    add('warn',fkey('sscc-none')+"<strong>Neither message contains an SSCC</strong> <span class=\"seg\">(GIN+BJ)</span>"+part(sNo,'Supplier','sup')+part(bNo,'Bol','bol')+moreInfo("So pallet-level mapping couldn't be checked between the two; only the item quantities were compared."),'message');
   }
 
   // DESADV pallet/CPS model: structural observations + cross-side mapping check
@@ -4960,7 +4999,7 @@ function invoiceAsFacts(inv){
 }
 /* Same wording as the ORDRSP/DESADV blank-LIN finding. */
 function invoiceBlankLinText(n){
-  return `${n} blank LIN segment${n===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`);
+  return fkey('blank-lin')+`${n} blank LIN segment${n===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`);
 }
 /* Any order number at all, header or line (effective, i.e. after a single
    header value is inherited by the lines). Exact Online and TRANSUSXML only
@@ -5050,10 +5089,10 @@ function compareInvoice(sup,bol){
   perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — `+invoiceBlankLinText(f.blankLinCount),'message');},invJump);
   {
     const so=invoiceHasOrder(sup)||!sup.lines.length,bo=invoiceHasOrder(bol)||!bol.lines.length;
-    if(!so&&!bo)add('warn','<strong>Neither message has an order number</strong> anywhere.'+INVOICE_NO_ORDER_INFO,'message');
+    if(!so&&!bo)add('warn',fkey('order-missing')+'<strong>Neither message has an order number</strong> anywhere.'+INVOICE_NO_ORDER_INFO,'message');
     else{
-      if(!so)add('warn','Supplier — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
-      if(!bo)add('warn','Bol — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
+      if(!so)add('warn',fkey('order-missing')+'Supplier — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
+      if(!bo)add('warn',fkey('order-missing')+'Bol — <strong>no order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO,'message');
     }
   }
   // All-zeros EAN and an order number missing its leading digit(s): the
@@ -5067,7 +5106,7 @@ function compareInvoice(sup,bol){
     if(zeroPairs.size){
       const n=zeroPairs.size;
       const tags=[...zeroPairs].map(([b,s])=>`<li><span class="clickable-val" onclick="jumpToInvSource(${jsQuote('sup')},${jsQuote(s.gtin)})">Line ${esc(b.lineNo||'?')} · ${esc(s.gtin)}</span></li>`).join('');
-      add('warn',`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as bol's line · supplier's EAN), but bol's output says 0000000000000 on the same line, so the item can't be identified by EAN there. The lines are still compared using the supplier's EAN. On DESADV this was a setting in Transus's data source for that supplier.`),'diff');
+      add('warn',fkey('ean-zeroed-in-output')+`<strong>EAN replaced by zeros in bol's output</strong> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The supplier sent a valid EAN (shown as bol's line · supplier's EAN), but bol's output says 0000000000000 on the same line, so the item can't be identified by EAN there. The lines are still compared using the supplier's EAN. On DESADV this was a setting in Transus's data source for that supplier.`),'diff');
     }
     const bolSkip=new Set(bolF.lines.filter(l=>zeroPairs.has(l.__inv)));
     const supZ=supF.lines.filter(l=>l.gtinZeroed).length;
@@ -5106,7 +5145,7 @@ function compareInvoice(sup,bol){
   {
     const coOnly=inv=>inv.orders.length>0&&inv.orders.every(o=>(inv.orderQuals||{})[o]==='CO');
     const softCo=!bol.orders.length&&coOnly(sup);
-    const infoText=softCo?`<strong>Order(s)</strong>: supplier <span class="val-sup">${esc(sup.orders.join(', '))}</span> (RFF+CO), bol <span class="val-bol">—</span>.`+moreInfo(`The supplier states ${sup.orders.length===1?'this reference':'these references'} as RFF+CO (buyer's order number), not RFF+ON, and bol's output carries no order reference at all. Whether bol's output is expected to carry an RFF+CO reference can't be told from these two messages.`):null;
+    const infoText=softCo?fkey('order-co-only')+`<strong>Order(s)</strong>: supplier <span class="val-sup">${esc(sup.orders.join(', '))}</span> (RFF+CO), bol <span class="val-bol">—</span>.`+moreInfo(`The supplier states ${sup.orders.length===1?'this reference':'these references'} as RFF+CO (buyer's order number), not RFF+ON, and bol's output carries no order reference at all. Whether bol's output is expected to carry an RFF+CO reference can't be told from these two messages.`):null;
     hrow('Order(s)',sup.orders.join(', ')||null,bol.orders.join(', ')||null,{cmp:()=>sameSet(sup.orders,bol.orders),soft:softCo,infoText});
   }
   hrow('Packing reference(s)',sup.despatchNotes.join(', ')||null,bol.despatchNotes.join(', ')||null,{cmp:()=>sameSet(sup.despatchNotes,bol.despatchNotes)});
@@ -5130,7 +5169,7 @@ function compareInvoice(sup,bol){
     hrow('Payment discount %',sup.paymentTerms.pct,bol.paymentTerms.pct,{soft:true});
 
   hdr.forEach(h=>{
-    if(h.status==='diff')add('err',`<strong>${h.label}</strong> differs — supplier <span class="val-sup">${esc(h.sup??'—')}</span> vs bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
+    if(h.status==='diff')add('err',(h.label==='Order(s)'?fkey('order-diff'):'')+`<strong>${h.label}</strong> differs — supplier <span class="val-sup">${esc(h.sup??'—')}</span> vs bol <span class="val-bol">${esc(h.bol??'—')}</span>.`);
     // A soft row (e.g. a VAT number or GLN on one side only) is shown in the
     // Invoice details table, not repeated as a finding; only a row with an
     // explanation of its own (infoText) gets one.
@@ -5318,21 +5357,22 @@ function compareInvoice(sup,bol){
     }
   });
   addCapped('err',missingRows,
-    m=>`EAN <code>${esc(m.label)}</code> is present in the ${m.where}.`,
-    rest=>`<strong>${rest} more EAN(s) are missing on one side</strong> — see Line comparison below for the full list.`);
+    m=>fkey('item-one-side')+`EAN <code>${esc(m.label)}</code> is present in the ${m.where}.`,
+    rest=>fkey('item-one-side')+`<strong>${rest} more EAN(s) are missing on one side</strong> — see Line comparison below for the full list.`);
+  const cellKey=field=>/^VAT/.test(field)?fkey('vat-diff'):(field==='Order'?fkey('order-diff'):'');
   cellDiffs.forEach((items,field)=>addCapped('err',items,
-    ({label,c})=>`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`,
-    rest=>`<strong>${rest} more EAN(s) also show a ${esc(/^VAT/.test(field)?field:field.toLowerCase())} difference</strong> — see Line comparison below for the full list.`));
+    ({label,c})=>cellKey(field)+`EAN <code>${esc(label)}</code>: <strong>${c.label}</strong> differs — supplier <span class="val-sup">${esc(c.sup??'—')}</span> vs bol <span class="val-bol">${esc(c.bol??'—')}</span>.`,
+    rest=>cellKey(field)+`<strong>${rest} more EAN(s) also show a ${esc(/^VAT/.test(field)?field:field.toLowerCase())} difference</strong> — see Line comparison below for the full list.`));
   ambig.forEach(g=>{
     const n=g.items.length;
     const sideTxt={sup:'Supplier',bol:'Bol',both:'Supplier and bol'}[g.side];
     const tags=g.items.map(e=>`<li><span class="clickable-val" onclick="jumpToInvSource(${jsQuote(g.side)},${jsQuote(e)})">${esc(e)}</span></li>`).join('');
-    add('warn',`${sideTxt} — <strong>${esc(g.ref)} reference is ambiguous</strong> on ${n} EAN${n===1?'':'s'}, no automatic match made. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The message has several message-level ${esc(g.ref.toLowerCase())} references and none on ${n===1?'this line':'these lines'}, so it can't be determined which one belongs to ${n===1?'it':'each line'}.`),'message');
+    add('warn',(g.ref==='Order'?fkey('order-ambiguous'):'')+`${sideTxt} — <strong>${esc(g.ref)} reference is ambiguous</strong> on ${n} EAN${n===1?'':'s'}, no automatic match made. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The message has several message-level ${esc(g.ref.toLowerCase())} references and none on ${n===1?'this line':'these lines'}, so it can't be determined which one belongs to ${n===1?'it':'each line'}.`),'message');
   });
   // one side's own message lacking an identifier: a Message check. An
   // all-zeros EAN already has its own finding, so it isn't counted twice.
   const noKeyN=g=>g.noKey.filter(l=>!l.gtinZeroed).length;
-  perSideOnce(add,sup,bol,(f,label,a)=>{const n=noKeyN(f===sup?gs:gb);if(n)a('warn',`${label} — ${n} line(s) without an EAN or item number — these could not be matched.`,'message');},invJump);
+  perSideOnce(add,sup,bol,(f,label,a)=>{const n=noKeyN(f===sup?gs:gb);if(n)a('warn',fkey('no-identifier')+`${label} — ${n} line(s) without an EAN or item number — these could not be matched.`,'message');},invJump);
 
   /* fields bol doesn't send at all: report informatively, not as an error */
   const naNotes=[];
@@ -5445,7 +5485,7 @@ function compareInvoice(sup,bol){
   /* VAT rates */
   if(sup.taxRates.length||bol.taxRates.length){
     if(sup.taxRates.length&&bol.taxRates.length&&!sameSet(sup.taxRates,bol.taxRates))
-      add('err',`VAT rates differ — supplier [${sup.taxRates.join(', ')}] vs bol [${bol.taxRates.join(', ')}].`);
+      add('err',fkey('vat-diff')+`VAT rates differ — supplier [${sup.taxRates.join(', ')}] vs bol [${bol.taxRates.join(', ')}].`);
   }
 
   let verdict='ok';
@@ -5573,6 +5613,252 @@ function verdictModel(findings,opts){
 function verdictInnerHtml(m,hasWC){
   return `<div class="icon">${F_ICON[m.level]}</div><div><div class="vtitle">${esc(m.title.charAt(0).toUpperCase()+m.title.slice(1))}</div><div class="vplay">${esc(m.play)}</div><div class="vwhere"><strong>Where to look:</strong> ${m.where}</div>${quipHtml(m.quipLevel,hasWC)}</div>`;
 }
+/* ---- "Got an error message?" picklist (docs/ui-conventions.md) ----
+   Colleagues often open ECHO because bol's system or Transus returned an
+   error for a message. They pick the error, or paste its text, and ECHO
+   says what it usually means, where to look, and which findings in the
+   current result relate to it. Findings are tied to an error by their
+   fkey() keys, never by headline text. One object per error: adding an
+   error is adding one entry; wiring a new check to an error is giving the
+   check an fkey() and adding that key to the entry's `keys`.
+   - id: stable id. label: the known error text, as shown in the dropdown.
+   - match: regexes tried on the pasted text after errorNormalize (lower
+     case, no quotes, single spaces). The entry whose match starts earliest
+     in the text wins (ties: catalogue order), so "Unit price is unknown;
+     item EAN: …" is the price error, not the EAN one.
+   - types: the message types the error usually comes with (null: any).
+   - meaning, where: HTML, one or two plain, neutral sentences each.
+   - keys: fkey keys of the related findings.
+   - elsewhere: what to check outside ECHO when nothing related is found;
+     completes "ECHO sees nothing in this message that explains it; …". */
+const ERROR_CATALOGUE=[
+  {id:'po-not-found',label:'Purchase Order not found',
+    match:[/purchase ?order (?:\S+ ){0,4}not found/,/\bpo (?:\S+ ){0,3}not found/,/\border (?:number |nr |no )?(?:\S+ ){0,2}not found/,/unknown (?:purchase )?order/],
+    types:['ORDRSP','DESADV','INVOIC'],
+    meaning:"bol couldn't link the message to one of its purchase orders using the order number in it. Usually the number differs from bol's order (a digit missing, another order's number) or there is no order number where bol reads it.",
+    where:'The order number: <span class="seg">RFF+ON</span> in the header or per line (XML: OrderNumberBuyer / OrderReference). On invoices also <span class="seg">RFF+CO</span>, a buyer\'s order number that is not RFF+ON.',
+    keys:['order-near-miss','order-missing','order-diff','order-co-only','order-ambiguous'],
+    elsewhere:"check in bol's system that the order number in this message is an existing purchase order for this supplier."},
+  {id:'ean-not-known',label:'Ean not known',
+    match:[/\b(?:ean|gtin)\b:? (?:\S+ ){0,2}(?:not known|unknown|not found|is invalid)/,/unknown (?:ean|gtin)\b/],
+    types:['ORDRSP','DESADV','INVOIC'],
+    meaning:"bol couldn't place an EAN from the message: it isn't on the purchase order or isn't known for this supplier, or the value isn't a usable EAN (all zeros, empty, a digit too many or too few).",
+    where:'The item EAN per line: <span class="seg">LIN</span> (XML: GTIN / EAN). Search the EAN from the error text in the search box below the findings.',
+    keys:['ean-zeroed','ean-zeroed-in-output','ean-check-digit','item-one-side','blank-lin','no-identifier'],
+    elsewhere:"check whether this EAN is on bol's purchase order and known in bol's assortment for this supplier. An EAN that came through unchanged is a master data or order question, not a mapping one."},
+  {id:'unit-price-unknown',label:'Unit price is unknown',
+    match:[/unit ?price (?:\S+ ){0,2}(?:unknown|missing|not known|not found)/,/(?:no|missing) (?:unit |net )?price\b/,/\bprice (?:is )?(?:unknown|missing)/],
+    types:['ORDRSP'],
+    meaning:'bol received an order response line without a net price it could use. Usually the accepted lines carry no <span class="seg">PRI+AAA</span>, or the price is missing on some of them.',
+    where:'The net price per line: <span class="seg">PRI+AAA</span> under each accepted <span class="seg">LIN</span> (XML: ArticleNetPrice). The EAN in the error text is the line to look at.',
+    keys:['price-none','price-partial','price-some-lines','price-missing-side','price-shift','dtm-duplicate'],
+    elsewhere:'check the price for the EAN named in the error in the system that generates this order response.'},
+  {id:'packref-too-long',label:'Packing List Reference must not exceed 15 characters',
+    match:[/exceed 15\b/,/packing ?(?:list|slip) ?reference (?:\S+ ){0,4}(?:exceed|too long|15)/,/(?:max(?:imum)?|more than|longer than) 15 char/],
+    types:['DESADV'],
+    meaning:'bol accepts a packing reference of at most 15 characters; a longer one stops the whole despatch advice.',
+    where:'The packing reference: <span class="seg">RFF+BM</span> (XML: PackingSlipNumber).',
+    keys:['packref-length'],
+    elsewhere:"check the packing reference in the source system. This message's packing reference is 15 characters or fewer, so the error may be about another message."},
+  {id:'duplicate-reference',label:'Duplicate reference (packing slip already received)',
+    match:[/duplicate/,/already (?:been )?(?:received|exists?|used|processed|sent|known|registered)/,/\bnot unique\b|\bnon-?unique\b/],
+    types:['DESADV'],
+    meaning:'bol already has a despatch advice with this packing reference, so it sees this one as a repeat. Common causes: a packing reference reused for a new shipment, or one that is almost, but not quite, the document number.',
+    where:'The packing reference: <span class="seg">RFF+BM</span> (XML: PackingSlipNumber), next to the document number in <span class="seg">BGM</span> (XML: DespatchAdviceNumber). The Transus portal can show the document number instead of the packing reference.',
+    keys:['packref-near-match'],
+    elsewhere:"check in bol's system whether an earlier despatch advice already used this packing reference, and whether this message is a resend."},
+  {id:'xml-parse',label:"Couldn't parse XML content",
+    match:[/(?:couldnt|could not|cannot|cant|unable to|failed to) (?:be )?pars/,/\bpars(?:e|ing) (?:error|fail)/,/\bxml (?:\S+ ){0,3}(?:invalid|malformed|not well-?formed)/,/not well-?formed/],
+    types:null,
+    meaning:"The file couldn't be read as XML, so nothing in it was processed. Known causes: a control character in a text field (item description, name, free text), several XML documents in one file, text before the XML declaration, or a TAX segment without a rate.",
+    where:'Free-text fields in the original message (<span class="seg">IMD</span>, <span class="seg">NAD</span>, <span class="seg">FTX</span>), the start of the file, and the <span class="seg">TAX</span> segments.',
+    keys:['illegal-char','illegal-char-file','xml-concatenated','xml-unreadable','xml-leading-text','tax-no-rate'],
+    elsewhere:'check the exact file that was delivered; the message loaded here may differ from it (for example a resend, or a copy where a hidden character got lost).'},
+  {id:'vat-missing',label:'VAT percentage/amount is missing',
+    match:[/\b(?:vat|tax|btw)\b (?:\S+ ){0,3}(?:missing|rejected|invalid|unknown|empty|required|not (?:found|valid|known|allowed))/,/(?:missing|invalid|unknown|no) (?:vat|tax|btw)\b/],
+    types:['INVOIC'],
+    meaning:'The VAT rate couldn\'t be read where the receiving side expects it. Known causes: a <span class="seg">TAX</span> segment with a category but no rate, or the summary TAX segment stating the rate in another position than the lines.',
+    where:'The VAT rate in <span class="seg">TAX+7+VAT</span>, in the 4th sub-component of the rate element (e.g. <code>TAX+7+VAT+++:::21+S\'</code>), on the lines and in the summary.',
+    keys:['tax-no-rate','tax-rate-position','vat-diff'],
+    elsewhere:'check the VAT settings for this invoice in the source system, and which field the full error text names.'},
+  {id:'sscc',label:'SSCC not found / pallet without SSCC',
+    match:[/\bsscc\b/,/\bpallet (?:\S+ ){0,3}(?:without|no|missing) (?:sscc|label|barcode)/,/\bgin\+bj\b/],
+    types:['DESADV'],
+    meaning:'bol couldn\'t find a usable SSCC for a pallet or package. Known causes: a pallet group without a <span class="seg">PAC</span> segment (its SSCC then doesn\'t reach bol), an SSCC with "00" in front or a digit missing, a check digit that doesn\'t match, or no SSCC at pallet level.',
+    where:'The pallet groups: <span class="seg">CPS</span> with its <span class="seg">PAC</span> and the SSCC in <span class="seg">GIN+BJ</span> (18 digits, no "00" in front). The Pallet / SSCC overview shows them per pallet.',
+    keys:['pac-missing','sscc-length','sscc-check-digit','sscc-none','sscc-pallet-missing','sscc-one-side'],
+    elsewhere:'check that the SSCC named in the error is the one on the physical pallet label, and that it belongs to this despatch advice.'}
+];
+function errorNormalize(t){
+  return String(t||'').toLowerCase().replace(/[‘’‚‛′'`"“”„«»]/g,'').replace(/\s+/g,' ').trim();
+}
+/* The catalogue entry a pasted error text matches, or null. */
+function matchErrorText(text){
+  const t=errorNormalize(text);
+  if(!t)return null;
+  let best=null;
+  ERROR_CATALOGUE.forEach(e=>e.match.forEach(re=>{
+    const m=re.exec(t);
+    if(m&&(!best||m.index<best.index))best={entry:e,index:m.index};
+  }));
+  return best?best.entry:null;
+}
+/* Values in the pasted text worth looking up (an EAN, order number, SSCC):
+   tokens with at least 5 digits. */
+function errorTextValues(text){
+  const toks=String(text||'').match(/[A-Za-z0-9][A-Za-z0-9_\/.-]*[A-Za-z0-9]/g)||[];
+  return [...new Set(toks.filter(v=>v.length<=40&&(v.match(/\d/g)||[]).length>=5))].slice(0,6);
+}
+/* Per mode ('compare', 'quick'): where the control sits, which element
+   holds the result's findings, the message type, the raw message text(s)
+   and the jump-to-source call; plus the current selection. */
+const errPick={};
+function errPickMount(mode,slot,opts){
+  const prev=errPick[mode];
+  if(prev&&prev.slot&&prev.slot!==slot)prev.slot.innerHTML='';
+  if(!slot||!opts){if(slot)slot.innerHTML='';delete errPick[mode];return;}
+  errPick[mode]={slot,scope:opts.scope,msgType:opts.msgType||null,raws:opts.raws||[],jump:opts.jump||null,id:'',text:'',fromText:false,targets:[]};
+  const opt=ERROR_CATALOGUE.map(e=>`<option value="${esc(e.id)}">${esc(e.label)}</option>`).join('');
+  slot.innerHTML=`<div class="err-pick" id="errPick-${mode}">
+    <div class="err-pick-row">
+      <span class="err-pick-label">Got an error message?</span>
+      <select id="errPickSel-${mode}" aria-label="Known error messages" onchange="errPickSelect('${mode}',this.value)"><option value="">Pick a known error…</option>${opt}</select>
+      <input type="text" class="mini-input" id="errPickTxt-${mode}" placeholder="or paste the error text" aria-label="Paste the error text" autocomplete="off" oninput="errPickTyped('${mode}')" onkeydown="if(event.key==='Enter')errPickTyped('${mode}',true)">
+      <button type="button" class="btn ghost hidden" id="errPickClear-${mode}" onclick="errPickClear('${mode}')">Clear</button>
+    </div>
+    <div class="err-card hidden" id="errPickCard-${mode}" aria-live="polite"></div>
+  </div>`;
+}
+function errPickSelect(mode,id){
+  const st=errPick[mode];if(!st)return;
+  st.id=id||'';st.fromText=false;
+  errPickRender(mode);
+}
+function errPickTyped(mode,now){
+  const st=errPick[mode];if(!st)return;
+  clearTimeout(st.timer);
+  const run=()=>{
+    const inp=document.getElementById('errPickTxt-'+mode);
+    st.text=inp?inp.value.trim():'';
+    if(!st.text){if(st.fromText){st.id='';st.fromText=false;}}
+    else{const e=matchErrorText(st.text);st.id=e?e.id:'';st.fromText=true;}
+    errPickRender(mode);
+  };
+  if(now)run();else st.timer=setTimeout(run,250);
+}
+function errPickClear(mode){
+  const st=errPick[mode];if(!st)return;
+  clearTimeout(st.timer);
+  st.id='';st.text='';st.fromText=false;
+  const inp=document.getElementById('errPickTxt-'+mode);if(inp)inp.value='';
+  errPickRender(mode);
+}
+function errPickRender(mode){
+  const st=errPick[mode];if(!st)return;
+  const sel=document.getElementById('errPickSel-'+mode),card=document.getElementById('errPickCard-'+mode),clr=document.getElementById('errPickClear-'+mode);
+  if(!card)return;
+  if(sel)sel.value=st.id||'';
+  if(clr)clr.classList.toggle('hidden',!st.id&&!st.text);
+  st.targets=[];
+  if(!st.id&&!st.text){card.classList.add('hidden');card.innerHTML='';return;}
+  card.innerHTML=errorCardHtml(mode);
+  card.classList.remove('hidden');
+}
+/* Findings (or file banners) in the result carrying one of the keys. */
+function relatedFindingHosts(scope,keys){
+  const seen=new Set(),out=[];
+  scope.querySelectorAll('[data-fkey]').forEach(m=>{
+    if(!m.dataset.fkey.split(' ').some(k=>keys.includes(k)))return;
+    const host=m.closest('li')||m.closest('.note-inline');
+    if(!host||seen.has(host)||host.closest('.err-pick'))return;
+    seen.add(host);out.push(host);
+  });
+  return out;
+}
+function findingHostSummary(el){
+  const c=el.cloneNode(true);
+  c.querySelectorAll('details,ul.wc-affected,.f-effects,.fi,.fkey').forEach(n=>n.remove());
+  let t=(c.textContent||'').replace(/\s+/g,' ').trim();
+  const lead=t.match(/^[⚠!ⓘ✓]\s*/);
+  const level=el.tagName==='LI'?((el.className.match(/\bf-(err|warn|info|ok)\b/)||[])[1]||''):(lead&&lead[0].trim()==='!'?'warn':'err');
+  const icon=el.tagName==='LI'?(F_ICON[level]||''):(lead?lead[0].trim():'');
+  // "Supplier — headline" reads "Supplier: headline" here (no em-dashes in the card).
+  t=t.replace(/^[⚠!ⓘ✓]\s*/,'').replace(/\s+—\s+/g,': ');
+  if(t.length>140)t=t.slice(0,137).replace(/\s+\S*$/,'')+'…';
+  let section='File note';
+  if(el.tagName==='LI'){
+    section='Findings';
+    for(let p=el.previousElementSibling;p;p=p.previousElementSibling)if(p.classList.contains('findings-cat')){section=p.textContent.trim();break;}
+  }
+  return {icon,level,text:t,section};
+}
+function errorValuesHtml(st){
+  const vals=st.text?errorTextValues(st.text):[];
+  if(!vals.length)return '';
+  const raw=(st.raws||[]).join('\n');
+  const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&');
+  const parts=vals.map(v=>{
+    const found=new RegExp('(^|[^A-Za-z0-9])0*'+reEsc(v)+'(?![A-Za-z0-9])').test(raw);
+    return found
+      ?`<span class="clickable-val"${st.jump?` onclick="${st.jump(v)}"`:''}>${esc(v)}</span> <span class="dim">is in this message</span>`
+      :`<code>${esc(v)}</code> <span class="dim">doesn't appear in this message</span>`;
+  });
+  return `<div class="err-row"><span class="err-k">From your error text:</span> ${parts.join('; ')}</div>`;
+}
+function errorCardHtml(mode){
+  const st=errPick[mode];
+  const e=ERROR_CATALOGUE.find(x=>x.id===st.id);
+  if(!e){
+    return `<div class="err-title">ECHO doesn't recognise this error text yet.</div><div class="err-row">Pick the closest one from the list:</div><div class="err-choices">${ERROR_CATALOGUE.map(x=>`<button type="button" class="btn ghost" onclick="errPickSelect('${mode}','${x.id}')">${esc(x.label)}</button>`).join('')}</div>${errorValuesHtml(st)}`;
+  }
+  const scope=typeof st.scope==='function'?st.scope():st.scope;
+  const hosts=scope?relatedFindingHosts(scope,e.keys):[];
+  st.targets=hosts;
+  const art=t=>/^[AEIOU]/.test(t)?'an':'a';
+  let h=`<div class="err-title">"${esc(e.label)}"${st.fromText?' <span class="dim">matched from your text</span>':''}</div>`;
+  h+=`<div class="err-row"><span class="err-k">What it usually means:</span> ${e.meaning}</div>`;
+  h+=`<div class="err-row"><span class="err-k">Where to look:</span> ${e.where}</div>`;
+  if(e.types&&st.msgType&&!e.types.includes(st.msgType)){
+    const ts=e.types.length>1?e.types.slice(0,-1).join(', ')+' or '+e.types[e.types.length-1]:e.types[0];
+    h+=`<div class="err-row"><span class="err-k">Message type:</span> this error usually comes with ${art(e.types[0])} ${esc(ts)}, and this is ${art(st.msgType)} ${esc(st.msgType)}, so it may be about another message.</div>`;
+  }
+  if(hosts.length){
+    const items=hosts.map((el,i)=>{const s=findingHostSummary(el);return `<li><span class="fi"${s.level?` style="color:var(--${s.level})"`:''}>${esc(s.icon)}</span> <a href="#" onclick="return errPickGo('${mode}',${i})">${esc(s.text)}</a> <span class="seg">${esc(s.section)}</span></li>`;}).join('');
+    h+=`<div class="err-row err-found"><span class="err-k">In this message:</span> ECHO found ${hosts.length===1?'one related finding':hosts.length+' related findings'}. Click to jump to ${hosts.length===1?'it':'one'}.</div><ul class="err-related">${items}</ul>`;
+  }else{
+    h+=`<div class="err-row err-none"><span class="err-k">In this message:</span> ECHO sees nothing in this message that explains it; ${e.elsewhere}</div>`;
+  }
+  return h+errorValuesHtml(st);
+}
+/* Scroll to a related finding and flash it (open any collapsed parent). */
+function errPickGo(mode,i){
+  const st=errPick[mode];const el=st&&st.targets[i];
+  if(!el||!el.isConnected)return false;
+  for(let d=el.parentElement&&el.parentElement.closest('details');d;d=d.parentElement&&d.parentElement.closest('details'))d.open=true;
+  if(typeof el.scrollIntoView==='function')el.scrollIntoView({behavior:'smooth',block:'center'});
+  el.classList.remove('f-pulse');void el.offsetWidth;el.classList.add('f-pulse');
+  clearTimeout(el.__pulseT);el.__pulseT=setTimeout(()=>el.classList.remove('f-pulse'),2200);
+  return false;
+}
+/* Copy report (Compare) gets one line, "Error reported: <text>", after
+   its context lines when an error is picked or pasted. Copy for Transus
+   leaves it out: it lists mapping questions only, and the errors in this
+   catalogue mostly point at the message itself (Message checks never go
+   to Transus either). */
+function errorReportedLine(){
+  const st=errPick.compare;if(!st)return '';
+  const e=ERROR_CATALOGUE.find(x=>x.id===st.id);
+  let t=(st.text||(e?e.label:'')).replace(/\s+/g,' ').trim();
+  if(t.length>300)t=t.slice(0,297)+'…';
+  return t?'Error reported: '+t:'';
+}
+function reportTextWithError(text){
+  const line=errorReportedLine();
+  if(!line||!text)return text;
+  const lines=text.split('\n');const blank=lines.indexOf('');
+  lines.splice(blank<0?lines.length:blank,0,line);
+  return lines.join('\n');
+}
 /* "Worth checking" as its own small group inside the Findings panel. */
 function worthCheckingGroupHtml(inner,id){
   if(!inner)return '';
@@ -5679,7 +5965,7 @@ function invoiceOverviewHtml(inv,opts={}){
     const bits=[];
     if(ambigOrders)bits.push('order reference');
     if(ambigDespatch)bits.push('packing reference');
-    qcAdd('warn',`Some lines have an <strong>ambiguous ${bits.join(' and ')}</strong>.`+moreInfo(`The message has several message-level references and none on those lines, so it can't be determined which one belongs to each line. No automatic match was made.`));
+    qcAdd('warn',(ambigOrders?fkey('order-ambiguous'):'')+`Some lines have an <strong>ambiguous ${bits.join(' and ')}</strong>.`+moreInfo(`The message has several message-level references and none on those lines, so it can't be determined which one belongs to each line. No automatic match was made.`));
   }
   // Mirrors Compare's "N line(s) without an EAN or item number" — there,
   // it's framed as "these couldn't be matched"; standalone, the more
@@ -5687,7 +5973,7 @@ function invoiceOverviewHtml(inv,opts={}){
   // reference at all.
   // (an all-zeros EAN has its own note below, so it isn't counted twice)
   const noIdLines=inv.lines.filter(l=>!l.gtinZeroed&&!(l.gtin&&String(l.gtin).trim())&&!(l.art&&String(l.art).trim())).length;
-  if(noIdLines)qcAdd('warn',`${noIdLines} line(s) have no EAN or item number at all.`);
+  if(noIdLines)qcAdd('warn',fkey('no-identifier')+`${noIdLines} line(s) have no EAN or item number at all.`);
   taxIssueFindings(inv.taxIssues).forEach(t=>qcAdd('warn',t));
   if(inv.taxRateEncodingMismatch)qcAdd('warn',taxRateEncodingMismatchText());
   illegalTextCharFindings(inv.illegalTextChars,jumpCall).forEach(t=>qcAdd('warn',t));
@@ -5700,7 +5986,7 @@ function invoiceOverviewHtml(inv,opts={}){
     checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
-    if(inv.lines.length&&!invoiceHasOrder(inv))note('warn','<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
+    if(inv.lines.length&&!invoiceHasOrder(inv))note('warn',fkey('order-missing')+'<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
   // MOA+131 vs the ALC amounts (EDIFACT only), same check as Compare.
   {const ci=invoiceChargeTotalIssue(inv);if(ci)qcAdd('warn',invoiceChargeTotalText(ci,cur,jumpCall));}
@@ -5805,7 +6091,7 @@ function factsOverviewHtml(facts){
   // here too. Not the SSCC/packing-reference checks below, though — those
   // are DESADV-specific there (ORDRSP has no pallet/despatch concept), so
   // scoped the same way here for genuine parity rather than just similarity.
-  if(facts.blankLinCount)qcAdd('warn',`${facts.blankLinCount} blank LIN segment${facts.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`));
+  if(facts.blankLinCount)qcAdd('warn',fkey('blank-lin')+`${facts.blankLinCount} blank LIN segment${facts.blankLinCount===1?'':'s'} found, skipped here.`+moreInfo(`A LIN segment with no EAN, action or line number carries no data. ECHO skips it, but a receiving system may read it as a blank item line. Likely a message-generation issue upstream, worth flagging to whoever produces this feed.`));
   // ORDERS is the order itself — BGM's own document number already serves
   // as its reference, so unlike ORDRSP/DESADV (which point back at a
   // separate bol PO via RFF+ON) there's nothing extra to expect here.
@@ -6224,6 +6510,8 @@ function render(result,bol,sup,notes){
   const verdictEl=document.getElementById('verdict');
   verdictEl.className='verdict '+vm.level;
   verdictEl.innerHTML=verdictInnerHtml(vm,hasWC);
+  errPickMount('compare',document.getElementById('errPickFacts'),{scope:()=>document.getElementById('results'),msgType:result.type,
+    raws:[cstate.sup&&cstate.sup.text,cstate.bol&&cstate.bol.text].filter(Boolean),jump:v=>`jumpToFactsSource('both',${jsQuote(v)})`});
 
   const st=result.stats;const strip=[];
   strip.push(`<div class="stat"><div class="l">Type</div><div class="v">${result.type||'?'}</div></div>`);
@@ -6856,7 +7144,7 @@ async function copyTextToClipboard(text,btn){
     btn.__resetTimer=setTimeout(()=>{btn.textContent=btn.dataset.origLabel;},1600);
   }
 }
-async function copyReport(btn){return copyTextToClipboard(lastReportText,btn);}
+async function copyReport(btn){return copyTextToClipboard(reportTextWithError(lastReportText),btn);}
 
 /* =====================================================================
    INVOIC — brontekst (raw) weergave + klik-naar-bron highlighting.
@@ -7067,7 +7355,7 @@ function renderInvoiceCompare(res,notes){
   h+=concatenatedXmlBannerHtml(res.bol);
   h+=illegalXmlCharsBannerHtml(res.sup);
   h+=illegalXmlCharsBannerHtml(res.bol);
-  h+=`<div class="verdict ${vm.level}" id="invVerdict">${verdictInnerHtml(vm,hasWC)}</div>`;
+  h+=`<div class="verdict ${vm.level}" id="invVerdict">${verdictInnerHtml(vm,hasWC)}</div><div id="errPickInv"></div>`;
   if(notes&&notes.length)h+=`<div class="panel"><div class="note-inline">${notes.map(esc).join('<br>')}</div></div>`;
 
   /* findings first (same three sections as ORDRSP/DESADV), Worth checking
@@ -7182,6 +7470,8 @@ function renderInvoiceCompare(res,notes){
     </div></details>`;
 
   box.innerHTML=h;
+  errPickMount('compare',document.getElementById('errPickInv'),{scope:box,msgType:'INVOIC',
+    raws:[cstate.sup&&cstate.sup.text,cstate.bol&&cstate.bol.text].filter(Boolean),jump:v=>`jumpToInvSource('both',${jsQuote(v)})`});
   window.__invRawPair={sup:res.sup,bol:res.bol};
   renderInvoiceRawSide(res.sup,'invRawSup');
   renderInvoiceRawSide(res.bol,'invRawBol');
@@ -7375,7 +7665,7 @@ function runCompare(){
   }
 }
 document.getElementById('compareBtn').addEventListener('click',runCompare);
-document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
+document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';errPickMount('compare',null,null);document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
 </script>
 </body>

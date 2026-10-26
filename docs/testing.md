@@ -400,6 +400,16 @@ actual test fixtures, don't just keep this list as prose:
   only" (neutral), Not applicable is neutral too; the Compare line table's
   search/filter counts say "items"; `--text-faint` and "More info" ≥ 4.5:1
   on panels; the Compare button stands out; no horizontal scroll at 390px.
+- **UI (error picklist)**: "Got an error message?" in Compare (under the
+  verdict, ORDRSP/DESADV and INVOIC) and Quick check: a dropdown pick and
+  pasted text with noise around it (IDs, numbers, quotes) both open the
+  card; the related finding is linked by its `fkey` key and flashes on
+  click (order near-miss in Compare, packing reference length and no
+  price in Quick check, missing VAT rate in INVOIC Compare); a clean
+  message says "ECHO sees nothing in this message that explains it";
+  unknown text says so and offers the list; Copy report gets one "Error
+  reported:" line, Copy for Transus none; every catalogue label matches
+  its own entry (`tests/specs/error-picklist.spec.js`).
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 
