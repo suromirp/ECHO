@@ -2776,7 +2776,8 @@ function comparePalletMapping(bol,sup,add,keyFn){
       const extra=m.diffs.length-shown.length;
       const n=m.diffs.length;
       const list=`<ul>${shown.map(d=>`<li>${d};</li>`).join(' ')}${extra>0?` <li>and ${extra} more on this pallet — see the Pallet / SSCC overview</li>`:''}</ul>`;
-      add('err',`<strong>Pallet mapping differs</strong> for SSCC <code>${esc(m.sscc)}</code> (${n} difference${n===1?'':'s'})`+moreInfo(list),'diff');
+      // Copy for Transus lists what differs (transusDetail), not just a count.
+      add('err',`<strong>Pallet mapping differs</strong> for SSCC <code>${esc(m.sscc)}</code> (${n} difference${n===1?'':'s'})`+moreInfo(list),'diff',1,{transusDetail:m.diffs.map(d=>stripHtml(d))});
     });
     if(mismatches.length>DETAIL_CAP){
       const rest=mismatches.length-DETAIL_CAP;
@@ -3153,7 +3154,7 @@ const invJump=side=>v=>`jumpToInvSource(${jsQuote(side)},${jsQuote(v)})`;
 function compare(bol,sup){
   // count: how many items a finding stands for (a capped "N more" summary
   // stands for N), so Copy for Transus can say how many are left out.
-  const findings=[];const add=(l,t,cat,count)=>findings.push({level:l,text:t,cat:cat||null,count:count||1});
+  const findings=[];const add=(l,t,cat,count,extra)=>findings.push(Object.assign({level:l,text:t,cat:cat||null,count:count||1},extra||{}));
   if(bol.msgType!==sup.msgType&&bol.msgType&&sup.msgType) add('warn',`Message types differ: supplier <code>${esc(sup.msgType||'?')}</code> vs bol <code>${esc(bol.msgType||'?')}</code>.`,'diff');
   const type=bol.msgType||sup.msgType;
   const keyFn=buildKeyResolver(bol,sup);
@@ -6232,7 +6233,7 @@ function render(result,bol,sup,notes){
   // that reflect the supplier → bol mapping itself (cat 'diff'), since those
   // are the only ones worth asking Transus to look into. Built in both
   // languages up front so switching the toggle afterwards is instant.
-  const transusCtx=`${result.type||'EDI'} ${bol.docNumber||sup.docNumber||''}`.trim();
+  const transusCtx=reportContext(result.type||'EDI',sup.docNumber||bol.docNumber,sup.parties&&sup.parties.SU);
   lastTransusTextEn=buildTransusText(result.findings,transusCtx,'en');
   lastTransusTextNl=buildTransusText(result.findings,transusCtx,'nl');
   const eanText=buildEanListText(result.rows.map(r=>r.gtin));
@@ -6272,7 +6273,7 @@ function render(result,bol,sup,notes){
 
   renderRawEdifact(sup,'rawSup');renderRawEdifact(bol,'rawBol');
   lastReportText=buildReportText((result.type||'EDI')+' comparison',result.findings,
-    `Supplier: ${result.fmtSup} · bol: ${result.fmtBol}`);
+    `Formats — supplier: ${result.fmtSup} · bol: ${result.fmtBol}`,transusCtx);
   const rEl=document.getElementById('results');if(typeof rEl.scrollIntoView==='function')rEl.scrollIntoView({behavior:'smooth',block:'start'});
 }
 document.getElementById('copyReportBtn').addEventListener('click',function(){copyReport(this);});
@@ -6471,14 +6472,54 @@ function applyQuickSearch(){
    for Transus drops it entirely and sends only the short headline. */
 function stripHtml(s,noDetails){const d=document.createElement('div');d.innerHTML=s;
   d.querySelectorAll(noDetails?'details.f-more':'details.f-more>summary').forEach(n=>n.remove());
+  // A collapsed tag list's "Show N items" toggle label isn't content.
+  d.querySelectorAll('details:not(.f-more)>summary').forEach(n=>n.remove());
   d.querySelectorAll('ul.wc-affected').forEach(ul=>{ul.textContent=' '+[...ul.children].map(li=>li.textContent.trim()).join(', ')+' ';});
+  // Block elements get a space on each side, so joined text never runs
+  // together ("(1 difference)item 871…" in Copy report).
+  d.querySelectorAll('div,p,li,ul,ol,details,br,tr,td').forEach(n=>{n.before(' ');n.after(' ');});
   return (d.textContent||'').replace(/\s+/g,' ').trim();}
+/* Copy for Transus: a finding's headline and its tags apart, so the tags
+   can be listed in full under it instead of the line being cut off. */
+function transusParts(html){
+  const d=document.createElement('div');d.innerHTML=html;
+  d.querySelectorAll('details.f-more').forEach(n=>n.remove());
+  const tags=[...d.querySelectorAll('ul.wc-affected > li')].map(li=>li.textContent.replace(/\s+/g,' ').trim()).filter(Boolean);
+  d.querySelectorAll('ul.wc-affected').forEach(ul=>{const det=ul.closest('details');(det&&d.contains(det)?det:ul).remove();});
+  d.querySelectorAll('details>summary').forEach(n=>n.remove());
+  d.querySelectorAll('div,p,li,ul,details,br').forEach(n=>{n.before(' ');n.after(' ');});
+  const head=(d.textContent||'').replace(/\s+/g,' ').trim().replace(/[:;,]$/,'.');
+  return {head,tags};
+}
+/* Context for Copy for Transus and Copy report: message ID (from the ZIP,
+   folder or file name, e.g. "Message_ID_123456789"), supplier name / GLN
+   and document number. */
+function messageIdFrom(names){
+  for(const n of names){const m=String(n||'').match(/Message[ _-]?ID[ _-]?(\d{5,})/i);if(m)return m[1];}
+  return null;
+}
+function reportContext(type,docNumber,supParty){
+  const src=(typeof cstate!=='undefined'&&cstate.source)||{};
+  const msgId=messageIdFrom([src.zip,...(src.paths||[]),cstate.sup&&cstate.sup.name,cstate.bol&&cstate.bol.name]);
+  const name=supParty&&supParty.name&&supParty.name!==supParty.gln?supParty.name:(src.supFolder||null);
+  return {doc:`${type||''} ${docNumber||''}`.trim(),msgId,supplier:name,supplierGln:(supParty&&supParty.gln)||null};
+}
+function contextLines(ctx,lang){
+  if(!ctx||typeof ctx==='string')return ctx?[(lang==='nl'?'Document: ':'Document: ')+ctx]:[];
+  const L=lang==='nl'?{id:'Bericht-ID',sup:'Leverancier',doc:'Document'}:{id:'Message ID',sup:'Supplier',doc:'Document'};
+  const out=[];
+  if(ctx.msgId)out.push(`${L.id}: ${ctx.msgId}`);
+  if(ctx.supplier||ctx.supplierGln)out.push(`${L.sup}: ${ctx.supplier||''}${ctx.supplierGln?(ctx.supplier?` (GLN ${ctx.supplierGln})`:`GLN ${ctx.supplierGln}`):''}`);
+  if(ctx.doc)out.push(`${L.doc}: ${ctx.doc}`);
+  return out;
+}
 let lastReportText='';
 
-function buildReportText(title,findings,extra){
+function buildReportText(title,findings,extra,ctx){
   const lines=[];
   lines.push('ECHO — '+title);
   lines.push(new Date().toLocaleString('en-GB'));
+  contextLines(ctx,'en').forEach(l=>lines.push(l));
   if(extra)lines.push(extra);
   lines.push('');
   // Neutral marks (rule 2): "[ERROR]" on a supplier's own Message check read
@@ -6519,26 +6560,16 @@ function buildReportText(title,findings,extra){
    summaries, action-code notes, …) would mean two parallel copies of that
    entire text-generation layer for comparatively little benefit, since the
    EANs/SSCCs/numbers in each line don't need translating anyway. */
-function transusShorten(text){
-  const MAX=200;
-  if(text.length<=MAX)return text;
-  // most itemized findings put the headline claim before an em dash and the
-  // EAN-by-EAN enumeration after it ("SSCC X: Pallet mapping differs — item
-  // EAN ... missing; item EAN ... missing; and 9 more.") — Transus doesn't
-  // need that list to start looking, so keep just the claim.
-  const dashIdx=text.indexOf(' — ');
-  let short=dashIdx>10?text.slice(0,dashIdx)+'.':text;
-  if(short.length>MAX)short=short.slice(0,MAX-1).trim()+'…';
-  return short;
-}
 const TRANSUS_WRAP={
   en:{greet:'Hi Transus,',
-    intro:ctx=>`We noticed the following possible mapping difference(s) between the supplier message and the bol output${ctx?' ('+ctx+')':''}. Could you please take a look?`,
+    intro:()=>`We noticed the following possible mapping difference(s) between the supplier message and the bol output. Could you please take a look?`,
     more:n=>`- …and ${n} more difference(s) — see ECHO's full report ("Copy report") for the complete list.`,
+    subMore:n=>`  - …and ${n} more (see ECHO's "Copy report")`,
     close:'Thanks!'},
   nl:{greet:'Hoi Transus,',
-    intro:ctx=>`We zien de volgende mogelijke mapping-verschillen tussen het leveranciersbericht en de bol-output${ctx?' ('+ctx+')':''}. Zou je dit kunnen checken? (De onderstaande details staan in het Engels.)`,
+    intro:()=>`We zien de volgende mogelijke mapping-verschillen tussen het leveranciersbericht en de bol-output. Zou je dit kunnen checken? (De onderstaande details staan in het Engels.)`,
     more:n=>`- …en nog ${n} verschil(len) — zie ECHO's volledige rapport ("Copy report") voor de complete lijst.`,
+    subMore:n=>`  - …en nog ${n} (zie ECHO's "Copy report")`,
     close:'Alvast bedankt!'}
 };
 function buildTransusText(findings,context,lang){
@@ -6554,9 +6585,20 @@ function buildTransusText(findings,context,lang){
   const lines=[];
   lines.push(wrap.greet);
   lines.push('');
-  lines.push(wrap.intro(context));
+  lines.push(wrap.intro());
   lines.push('');
-  shown.forEach(f=>lines.push('- '+transusShorten(stripHtml(f.text,true))));
+  const ctxLines=contextLines(context,lang);
+  if(ctxLines.length){ctxLines.forEach(l=>lines.push(l));lines.push('');}
+  // Each finding: its headline in full (never cut mid-sentence), then what
+  // it is about as sub-items — the tags, or what differs (transusDetail).
+  const SUB_CAP=30;
+  shown.forEach(f=>{
+    const {head,tags}=transusParts(f.text);
+    const detail=f.transusDetail||tags;
+    lines.push('- '+head);
+    detail.slice(0,SUB_CAP).forEach(t=>lines.push('  - '+t));
+    if(detail.length>SUB_CAP)lines.push(wrap.subMore(detail.length-SUB_CAP));
+  });
   if(rest>0)lines.push(wrap.more(rest));
   lines.push('');
   lines.push(wrap.close);
@@ -6874,7 +6916,7 @@ function renderInvoiceCompare(res,notes){
 
   // Copy for Transus (both languages) + quick EAN overview — computed up
   // front so the HTML string below can just call copyBlocksHtml().
-  const transusCtx=`INVOIC ${res.sup.number||''}`.trim();
+  const transusCtx=reportContext('INVOIC',res.sup.number,res.sup.parties&&res.sup.parties.SU);
   lastTransusTextEn=buildTransusText(res.findings,transusCtx,'en');
   lastTransusTextNl=buildTransusText(res.findings,transusCtx,'nl');
   const eanText=buildEanListText(res.rows.map(r=>r.gtin));
@@ -7003,7 +7045,7 @@ function renderInvoiceCompare(res,notes){
   renderInvoiceRawSide(res.sup,'invRawSup');
   renderInvoiceRawSide(res.bol,'invRawBol');
   lastReportText=buildReportText('INVOIC comparison',res.findings,
-    `Invoice ${res.sup.number||'?'} — supplier: ${res.stats.srcSup}, bol: ${res.stats.srcBol}`);
+    `Formats — supplier: ${res.stats.srcSup} · bol: ${res.stats.srcBol}`,transusCtx);
   const cb=document.getElementById('invCopyReport');
   if(cb)cb.addEventListener('click',()=>copyReport(cb));
   const ctb=document.getElementById('invCopyTransus');
@@ -7013,7 +7055,7 @@ function renderInvoiceCompare(res,notes){
 }
 
 /* ================= COMPARE: file wiring ================= */
-const cstate={bol:null,sup:null};
+const cstate={bol:null,sup:null,source:null};
 function cSetStatus(m,e){const el=document.getElementById('compareStatus');el.textContent=m||'';el.className='status'+(e?' error':'');}
 function cRefresh(){document.getElementById('compareBtn').disabled=!(cstate.bol&&cstate.sup);
   const badge=document.getElementById('typeBadge');
@@ -7031,6 +7073,9 @@ function cSetSide(side,name,text){
   // a stale result in the meantime.
   const changed=!cstate[side]||cstate[side].text!==text||cstate[side].name!==name;
   cstate[side]={name,text};
+  // Where the files came from (ZIP name, folders): set again by handleZip
+  // right after both sides are loaded; any other load clears it.
+  cstate.source=null;
   if(changed){
     document.getElementById('results').classList.add('hidden');
     document.getElementById('invoiceResults').classList.add('hidden');
@@ -7099,6 +7144,7 @@ async function handleZip(file){
     if(!bolE||!supE){cSetStatus('Couldn\u2019t distinguish two separate messages in the ZIP.',true);return;}
     const bolText=decodeFileBytes(await bolE.entry.async('uint8array'));const supText=decodeFileBytes(await supE.entry.async('uint8array'));
     cSetSide('bol',bolE.path.split('/').pop(),bolText);cSetSide('sup',supE.path.split('/').pop(),supText);
+    cstate.source={zip:file.name,paths:[supE.path,bolE.path],supFolder:supE.path.includes('/')?supE.path.split('/')[0]:null};
     cSetStatus('ZIP loaded. Bol ↔ supplier assigned automatically.');
     runCompare();
   }catch(err){cSetStatus('Couldn\u2019t read the ZIP: '+err.message,true);}

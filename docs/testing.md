@@ -157,7 +157,10 @@ actual test fixtures, don't just keep this list as prose:
   bol per header field, with the source field (RFF+BM, PackingSlipNumber,
   DTM+11, …). It is collapsed; the summary says how many fields differ.
 - **UI**: long explanations sit behind a collapsed "More info" toggle, and
-  "Copy for Transus" contains only the headline.
+  "Copy for Transus" contains the headline (never truncated) plus the tags
+  / per-pallet differences as sub-items, not the More info text. Its intro
+  and Copy report name the message ID (ZIP name), supplier (name, GLN) and
+  document; Copy report never runs text together ("(1 difference) item").
 - **ORDRSP/DESADV**: an order number that is another order number in the
   same message minus 1-2 leading characters is a Message check in both
   modes, reported once if bol's output carries the same. The header table

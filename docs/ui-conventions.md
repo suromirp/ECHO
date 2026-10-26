@@ -108,8 +108,15 @@ table is collapsed the same way.
 A finding shows a short headline plus the affected values (tags, old → new),
 so the panel reads as a quick overview. The why and what-to-do go inside
 `moreInfo(...)`, a collapsed `<details class="f-more">` toggle. "Copy
-report" includes that text (without the toggle label). "Copy for Transus"
-leaves it out and sends only the headline. "Copy report" marks each line
+report" includes that text (without the toggle label), with a space between
+every block, so text never runs together. "Copy for Transus" leaves it out:
+it sends each finding's headline in full (never cut off mid-sentence), with
+its tags — or, for a pallet mapping difference, what differs per item
+(`transusDetail`) — as sub-items under it (capped at 30 with "…and N
+more"). Its intro names the message ID (from the ZIP, folder or file name,
+"Message_ID_…"), the supplier (name from NAD+SU or the ZIP's supplier
+folder, plus GLN) and the document; Copy report starts with the same
+lines. "Copy report" marks each line
 by section, never by severity: `[DIFFERENCE]` (Transformation differences),
 `[CHECK]` (Message checks), `[INFO]`, `[OK]`. Applied to every finding
 whose visible text ran past ~150 characters (ORDRSP, DESADV and INVOIC).
