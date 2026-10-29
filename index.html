@@ -1486,6 +1486,8 @@ function parseFactsTransusXmlList(raw){
   };
   if(!parsed.doc)return [withNotes(Object.assign(emptyXmlFacts(raw),{xmlError:parsed.error}))];
   const root=parsed.doc.documentElement;
+  // SAP DeliveryRequest first: its own root + namespace, nothing else matches.
+  if(isSapDeliveryRequestRoot(root))return [withNotes(factsFromSapDeliveryRequest(parsed.doc,raw))];
   const msgs=localName(root)==='Messages'?childrenByName(root,'Message'):[];
   if(msgs.length<=1)return [withNotes(factsFromXmlDoc(parsed.doc,raw))];
   return msgs.map(m=>withNotes(factsFromXmlDoc(parsed.doc,raw,m)));
@@ -1648,6 +1650,153 @@ function factsFromXmlDoc(doc,raw,scope){
     });
   }
   return f;
+}
+
+/* SAP "DeliveryRequest" XML (root DeliveryRequest in the SAP XI namespace
+   http://sap.com/xi/EDI): a supplier-side DESADV dialect, one line of XML,
+   MessageHeader + Delivery. Field meanings checked against a real message
+   and bol's EDIFACT output for the same delivery:
+   - Delivery/DeliveryDocument: the supplier's delivery number. Transus puts
+     it in BGM and RFF+BM, so it is the document number and the packing
+     reference.
+   - DeliveryDateTime: expected delivery (DTM+132). DocumentDate: DTM+137.
+     GoodsIssueDateTime / ActualGoodsMovementDateTime also exist, but which
+     one (if any) becomes DTM+11 isn't confirmed, so no despatch date is
+     read rather than a guessed one that could show a false "changed".
+   - SalesOrganization: the supplier GLN (NAD+SU). Party PartyType="AG" is
+     the buyer, "WE" the delivery party; YY1_GLN_AG / YY1_GLN_WE repeat
+     those GLNs.
+   - DeliveryItem: one per delivery line (DeliveryDocumentItem 10, 20, …)
+     with Material/GlobalTradeItemNumber (EAN), Material/SupplierProductID
+     (article code), ActualDeliveryQuantity, UnderlyingPurchaseOrder (RFF+ON).
+   - HandlingUnit: ID + ID_Type ("H" = an 18-digit SSCC, "F" = a supplier-
+     internal number, not an SSCC), LoadCarrier (packaging type, sometimes a
+     packaging GTIN, never a trade item), Load = what is physically in the
+     unit (BusinessTransactionDocumentReference/ID = DeliveryDocument, ItemID
+     = DeliveryDocumentItem, Quantity), LowerLevelHandlingUnit/ID = a unit
+     nested inside this one.
+   The real message listed one DeliveryDocumentItem twice (same EAN, same
+   quantity), so quantities per EAN and per SSCC come from the Loads, never
+   from summing DeliveryItems (checkRepeatedDeliveryItem notes the repeat).
+   The contents of an internal (non-SSCC) unit belong to the nearest
+   enclosing unit with an SSCC: one ECHO pallet per SSCC, like EDIFACT's
+   fold-up of SSCC-less nested CPS groups. */
+const SAP_XI_NS='http://sap.com/xi/EDI';
+function isSapDeliveryRequestRoot(root){
+  return !!root&&localName(root)==='DeliveryRequest'&&root.namespaceURI===SAP_XI_NS;
+}
+function looksLikeSapDeliveryRequest(head){
+  return /<(\w+:)?DeliveryRequest[\s>]/.test(head)&&head.includes(SAP_XI_NS);
+}
+function factsFromSapDeliveryRequest(doc,raw){
+  const f=emptyXmlFacts(raw);
+  f.format='SAP DeliveryRequest XML';f.msgType='DESADV';
+  f.headerSrc={'Packing reference':'DeliveryDocument','Document number':'DeliveryDocument','Order':'UnderlyingPurchaseOrder',
+    'Document date':'DocumentDate','Expected delivery':'DeliveryDateTime','Supplier GLN':'SalesOrganization',
+    'Buyer GLN':'Party AG','Delivery address GLN':'Party WE'};
+  const root=doc.documentElement;
+  const del=childByName(root,'Delivery')||root;
+  const kids=(el,name)=>el?childrenByName(el,name):[];
+  const val=(el,...path)=>{const v=valOf(el,path);return v===null?'':v;};
+  const docNo=val(del,'DeliveryDocument');
+  if(docNo){f.docNumber=docNo;f.billOfLadingRef=docNo;}
+  f.docDate=normDate(val(del,'DocumentDate'))||null;
+  f.arrivalDate=normDate(val(del,'DeliveryDateTime'))||null;
+  const isGln=v=>/^\d{13}$/.test(v||'');
+  const so=val(del,'SalesOrganization');
+  if(isGln(so))f.parties.SU={gln:so,name:null,vat:null};
+  const partyOf=type=>kids(del,'Party').find(p=>(p.getAttribute('PartyType')||'').trim()===type)||null;
+  [['AG','BY','YY1_GLN_AG'],['WE','DP','YY1_GLN_WE']].forEach(([type,role,yy])=>{
+    const p=partyOf(type);
+    const gln=(p&&val(p,'GlobalLocationNumber'))||val(del,yy)||null;
+    const name=(p&&val(p,'Address','AddressName'))||null;
+    if(gln||name)f.parties[role]={gln,name,vat:null};
+  });
+  // Item numbers can come zero-padded on one side (000010 vs 10).
+  const itemKey=v=>{const s=String(v||'').trim();return /^\d+$/.test(s)?String(parseInt(s,10)):s;};
+  const qtyStr=v=>{const n=num(v);if(n===null)return null;return Math.abs(n-Math.round(n))<1e-9?String(Math.round(n)):String(n);};
+  // Delivery lines, first occurrence per DeliveryDocumentItem.
+  const items=new Map(),itemCount=new Map(),itemOrder=[];
+  kids(del,'DeliveryItem').forEach(di=>{
+    const id=itemKey(val(di,'DeliveryDocumentItem'));
+    itemCount.set(id,(itemCount.get(id)||0)+1);
+    if(items.has(id))return;
+    const gtin=val(di,'Material','GlobalTradeItemNumber');
+    items.set(id,{id,raw:val(di,'DeliveryDocumentItem'),gtin,art:val(di,'Material','SupplierProductID')||null,
+      qty:qtyStr(val(di,'ActualDeliveryQuantity')),order:val(di,'UnderlyingPurchaseOrder')||null,desc:val(di,'DeliveryDocumentItemText')||null});
+    itemOrder.push(id);
+  });
+  f.repeatedDeliveryItems=itemOrder.filter(id=>itemCount.get(id)>1).map(id=>({item:items.get(id).raw||id,count:itemCount.get(id),gtin:items.get(id).gtin,art:items.get(id).art}));
+  // Handling units: direct children of Delivery, plus any nested as elements.
+  const hus=[];
+  const collect=(el,parent)=>kids(el,'HandlingUnit').forEach(h=>{
+    const id=val(h,'ID');const type=val(h,'ID_Type').toUpperCase();
+    // "H" = SSCC. Without an ID_Type, an 18-digit ID is read as one too.
+    const isSscc=type==='H'||(!type&&/^\d{18}$/.test(id));
+    const hu={id,isSscc,parent,lower:kids(h,'LowerLevelHandlingUnit').map(l=>val(l,'ID')).filter(Boolean),
+      loads:kids(h,'Load').map(ld=>({item:itemKey(val(ld,'BusinessTransactionDocumentReference','ItemID')),qty:num(val(ld,'Quantity'))}))};
+    hus.push(hu);collect(h,hu);
+  });
+  collect(del,null);
+  f.internalHuIds=[...new Set(hus.filter(h=>!h.isSscc&&h.id).map(h=>h.id))];
+  const byId=new Map();hus.forEach(h=>{if(h.id&&!byId.has(h.id))byId.set(h.id,h);});
+  hus.forEach(h=>h.lower.forEach(id=>{const c=byId.get(id);if(c&&c!==h&&!c.parent)c.parent=h;}));
+  // Nearest unit with an SSCC (the unit itself first), else the topmost one.
+  const owner=h=>{let cur=h,top=h,hops=0;while(cur&&hops<50){if(cur.isSscc)return cur;top=cur;cur=cur.parent;hops++;}return top;};
+  const palletOf=new Map(),huOf=new Map();
+  const palletFor=o=>{
+    if(palletOf.has(o))return palletOf.get(o);
+    const p={cps:String(palletOf.size+1),parentCps:null,palletGtin:null,sscc:o.isSscc?(o.id||null):null,items:[],weight:null,hasPac:true};
+    palletOf.set(o,p);huOf.set(p,o);f.pallets.push(p);
+    return p;
+  };
+  hus.forEach(h=>{if(h.isSscc)palletFor(h);});
+  // An SSCC unit nested in another SSCC unit is shown "nested under" it.
+  f.pallets.slice().forEach(p=>{const hu=huOf.get(p);const par=hu.parent&&owner(hu.parent);if(par&&par.isSscc&&par!==hu)p.parentCps=palletFor(par).cps;});
+  // One line per (pallet, delivery line): the Loads summed.
+  const loaded=new Set(),lineOf=new Map(),sums=new Map();
+  hus.forEach(h=>h.loads.forEach(ld=>{
+    if(!ld.item)return;
+    const pallet=palletFor(owner(h));
+    const k=pallet.cps+'|'+ld.item;
+    loaded.add(ld.item);
+    if(!lineOf.has(k)){
+      const it=items.get(ld.item)||{raw:ld.item,gtin:'',art:null,order:null,desc:null};
+      const line={lineNo:it.raw||ld.item,action:null,gtin:(it.gtin&&/^0+$/.test(it.gtin))?'':it.gtin,gtinZeroed:!!(it.gtin&&/^0+$/.test(it.gtin)),
+        qty:{},dtm:{},orders:new Set(it.order?[it.order]:[]),art:it.art,desc:it.desc,__cpsRef:pallet};
+      lineOf.set(k,line);sums.set(k,0);f.lines.push(line);
+      pallet.items.push({lineNo:line.lineNo,gtin:line.gtin,art:line.art,qty:line.qty,action:null,__line:line});
+    }
+    sums.set(k,sums.get(k)+(ld.qty||0));
+    lineOf.get(k).qty['12']=qtyStr(sums.get(k));
+  }));
+  // A delivery line no unit carries keeps its own quantity, unlinked.
+  itemOrder.forEach(id=>{
+    if(loaded.has(id))return;
+    const it=items.get(id);
+    const qty={};if(it.qty!==null)qty['12']=it.qty;
+    f.lines.push({lineNo:it.raw||id,action:null,gtin:(it.gtin&&/^0+$/.test(it.gtin))?'':it.gtin,gtinZeroed:!!(it.gtin&&/^0+$/.test(it.gtin)),
+      qty,dtm:{},orders:new Set(it.order?[it.order]:[]),art:it.art,desc:it.desc,__cpsRef:null});
+  });
+  f.ssccs=f.pallets.filter(p=>p.sscc).map(p=>p.sscc);
+  return f;
+}
+/* The same DeliveryDocumentItem listed more than once in an SAP
+   DeliveryRequest (seen in a real message: same EAN, same quantity).
+   ECHO reads the quantities from the handling units' Loads, so the repeat
+   doesn't double anything here, but a reader that sums the DeliveryItem
+   list would count the line twice. Single-message observation: Quick check
+   and per side in Compare (only this dialect has the field). */
+function checkRepeatedDeliveryItem(facts,label,add,jumpCall){
+  const reps=facts&&facts.repeatedDeliveryItems;
+  if(!reps||!reps.length)return;
+  const n=reps.length;
+  const lis=reps.map(r=>{
+    const v=r.gtin||r.art||'';
+    const jump=jumpCall&&v?` onclick="${jumpCall(v)}"`:'';
+    return `<li><span class="clickable-val"${jump}>line ${esc(r.item)}${v?' · '+esc(v):''} (${r.count}×)</span></li>`;
+  }).join('');
+  add('info',`${label?label+' — ':''}<strong>Same delivery line listed more than once</strong> <span class="seg">(DeliveryItem)</span> on ${n} line${n===1?'':'s'}. <ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`+moreInfo(`The message lists ${n===1?'this DeliveryDocumentItem':'these DeliveryDocumentItems'} more than once. ECHO takes the quantities per pallet and per EAN from what each handling unit holds (Load), so the repeat isn't counted twice here. A system that adds up the DeliveryItem list instead would count ${n===1?'this line':'these lines'} twice, which can show up as higher quantities in the despatch advice.`),'message');
 }
 
 /* An EDIFACT interchange can bundle more than one UNH...UNT message (e.g. a
@@ -2766,8 +2915,10 @@ function checkPackingRefNearMatch(facts,label,add,jumpCall){
    from their own checks; this table only shows. */
 // Source label for an RFF-based despatch note reference (DQ or AAS).
 function packRefRffQual(f){return 'RFF+'+(f.deliveryNoteQual||'DQ');}
-function headerSrcLabel(facts,ediSeg,xmlTags){
+function headerSrcLabel(facts,ediSeg,xmlTags,label){
   if(facts.format==='EDIFACT')return ediSeg;
+  // A dialect that names its own source fields (SAP DeliveryRequest).
+  if(facts.headerSrc&&label&&facts.headerSrc[label])return facts.headerSrc[label];
   if(facts.rawXml){const t=xmlTags.find(t=>new RegExp('<(\\w+:)?'+t+'[\\s>]').test(facts.rawXml));return t||xmlTags[0];}
   return 'CSV';
 }
@@ -2847,7 +2998,7 @@ function headerFieldsHtml(sup,bol,type){
     if(!v)return {v:null,html:'<span class="dim">—</span>'};
     const disp=isDate(label)?showDate(v):v;
     const jumpVal=isDate(label)?String(v).replace(/-/g,''):String(v).split(', ')[0];
-    const src=`<span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags))}</span>`;
+    const src=`<span class="src">${esc(headerSrcLabel(f,ediSeg(f),xmlTags,label))}</span>`;
     // A long order list (past ~20) collapses, each order still clickable
     // (docs/ui-conventions.md).
     const parts=label==='Order'?String(v).split(', '):[];
@@ -3612,7 +3763,13 @@ function compare(bol,sup){
         otherInfo:`bol's output does carry SSCCs. They aren't in the supplier message, so they aren't counted as a transformation difference.`});
     }
     if(type==='DESADV'&&!bol.ssccs.length&&bol.lines.length&&!pacExplainsBolNone)checkNoSsccAnywhere(bol,'Bol',add,v=>`jumpToFactsSource('bol',${jsQuote(v)})`);
-    if(ssccResult.onlyBol.length&&!supLacksSscc)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol'),'diff');
+    // A bol GIN+BJ value that is one of the supplier's internal handling-
+    // unit numbers (SAP DeliveryRequest ID_Type F, not an SSCC): said as an
+    // effect line, the difference itself stays.
+    const internalHu=new Set(sup.internalHuIds||[]);
+    const bolInternal=ssccResult.onlyBol.filter(v=>internalHu.has(v));
+    const internalEff=bolInternal.length?`<div class="f-effects"><div>↳ ${bolInternal.map(v=>esc(v)).join(', ')} ${bolInternal.length===1?'is the supplier\'s internal handling-unit number':'are the supplier\'s internal handling-unit numbers'} (HandlingUnit ID_Type F), not an SSCC.</div></div>`:'';
+    if(ssccResult.onlyBol.length&&!supLacksSscc)add('err',ssccHead(ssccResult.onlyBol.length,'bol output')+ssccTags(ssccResult.onlyBol,'bol')+internalEff,'diff');
     // When every one of these SSCCs sits in a CPS group without PAC, the
     // cause is already flagged (checkMissingPacWithSscc, Transus-confirmed:
     // without PAC the SSCC never reaches bol). That's the supplier's own
@@ -3651,6 +3808,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkNoExpectedDelivery,factsJump);
     compareDesadvDates(sup,bol,add);
     perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
+    perSideOnce(add,sup,bol,checkRepeatedDeliveryItem,factsJump);
     // The SSCC-length observation on SSCCs the PAC finding already lists
     // becomes a line of that finding (one cause, one finding).
     const pacCoveredSup=checkMissingPacWithSscc(sup,'Supplier',add,factsJump('sup'),{effects:pacEffects});
@@ -4762,6 +4920,9 @@ function detectMsgType(raw){
   }
   if(isXmlText(raw)){
     const head=raw.slice(0,6000);
+    // SAP DeliveryRequest (a DESADV): root element + the SAP XI namespace,
+    // checked before every generic tag test below.
+    if(looksLikeSapDeliveryRequest(head))return 'DESADV';
     // A third XML invoice dialect (<Messages><Message>, MessageStandard=
     // TRANSUSXML) has fields like <DespatchAdviceNumber> and <InvoiceType>
     // that would otherwise trip the DESADV substring check below — checked
@@ -6297,6 +6458,7 @@ function factsOverviewHtml(facts){
     checkConsignmentPalletCount(facts,'',qcAdd,jumpCall);
     checkNoExpectedDelivery(facts,'',qcAdd);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
+    checkRepeatedDeliveryItem(facts,'',qcAdd,jumpCall);
     const pacCovered=checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
     checkSsccLength(facts,'This message',qcAdd,jumpCall,pacCovered);
   }else if(type==='ORDRSP'){
@@ -6371,7 +6533,7 @@ function factsOverviewHtml(facts){
   // rather than being shown as a second, separate field.
   // Labels match Compare's header table: "Packing reference", "Expected
   // delivery"; the segment it came from in small grey type.
-  const packSrc=facts.billOfLadingRef?'RFF+BM':'BGM';
+  const packSrc=(facts.headerSrc&&facts.headerSrc['Packing reference'])||(facts.billOfLadingRef?'RFF+BM':'BGM');
   f.push(fieldHtml(isD?'Packing reference':'Document number',clickField(isD?(facts.billOfLadingRef||facts.docNumber):facts.docNumber)+(isD&&(facts.billOfLadingRef||facts.docNumber)?` <span class="seg">${packSrc}</span>`:''),null,true));
   f.push(fieldHtml('Document date',clickDateField(facts.docDate),null,true));
   const orders=[...new Set([...(facts.orderRefsHeader||[]),...facts.lines.flatMap(l=>[...(l.orders||[])])])];
@@ -6542,7 +6704,7 @@ function factsOverviewHtml(facts){
 /* ================= COMPARE: rendering ================= */
 function renderRawEdifact(facts,elId){
   const el=document.getElementById(elId);
-  if(facts.format==='Transus XML'){
+  if(facts.rawXml){
     const lines=xmlDisplayLines(facts.rawXml||'');
     el.innerHTML=lines.map((ln,i)=>'<div class="rl"><span class="g">'+(i+1)+'</span><span>'+esc(ln)+'</span></div>').join('');
     return;

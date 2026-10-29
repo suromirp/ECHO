@@ -428,6 +428,16 @@ actual test fixtures, don't just keep this list as prose:
 - **INVOIC**: summary `MOA+259` (total charges) is read, shown as Total
   charges and checked against the charge ALC amounts like `MOA+131`; both
   stated and off is one finding.
+- **DESADV (SAP DeliveryRequest XML)**: the `sap-delivery-request.*`
+  fixtures. Quantities per EAN and per SSCC come from the HandlingUnit
+  `Load`s (an item split over an SSCC and an internal box nested in the
+  other SSCC), not the `DeliveryItem` list, which repeats one line. bol's
+  output with every item at full quantity under every SSCC and the internal
+  unit number in `GIN+BJ` gives quantity, pallet-mapping and "SSCC only in
+  the bol output" Transformation differences, never "missing from the
+  supplier message"; a correct bol output matches. The repeated
+  `DeliveryDocumentItem` is an info Message check in Compare (supplier side)
+  and Quick check, silent without a repeat.
 - A ZIP with only one usable file switches to Quick check with a clear,
   readable (not instant/jarring) explanation, rather than failing.
 
