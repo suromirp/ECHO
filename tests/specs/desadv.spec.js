@@ -1324,3 +1324,92 @@ test('a UNB sender other than NAD+SU is an info Message check on the supplier si
   await runQuickFixture(page, path.join(FIX, 'two-messages.edi'));
   await expect(page.locator('#quickOverview .field', { hasText: 'Sent by' })).toContainText('8700000000007');
 });
+
+// SAP DeliveryRequest XML (root DeliveryRequest, namespace
+// http://sap.com/xi/EDI): a supplier DESADV dialect. Quantities per SSCC and
+// per EAN come from the HandlingUnit Loads (one item split over an SSCC and
+// an internal box nested in the other SSCC), not from the DeliveryItem list,
+// which repeats one line. The real failure: bol's output wrote every
+// DeliveryItem with its full quantity under every SSCC and put the
+// supplier's 9-digit internal handling-unit number in GIN+BJ at CPS+1.
+test('SAP DeliveryRequest: bol output with inflated quantities shows Transformation differences, not missing items', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sap-delivery-request.sup.xml'), path.join(FIX, 'sap-delivery-request.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const resultsText = await page.locator('#results').innerText();
+  expect(resultsText).toContain('SAP DeliveryRequest XML');
+  expect(resultsText).not.toMatch(/missing from the supplier message/);
+
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /SAP-ART-10: despatched quantity \(QTY\+12\) differs — supplier 36 vs bol 72/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /SAP-ART-20: despatched quantity \(QTY\+12\) differs — supplier 12 vs bol 48/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /SAP-ART-30: despatched quantity \(QTY\+12\) differs — supplier 8 vs bol 16/.test(t))).toBe(true);
+  const onlyBol = buckets.diff.filter(t => /1 SSCC only in the bol output/.test(t));
+  expect(onlyBol).toHaveLength(1);
+  expect(onlyBol[0]).toContain('600000123');
+  expect(onlyBol[0]).toContain('internal handling-unit number');
+  expect(buckets.diff.some(t => /Pallet mapping differs for SSCC 387000000000000415/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /Pallet mapping differs for SSCC 387000000000000422/.test(t))).toBe(true);
+  // No PAC concept in this XML; never flagged.
+  expect(buckets.message.some(t => /no PAC segment/.test(t))).toBe(false);
+  // The repeated DeliveryItem: an info Message check on the supplier side.
+  const rep = buckets.message.filter(t => /Same delivery line listed more than once/.test(t));
+  expect(rep).toHaveLength(1);
+  expect(rep[0]).toMatch(/^\W*Supplier — /);
+  expect(rep[0]).toContain('line 20');
+  expect(buckets.diff.some(t => /listed more than once/.test(t))).toBe(false);
+});
+
+test('SAP DeliveryRequest: a correct bol output matches, quantities taken from the handling units', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sap-delivery-request.sup.xml'), path.join(FIX, 'sap-delivery-request-clean.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+  expect(buckets.diff.some(t => /differs|only in the|missing/.test(t))).toBe(false);
+  // Only the repeated-line note (its headline and its one tag).
+  expect(buckets.message.filter(t => !/Same delivery line listed more than once|^line 20 · /.test(t))).toHaveLength(0);
+  const qtyStat = page.locator('.stat', { hasText: /quantities/i }).first();
+  await expect(qtyStat).toContainText('Match');
+  // Header fields: same values, source fields named.
+  const pack = page.locator('#hdrFields tr', { hasText: 'Packing reference' });
+  await expect(pack).toContainText('DeliveryDocument');
+  await expect(pack).toContainText('RFF+BM');
+  const exp = page.locator('#hdrFields tr', { hasText: 'Expected delivery' });
+  await expect(exp).toContainText('DeliveryDateTime');
+  await expect(exp).toContainText('04-03-2026');
+  await expect(page.locator('#hdrFields tr', { hasText: 'Buyer GLN' })).toContainText('8712423020597');
+  await expect(page.locator('#hdrFields tr', { hasText: 'Supplier GLN' })).toContainText('SalesOrganization');
+});
+
+test('SAP DeliveryRequest is read in Quick check, with the repeated delivery line noted', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'sap-delivery-request.sup.xml'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('SAP DeliveryRequest XML');
+  await expect(ov).toContainText('80012345');
+  await expect(ov).toContainText('387000000000000415');
+  await expect(ov).toContainText('387000000000000422');
+  await expect(ov.locator('.field', { hasText: 'Number of SSCCs' })).toContainText('2');
+  await expect(ov).not.toContainText('600000123');
+  const rep = page.locator('#quickOverview ul.findings > li', { hasText: 'Same delivery line listed more than once' });
+  await expect(rep).toHaveCount(1);
+  await expect(rep).toHaveClass(/f-info/);
+  await expect(rep).toContainText('8700000004207');
+
+  // Negative: the same message without the repeated line stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'sap-delivery-request-no-repeat.sup.xml'));
+  await expect(page.locator('#quickOverview')).toContainText('SAP DeliveryRequest XML');
+  await expect(page.locator('#quickOverview')).toContainText('Nothing unusual found');
+  await expect(page.locator('#quickOverview')).not.toContainText('listed more than once');
+});
+
+test('SAP DeliveryRequest without a repeated delivery line: no repeat finding in Compare', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'sap-delivery-request-no-repeat.sup.xml'), path.join(FIX, 'sap-delivery-request-clean.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message).toHaveLength(0);
+  expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
+});

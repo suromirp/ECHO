@@ -79,7 +79,7 @@ items as tags — never a wall of near-identical paragraphs. See
 
 ## Map of the detail docs
 
-- `docs/formats-and-quirks.md` — the four XML dialects in the wild, their
+- `docs/formats-and-quirks.md` — the five XML dialects in the wild, their
   specific traps, and every confirmed EDIFACT/qualifier-code quirk found
   in real production data. **Read before touching any parser.**
 - `docs/matching.md` — the GTIN/article-code/SSCC identifier-matching

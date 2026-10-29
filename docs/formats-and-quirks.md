@@ -64,7 +64,7 @@ Always the "bol output" side for INVOIC. Confirmed traps:
   already did for a genuinely missing value — only overriding when the
   line sum is non-zero, so a real zero total is never clobbered.
 
-## Three distinct supplier-side XML dialects beyond bol's UBL and EDIFACT
+## Four distinct supplier-side XML dialects beyond bol's UBL and EDIFACT
 
 Always check root structure and distinctive fields before assuming a
 schema — a root element literally named `<Invoice>` does not mean it's
@@ -228,6 +228,61 @@ Exact-specific fields like `<SupplierTID>`.
   then looks exactly like "every one of bol's lines is missing from the
   supplier," a misleading symptom of a parsing gap, not a real mapping
   issue.
+
+### 4. SAP DeliveryRequest XML (DESADV)
+
+Root `DeliveryRequest` in namespace `http://sap.com/xi/EDI` (prefixed, e.g.
+`ns1:`), children `MessageHeader` and `Delivery`, the whole file on one
+line. Detected by root local name + namespace URI (`isSapDeliveryRequestRoot`
+in the parser, `looksLikeSapDeliveryRequest` in `detectMsgType`), before
+any other XML test. Read by `factsFromSapDeliveryRequest`, shown as "SAP
+DeliveryRequest XML". Field meanings, checked against a real message and
+bol's EDIFACT output for the same delivery:
+
+- `Delivery/DeliveryDocument` is the supplier's delivery number. Transus
+  puts it in `BGM` and `RFF+BM`, so it is both the document number and the
+  packing reference.
+- `DeliveryDateTime` is the expected delivery (`DTM+132`); `DocumentDate`
+  the document date. `GoodsIssueDateTime` / `ActualGoodsMovementDateTime`
+  exist too, but which one becomes `DTM+11` isn't confirmed, so no despatch
+  date is read (a guessed one could show a false "Despatch date changed").
+- `SalesOrganization` holds the supplier GLN (`NAD+SU`, and the UNB sender
+  in bol's output). `Party PartyType="AG"` is the buyer, `"WE"` the
+  delivery party; `YY1_GLN_AG` / `YY1_GLN_WE` repeat those GLNs.
+- `DeliveryItem`: one per delivery line. `DeliveryDocumentItem` (10, 20,
+  …), `Material/GlobalTradeItemNumber` (EAN), `Material/SupplierProductID`
+  (article code), `ActualDeliveryQuantity` (total for the line),
+  `UnderlyingPurchaseOrder` (the bol order number, `RFF+ON`).
+- `HandlingUnit`: `ID` + `ID_Type`. `H` is an 18-digit SSCC; `F` is a
+  supplier-internal number (9 digits in the real file), **not** an SSCC.
+  `LoadCarrier/Product` is the packaging (a pallet, `CT` carton), sometimes
+  with a packaging GTIN that is not a trade item. `Load` is what is
+  physically in the unit: `BusinessTransactionDocumentReference/ID`
+  (= `DeliveryDocument`) + `ItemID` (= `DeliveryDocumentItem`) +
+  `Quantity`. One line can be split over several units (17 in one SSCC,
+  19 in a nested box: 36 = its `ActualDeliveryQuantity`).
+- **Nesting**: `LowerLevelHandlingUnit/ID` names a unit inside this one. An
+  outer unit with an SSCC can hold an internal (`F`) unit whose `Load`s
+  carry the contents. ECHO gives those contents to the nearest enclosing
+  unit with an SSCC, one pallet per SSCC (the same idea as EDIFACT's
+  fold-up of SSCC-less nested `CPS` groups). The internal number never
+  becomes an SSCC; there's no PAC concept (`hasPac` is always true).
+- **The same `DeliveryDocumentItem` can appear twice** in the
+  `DeliveryItem` list (real file: same EAN, same quantity). Lines,
+  quantities per EAN and per SSCC are therefore built from the `Load`s
+  (one ECHO line per pallet + delivery line), never by summing
+  `DeliveryItem`s; a `DeliveryItem` no unit carries keeps its own quantity,
+  unlinked to a pallet. The repeat itself is an info Message check in both
+  modes (`checkRepeatedDeliveryItem`, "Same delivery line listed more than
+  once").
+- **The real failure in bol's output**: Transus wrote every `DeliveryItem`,
+  the repeated one included, with its full quantity under every SSCC, and
+  put the 9-digit internal unit number in `GIN+BJ` at `CPS+1`, so bol's
+  quantities came out roughly doubled. Before this dialect was read, that
+  showed as items "missing from the supplier message". Now it shows as
+  Transformation differences: quantity per EAN and per SSCC ("Pallet mapping
+  differs"), and "1 SSCC only in the bol output" with an effect line naming
+  the value as the supplier's internal handling-unit number.
 
 ## A flat quoted-CSV dialect, neither XML nor EDIFACT segment syntax
 
