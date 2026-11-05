@@ -176,7 +176,7 @@ Current entries and keys:
 | Cannot parse purchase order number (is not numeric) | `order-not-numeric` |
 | Purchase Order not found | `order-near-miss`, `order-missing`, `order-diff`, `order-co-only`, `order-ambiguous` |
 | Ean not known | `ean-zeroed`, `ean-zeroed-in-output`, `ean-check-digit`, `item-one-side`, `blank-lin`, `no-identifier` |
-| Unit price is unknown | `price-none`, `price-partial`, `price-some-lines`, `price-missing-side`, `price-shift`, `dtm-duplicate` |
+| Unit price is unknown | `price-none`, `price-partial`, `price-some-lines`, `price-line-total`, `price-missing-side`, `price-shift`, `dtm-duplicate` |
 | Packing List Reference must not exceed 15 characters | `packref-length` |
 | Duplicate reference (packing slip already received) | `packref-near-match` |
 | Couldn't parse XML content | `illegal-char`, `illegal-char-file`, `xml-concatenated`, `xml-unreadable`, `xml-leading-text`, `tax-no-rate` |

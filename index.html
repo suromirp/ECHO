@@ -985,6 +985,7 @@ function quickFormat(){
       else{
         quickFactsList=list;
         ovHtml=quickFactsPanelHtml(0);
+        if(isXmlText(raw)&&list.every(f=>!(f.lines||[]).length))ovNote=`ECHO couldn't read any lines from this file: its structure isn't one ECHO recognises yet.`;
         if(list.length>1)ovNote=`${list.length} messages found in this file.`;
       }
     }else if(isXmlText(raw)&&(xmlErr=parseXmlDoc(prepareXmlText(raw).text).error)){
@@ -1463,8 +1464,18 @@ function emptyXmlFacts(raw){
    its Articles to the first message's unit (wrong SSCC). Now split the
    same way a multi-UNH EDIFACT interchange is (splitEdifactMessages), so
    Compare pairs them by document number and Quick check shows each. */
+/* A TRANSUSXML ORDRSP variant with upper-case container tags
+   (<ORDERRESPONSES><ORDERRESPONSE><HEADER>…<ARTICLE>) and the same field
+   names inside as the <Messages><Message><Article> variant. XML is case
+   sensitive, so it used to yield zero lines without any error. Renamed to
+   the known tags before parsing; <HEADER> is just a wrapper and stays. */
+function normalizeUpperTransusXml(text){
+  if(!/<ORDERRESPONSES?[\s>]/.test(text))return text;
+  return text.replace(/<(\/?)ORDERRESPONSES(?=[\s>\/])/g,'<$1Messages').replace(/<(\/?)ORDERRESPONSE(?=[\s>\/])/g,'<$1Message').replace(/<(\/?)ARTICLE(?=[\s>\/])/g,'<$1Article');
+}
 function parseFactsTransusXmlList(raw){
   const prep=prepareXmlText(raw);
+  prep.text=normalizeUpperTransusXml(prep.text);
   let parsed=null,concatenatedXml=null;
   const pieces=splitConcatenatedXmlDocs(prep.text);
   if(pieces.length>1){
@@ -1645,7 +1656,7 @@ function factsFromXmlDoc(doc,raw,scope){
       // usage for INVOIC, which divides by ArticleQuantityPerPriceUnit —
       // not present in this ORDRSP flavour).
       f.lines.push({lineNo:g(el,'LineNumber'),action,gtin:(gtin&&/^0+$/.test(gtin))?'':gtin,gtinZeroed:!!(gtin&&/^0+$/.test(gtin)),qty,dtm:{},orders,
-        art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,netPrice:num(g(el,'ArticleNetPrice')),
+        art:g(el,'ArticleCodeSupplier')||null,xmlStatus:g(el,'Action')||null,netPrice:num(g(el,'ArticleNetPrice')),purchasePrice:num(g(el,'PurchasePrice')),
         desc:g(el,'ArticleDescription')||g(el,'Description')||null});
     });
   }
@@ -2493,6 +2504,23 @@ function checkSplitItemPriceGap(facts,label,add){
   });
 }
 
+/* A real TRANSUSXML ORDRSP sent the line total in <ArticleNetPrice>
+   (quantity × <PurchasePrice>) on every line, so bol's PRI+AAA became a
+   unit price of e.g. 86.16 instead of 7.18. Both sides carry the same
+   value, so Compare saw a match. Flagged when the net price equals quantity
+   × purchase price exactly and the quantity is more than 1. Only dialects
+   that carry a separate purchase price can trip it. Both modes. */
+function checkNetPriceIsLineTotal(facts,label,add,jumpCall){
+  const hits=(facts.lines||[]).filter(l=>{
+    const q=parseFloat(l.qty&&l.qty['12']),pp=l.purchasePrice,np=l.netPrice;
+    return q>1&&pp>0&&np!=null&&Math.abs(q*pp-np)<0.005;
+  });
+  if(!hits.length)return;
+  const n=hits.length,tot=(facts.lines||[]).length;
+  const tags=hits.map(l=>{const v=l.gtin||l.art||l.lineNo||'';const j=jumpCall?` onclick="${jumpCall(v)}"`:'';return `<li><span class="clickable-val"${j}>${esc(l.art||l.gtin||('Line '+(l.lineNo||'?')))} · ${esc(String(l.netPrice))} = ${esc(l.qty['12'])} × ${esc(String(l.purchasePrice))}</span></li>`;}).join('');
+  const ul=`<ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`;
+  add('warn',fkey('price-line-total')+`${label?label+' — ':''}<strong>Net price looks like the line total</strong> <span class="dim">(${n} of ${tot} lines)</span>${n>20?`<details><summary>Show ${n} lines</summary>${ul}</details>`:ul}`+moreInfo(`On these lines the net price (ArticleNetPrice) is exactly quantity × purchase price, so it reads as the total for the line rather than the price per unit. It becomes the unit price (PRI+AAA) in bol's output. Worth checking with the supplier whether the field should hold the price per unit.`),'message');
+}
 /* A single message's own internal consistency (ORDRSP): most accepted
    lines carry a net price (PRI+AAA), some don't. bol's ORDRSP guidelines
    ask for PRI+AAA on every accepted line, and a line without one is the
@@ -3888,6 +3916,7 @@ function compare(bol,sup){
     const supPriced=pricedKeys(sup),bolPriced=pricedKeys(bol);
     const supSkip=new Set(sup.lines.filter(l=>bolPriced.has(priceKey(l)))),bolSkip=new Set(bol.lines.filter(l=>supPriced.has(priceKey(l))));
     perSideOnce(add,sup,bol,(f,label,a,j)=>checkSomeLinesWithoutPrice(f,label,a,j,f===sup?supSkip:bolSkip),factsJump);
+    perSideOnce(add,sup,bol,checkNetPriceIsLineTotal,factsJump);
   }
 
   // DTM qualifier repeated with different values within one LIN group —
@@ -6028,7 +6057,7 @@ const ERROR_CATALOGUE=[
     types:['ORDRSP'],
     meaning:'bol received an order response line without a net price it could use. Usually the accepted lines carry no <span class="seg">PRI+AAA</span>, or the price is missing on some of them.',
     where:'The net price per line: <span class="seg">PRI+AAA</span> under each accepted <span class="seg">LIN</span> (XML: ArticleNetPrice). The EAN in the error text is the line to look at.',
-    keys:['price-none','price-partial','price-some-lines','price-missing-side','price-shift','dtm-duplicate'],
+    keys:['price-none','price-partial','price-some-lines','price-line-total','price-missing-side','price-shift','dtm-duplicate'],
     elsewhere:'check the price for the EAN named in the error in the system that generates this order response.'},
   {id:'packref-too-long',label:'Packing List Reference must not exceed 15 characters',
     match:[/exceed 15\b/,/packing ?(?:list|slip) ?reference (?:\S+ ){0,4}(?:exceed|too long|15)/,/(?:max(?:imum)?|more than|longer than) 15 char/],
@@ -6515,6 +6544,7 @@ function factsOverviewHtml(facts){
     checkNoPriceAnywhere(facts,'This message',qcAdd);
     checkSplitItemPriceGap(facts,'This message',qcAdd);
     checkSomeLinesWithoutPrice(facts,'This message',qcAdd,jumpCall);
+    checkNetPriceIsLineTotal(facts,'This message',qcAdd,jumpCall);
   }
   // Checks on the message's own LIN groups apply to ORDERS too: Quick check
   // is the only mode that reads it, and a supplier complaint about a
@@ -8032,6 +8062,20 @@ function runCompare(){
     const bolList=parseFactsList(cstate.bol.text);
     const firstErr=list=>(list.find(f=>f.xmlError)||{}).xmlError;
     if(showXmlReadErrors([{who:'The supplier file',err:firstErr(supList)},{who:"Bol's file",err:firstErr(bolList)}]))return;
+    // A readable file that yielded no lines at all (an unknown dialect):
+    // comparing it would report every item as missing on that side.
+    {
+      const nLines=list=>list.reduce((s,f)=>s+((f&&f.lines)||[]).length,0);
+      const empty=[];
+      if(!nLines(supList)&&nLines(bolList))empty.push('the supplier file');
+      if(!nLines(bolList)&&nLines(supList))empty.push("bol's file");
+      if(empty.length){
+        document.getElementById('compareBanner').innerHTML=`<div class="note-inline xml-error-banner" style="color:var(--err);border:1px solid var(--err);border-radius:8px;padding:10px 12px;margin-bottom:12px;">${fkey('format-unknown')}⚠ <strong>ECHO couldn't read any lines from ${esc(empty[0])}.</strong> The file opens, but its structure isn't one ECHO recognises yet, so nothing can be compared. Check the file in "Show original messages", or ask for this format to be added to ECHO.</div>`;
+        document.getElementById('results').classList.add('hidden');
+        cSetStatus(`No lines could be read from ${empty[0]}.`,true);
+        return;
+      }
+    }
     if(supList.length<=1&&bolList.length<=1){
       const bol=bolList[0],sup=supList[0];
       const result=compare(bol,sup);render(result,bol,sup);cSetStatus('Comparison ready.');

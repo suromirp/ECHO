@@ -778,3 +778,37 @@ test('an order number with extra text next to the digits is a Message check in b
   await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('Order number contains more than digits');
 });
+
+// Real TRANSUSXML ORDRSP with upper-case containers (<ORDERRESPONSES>,
+// <ARTICLE>): ECHO read zero lines without any error, and Compare showed
+// every item as "missing from the supplier message". The same message put
+// the line total in <ArticleNetPrice> (quantity × <PurchasePrice>).
+test('upper-case TRANSUSXML ORDRSP is read, and a net price that is the line total is flagged', async ({ page }) => {
+  const sup = path.join(FIX, 'upper-transusxml-line-total.sup.xml');
+  await openApp(page);
+  await runCompareFixtures(page, sup, path.join(FIX, 'upper-transusxml-line-total.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.diff.some(t => /missing from the supplier/.test(t))).toBe(false);
+  const hit = buckets.message.filter(t => t.includes('Net price looks like the line total'));
+  expect(hit).toHaveLength(1);
+  expect(hit[0]).toContain('2 of 2 lines');
+
+  await openApp(page);
+  await runQuickFixture(page, sup);
+  await expect(page.locator('#quickOverview')).toContainText('Net price looks like the line total');
+
+  // A normal ORDRSP stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('Net price looks like the line total');
+});
+
+// A readable XML file whose structure ECHO doesn't know: no comparison
+// (which would call every item missing), but a clear note instead.
+test('a file ECHO reads no lines from stops Compare with a clear note', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'unknown-xml-format.sup.xml'), path.join(FIX, 'upper-transusxml-line-total.bol.edi'));
+  await expect(page.locator('#compareBanner')).toContainText("ECHO couldn't read any lines from the supplier file");
+  await expect(page.locator('#results')).toBeHidden();
+});

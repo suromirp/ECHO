@@ -99,6 +99,19 @@ Wrapped in `<Invoice>`/`<CreditNote>` tags, deep-searched by field name
   exact 8-digit date, so the raw string read as "Invoice date differs"
   against bol's ISO date. It uses the shared `normDate` now, which also
   accepts 14 digits (`CCYYMMDDHHMMSS`) and `DD.MM.YYYY`.
+- **Upper-case container variant of the ORDRSP** (`<ORDERRESPONSES>`,
+  `<ORDERRESPONSE>`, `<HEADER>`, `<ARTICLE>`; same field names inside): XML
+  is case sensitive, so ECHO read zero lines from it, gave no error, and
+  Compare called every item "missing from the supplier message".
+  `normalizeUpperTransusXml` renames the containers to the known tags before
+  parsing. Generic safety net: when a readable file yields no lines while the
+  other side has some, Compare stops with a note instead of comparing, and
+  Quick check says no lines could be read.
+  The same real message put the line total in `<ArticleNetPrice>`
+  (quantity × `<PurchasePrice>`) on every line, which bol's output carried as
+  the unit price (`PRI+AAA`). Message check `checkNetPriceIsLineTotal` (both
+  modes): net price exactly equal to quantity × purchase price, quantity
+  above 1.
 - **This dialect's ORDRSP variant** (same `<Messages><Message><Article>`
   shape, distinguished from the INVOIC one by `<OrderResponseNumber>`
   and the absence of `<OrderLine>`) has its own confirmed quirks:

@@ -406,6 +406,12 @@ actual test fixtures, don't just keep this list as prose:
   "Cannot parse purchase order number … is not numeric" error picks the
   matching picklist entry and links it; a plain order number stays quiet
   (`tests/fixtures/ordrsp/order-number-extra-text.edi`).
+- **ORDRSP (TRANSUSXML, upper-case containers)**: `<ORDERRESPONSES>` /
+  `<ARTICLE>` is read like the `<Messages>` variant; a net price equal to
+  quantity × purchase price is one Message check in both modes; a readable
+  file with no recognisable lines stops Compare with a note
+  (`tests/fixtures/ordrsp/upper-transusxml-line-total.*`,
+  `unknown-xml-format.sup.xml`).
 - **UI (error picklist)**: "Got an error message?" in Compare (under the
   verdict, ORDRSP/DESADV and INVOIC) and Quick check: a dropdown pick and
   pasted text with noise around it (IDs, numbers, quotes) both open the
