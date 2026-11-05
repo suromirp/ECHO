@@ -400,6 +400,12 @@ actual test fixtures, don't just keep this list as prose:
   only" (neutral), Not applicable is neutral too; the Compare line table's
   search/filter counts say "items"; `--text-faint` and "More info" ≥ 4.5:1
   on panels; the Compare button stands out; no horizontal scroll at 390px.
+- **ORDRSP/DESADV/INVOIC**: an order number with extra text next to the
+  digits (`RFF+ON:8123456 REF27 ABCDEF`) is one Message check, reported once
+  as passed on unchanged in Compare and also in Quick check; the pasted
+  "Cannot parse purchase order number … is not numeric" error picks the
+  matching picklist entry and links it; a plain order number stays quiet
+  (`tests/fixtures/ordrsp/order-number-extra-text.edi`).
 - **UI (error picklist)**: "Got an error message?" in Compare (under the
   verdict, ORDRSP/DESADV and INVOIC) and Quick check: a dropdown pick and
   pasted text with noise around it (IDs, numbers, quotes) both open the

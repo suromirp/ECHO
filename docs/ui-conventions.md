@@ -173,6 +173,7 @@ Current entries and keys:
 
 | error | keys |
 |---|---|
+| Cannot parse purchase order number (is not numeric) | `order-not-numeric` |
 | Purchase Order not found | `order-near-miss`, `order-missing`, `order-diff`, `order-co-only`, `order-ambiguous` |
 | Ean not known | `ean-zeroed`, `ean-zeroed-in-output`, `ean-check-digit`, `item-one-side`, `blank-lin`, `no-identifier` |
 | Unit price is unknown | `price-none`, `price-partial`, `price-some-lines`, `price-missing-side`, `price-shift`, `dtm-duplicate` |

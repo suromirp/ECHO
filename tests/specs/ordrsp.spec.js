@@ -746,3 +746,35 @@ test('the CSV ORDRSP dialect gets the BGM+29 explanation and no new noise', asyn
   await expect(page.locator('#quickOverview')).not.toContainText('Header says');
   await expect(page.locator('#quickOverview')).not.toContainText('without a delivery date');
 });
+
+// Real ORDRSP: RFF+ON carried the bol order number plus the supplier's own
+// references ("<order> <ref> <ref>") on every line; Transus passed it on
+// unchanged and bol rejected it with "Cannot parse purchase order number …
+// is not numeric". Compare used to show a clean match.
+test('an order number with extra text next to the digits is a Message check in both modes', async ({ page }) => {
+  const f = path.join(FIX, 'order-number-extra-text.edi');
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  const hits = buckets.message.filter(t => t.includes('Order number contains more than digits'));
+  expect(hits).toHaveLength(1);
+  expect(hits[0]).toContain('Supplier (passed on unchanged to bol)');
+  expect(hits[0]).toContain('8123456 REF27 ABCDEF');
+  expect(hits[0]).toContain('3 lines');
+  expect(buckets.diff.some(t => t.includes('Order number contains'))).toBe(false);
+
+  // The pasted delivery error links to it.
+  await page.locator('#errPickTxt-compare').fill("Delivery error: Could not parse file: Cannot parse purchase order number for line 8712345610104: '8123456 REF27 ABCDEF' is not numeric");
+  await expect(page.locator('#errPickSel-compare')).toHaveValue('po-not-numeric');
+  await expect(page.locator('#errPickCard-compare .err-related a')).toHaveCount(1);
+
+  await openApp(page);
+  await runQuickFixture(page, f);
+  await expect(page.locator('#quickOverview')).toContainText('Order number contains more than digits');
+
+  // Plain numeric order numbers and short placeholders stay quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('Order number contains more than digits');
+});

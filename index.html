@@ -2955,6 +2955,25 @@ function checkOrderNearMiss(facts,label,add,jumpCall){
   }).join('');
   add('warn',fkey('order-near-miss')+`${label?label+' — ':''}<strong>Order number looks incomplete</strong>. <ul class="wc-affected" style="margin-top:7px;">${tags}</ul>`+moreInfo(`The same message also has a longer order number that ends in exactly these digits, so a leading digit was probably dropped upstream. bol can't match a line to a purchase order that doesn't exist, which shows up as a "Purchase Order not found" delivery error. Check with the supplier which order these lines belong to.`),'message');
 }
+/* An order number with extra text around it: bol order numbers are plain
+   digits, and bol's order intake rejects anything else ("Could not parse
+   file: Cannot parse purchase order number for line …: '<value>' is not
+   numeric"). A real ORDRSP sent RFF+ON:<order> <own refs> on every line
+   and Transus passed it on unchanged, so Compare showed a match. Only
+   values that contain a run of 7+ digits plus anything else count, so
+   short placeholder or reference values (PO0001, RMA numbers on credit
+   notes are skipped by the callers) don't trip it. Single-message
+   observation: both modes, reported once when bol's output carries the
+   same values. */
+function orderRefsWithExtraText(facts){
+  return headerOrders(facts).filter(o=>{const v=String(o).trim();return !/^\d+$/.test(v)&&/\d{7,}/.test(v);});
+}
+function checkOrderNotNumeric(facts,label,add,jumpCall){
+  const vals=orderRefsWithExtraText(facts);
+  if(!vals.length)return;
+  const n=(facts.lines||[]).filter(l=>l.orders&&vals.some(v=>l.orders.has(v))).length;
+  add('warn',fkey('order-not-numeric')+`${label?label+' — ':''}<strong>Order number contains more than digits</strong> <span class="seg">(RFF+ON)</span>${n?` <span class="dim">(${n} line${n===1?'':'s'})</span>`:''}`+valueTagsHtml(vals,jumpCall,'values')+moreInfo(`bol order numbers are digits only. Here the order number has extra text next to it, for example the supplier's own reference. bol's order intake can reject that with "Cannot parse purchase order number … is not numeric". The supplier's own reference can't go in RFF+ON; the order number needs to be sent exactly as in the order.`),'message');
+}
 /* No order number (RFF+ON) in the header or on any line: a fact about one
    side's own message, so it runs in Quick check and per side in Compare
    whenever that side lacks it (parity rule). Compare reports "Neither
@@ -3880,6 +3899,7 @@ function compare(bol,sup){
     // supplier's message.
     checkUnbSender(sup,'Supplier',add,factsJump('sup'));
     perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
+    perSideOnce(add,sup,bol,checkOrderNotNumeric,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
@@ -5453,6 +5473,13 @@ function compareInvoice(sup,bol){
     const sm=orderNearMisses(supF).map(h=>h.short).join('|'),bm=orderNearMisses(bolF).map(h=>h.short).join('|');
     if(sm&&sm===bm)checkOrderNearMiss(supF,'Supplier (passed on unchanged to bol)',add,v=>`jumpToInvSource('both',${jsQuote(v)})`);
     else{checkOrderNearMiss(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNearMiss(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
+    // Credit notes carry RMA/claim numbers in RFF+ON (bol's INVOIC spec), so
+    // only invoices get the digits-only order number check.
+    if(sup.docType!=='credit'&&bol.docType!=='credit'){
+      const sx=orderRefsWithExtraText(supF).join('|'),bx=orderRefsWithExtraText(bolF).join('|');
+      if(sx&&sx===bx)checkOrderNotNumeric(supF,'Supplier (passed on unchanged to bol)',add,v=>`jumpToInvSource('both',${jsQuote(v)})`);
+      else{checkOrderNotNumeric(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNotNumeric(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
+    }
   }
 
   /* ---- header ---- */
@@ -5975,6 +6002,13 @@ function verdictInnerHtml(m,hasWC){
    - elsewhere: what to check outside ECHO when nothing related is found;
      completes "ECHO sees nothing in this message that explains it; …". */
 const ERROR_CATALOGUE=[
+  {id:'po-not-numeric',label:"Cannot parse purchase order number (is not numeric)",
+    match:[/(?:could not parse file: )?cannot parse purchase order number/,/purchase order number (?:\S+ ){0,8}is not numeric/],
+    types:['ORDRSP','DESADV','INVOIC'],
+    meaning:'bol could not read the order number because it contains more than digits, for example the supplier\'s own reference next to the bol order number.',
+    where:'The order number in <span class="seg">RFF+ON</span>, in the header or per line (XML: OrderNumberBuyer / OrderReference). It must be the bol order number only, exactly as in the order.',
+    keys:['order-not-numeric'],
+    elsewhere:'check the order number field in the message that was actually delivered; this file may be a corrected resend.'},
   {id:'po-not-found',label:'Purchase Order not found',
     match:[/purchase ?order (?:\S+ ){0,4}not found/,/\bpo (?:\S+ ){0,3}not found/,/\border (?:number |nr |no )?(?:\S+ ){0,2}not found/,/unknown (?:purchase )?order/],
     types:['ORDRSP','DESADV','INVOIC'],
@@ -6330,6 +6364,7 @@ function invoiceOverviewHtml(inv,opts={}){
     const note=(level,text)=>qcAdd(level,text);
     checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
     checkOrderNearMiss(af,'',note,jumpCall);
+    if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn',fkey('order-missing')+'<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
@@ -6488,6 +6523,7 @@ function factsOverviewHtml(facts){
   if(lineChecks)checkDtmDuplicateQualifier(facts,'This message',qcAdd,jumpCall);
   if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
+  if(type==='ORDRSP'||type==='DESADV')checkOrderNotNumeric(facts,'',qcAdd,jumpCall);
   checkUnbSender(facts,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).

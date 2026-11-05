@@ -484,6 +484,18 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   are passed to the shared check through `invoiceAsFacts`; Exact Online and
   TRANSUSXML only state the order at header level, so their orders count as
   header orders there.
+- **Order number with extra text next to it** (real ORDRSP from a supplier):
+  every line had `RFF+ON:<bol order number> <own reference> <own reference>`.
+  Transus passed it on unchanged, and bol rejected the message with "Could
+  not parse file: Cannot parse purchase order number for line <EAN>:
+  '<value>' is not numeric". Compare showed a clean match, because both sides
+  carried the same value. Flagged as a Message check (`orderRefsWithExtraText`,
+  `checkOrderNotNumeric`): an order value that has a run of 7+ digits plus
+  anything else. Short placeholders such as `PO0001` don't trip it. Same
+  parity as the near-miss check: ORDRSP, DESADV and INVOIC, both modes,
+  reported once when bol's output carries the same. Credit notes are skipped,
+  because bol's INVOIC spec puts RMA, claim or repair numbers in `RFF+ON` there.
+  The error picklist has an entry for the error text (`po-not-numeric`).
 - **Article moved to another pallet by the transformation** (real Supplier Alfa
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet
