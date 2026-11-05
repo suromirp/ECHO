@@ -1001,3 +1001,23 @@ test('INVOIC: a UNB sender other than NAD+SU is an info Message check, supplier 
   await expect(page.locator('#quickOverview .ov-type')).toHaveText('INVOICE');
   await expect(page.locator('#quickOverview')).not.toContainText('Sent from a different GLN');
 });
+
+// Deposit (statiegeld) as bol's matching team specified it: ALC+C++++RAD on
+// the item line, the amount in MOA+8, included in the line amount (MOA+203)
+// but not in the taxable amount or the VAT. ECHO must read it as a line
+// charge and raise nothing about prices, VAT or charge totals.
+test('a deposit (RAD, MOA+8, outside the VAT) is read as a line charge without false findings', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'deposit-rad.sup.edi'));
+  await expect(page.locator('#quickOverview')).toContainText('Nothing unusual found');
+  await expect(page.locator('#quickOverview')).toContainText('RAD');
+  await expect(page.locator('#quickOverview')).toContainText('432.00');
+
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'deposit-rad.sup.edi'), path.join(FIX, 'deposit-rad.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.message).toEqual([]);
+  expect(b.diff).toHaveLength(1);
+  expect(b.diff[0]).toContain('All compared values match');
+});

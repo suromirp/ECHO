@@ -412,6 +412,10 @@ actual test fixtures, don't just keep this list as prose:
   file with no recognisable lines stops Compare with a note
   (`tests/fixtures/ordrsp/upper-transusxml-line-total.*`,
   `unknown-xml-format.sup.xml`).
+- **INVOIC (deposit / statiegeld)**: `ALC+C++++RAD` with the amount in
+  `MOA+8`, included in the line amount but outside the taxable amount and
+  VAT, is read as a line charge; Quick check finds nothing unusual and Compare
+  matches (`tests/fixtures/invoic/deposit-rad.*`).
 - **UI (error picklist)**: "Got an error message?" in Compare (under the
   verdict, ORDRSP/DESADV and INVOIC) and Quick check: a dropdown pick and
   pasted text with noise around it (IDs, numbers, quotes) both open the
