@@ -182,6 +182,20 @@ Current entries and keys:
 | Couldn't parse XML content | `illegal-char`, `illegal-char-file`, `xml-concatenated`, `xml-unreadable`, `xml-leading-text`, `tax-no-rate` |
 | VAT percentage/amount is missing | `tax-no-rate`, `tax-rate-position`, `vat-diff` |
 | SSCC not found / pallet without SSCC | `pac-missing`, `pallet-count`, `sscc-length`, `sscc-check-digit`, `sscc-none`, `sscc-pallet-missing`, `sscc-one-side` |
+| Document number has been used before | (none: not visible from one message) |
+| PO does not match supplier | `order-near-miss`, `order-diff`, `gln-sender` |
+| Supplier GLN unknown / Unknown Supplier | `gln-sender` |
+| Bol GLN unknown (buyer GLN not recognised) | (none) |
+| Message type unknown (BGM type not accepted) | (none) |
+| PackingList has no lines | `blank-lin`, `no-identifier`, `format-unknown` |
+| EAN code not accepted | `ean-zeroed`, `ean-zeroed-in-output`, `ean-check-digit`, `no-identifier`, `blank-lin` |
+| Quantity not accepted or negative | (none) |
+| Packing list reference not accepted | `packref-length`, `packref-near-match` |
+
+An entry may have no keys: some rejections can't be explained from the
+message alone, and the card then says so and points to `elsewhere`. Labels
+stay neutral (no "invalid"/"wrong"); the literal rejection texts are matched
+through `match`.
 
 ## Header fields table
 

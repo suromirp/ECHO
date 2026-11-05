@@ -164,10 +164,40 @@ test('error catalogue: every entry is complete, neutral and free of em-dashes', 
   const problems = await page.evaluate(() => ERROR_CATALOGUE.flatMap(e => {
     const out = [];
     ['id', 'label', 'meaning', 'where', 'elsewhere'].forEach(k => { if (!e[k]) out.push(`${e.id}: no ${k}`); });
-    if (!e.match.length || !e.keys.length) out.push(`${e.id}: no match/keys`);
+    // keys may be empty: some rejections can't be explained from the message
+    // itself, and the card then says so honestly.
+    if (!e.match.length || !Array.isArray(e.keys)) out.push(`${e.id}: no match/keys`);
     if (!matchErrorText(e.label) || matchErrorText(e.label).id !== e.id) out.push(`${e.id}: own label doesn't match`);
     [e.label, e.meaning, e.where, e.elsewhere].forEach(t => { if (/—/.test(t)) out.push(`${e.id}: em-dash`); if (/\b(invalid|wrong|mistake|error by)\b/i.test(t.replace(/<[^>]+>/g, ''))) out.push(`${e.id}: judging word`); });
     return out;
   }));
   expect(problems).toEqual([]);
+});
+
+// Rejection texts bol returns for incoming order responses and despatch
+// advices; each must pick its own entry and not a neighbouring one.
+test('rejection texts for order responses and despatch advices pick their own entry', async ({ page }) => {
+  await openApp(page);
+  const ids = await page.evaluate(() => [
+    'Document number: RESP0001 has been used before',
+    'PO does not match supplier',
+    'Supplier GLN: 8700000000001 unknown',
+    'Unknown Supplier;',
+    'Bol GLN: 8700000000002 unknown',
+    'Wrong Buyer GLN',
+    'Message type: 230 unknown',
+    'Invalid BGM type',
+    'PackingList has no lines.',
+    'Invalid EAN code',
+    'Invalid Quantity',
+    'Quantity is negative',
+    'Packing List Reference Invalid',
+    'Duplicate reference for supplier',
+    'Purchase order not found',
+    'Packing List Reference must not exceed 15 characters',
+  ].map(t => (matchErrorText(t) || {}).id || null));
+  expect(ids).toEqual(['doc-number-used', 'po-other-supplier', 'supplier-unknown', 'supplier-unknown',
+    'buyer-gln', 'buyer-gln', 'message-type', 'message-type', 'no-lines', 'invalid-ean',
+    'invalid-quantity', 'invalid-quantity', 'packref-invalid', 'duplicate-reference', 'po-not-found',
+    'packref-too-long']);
 });
