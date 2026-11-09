@@ -1413,3 +1413,26 @@ test('SAP DeliveryRequest without a repeated delivery line: no repeat finding in
   expect(buckets.message).toHaveLength(0);
   expect(buckets.diff.some(t => /All compared values match/.test(t))).toBe(true);
 });
+
+// Real DESADV: the order number field held a description of a promotional
+// shipment instead of a bol order number, and delivery failed with "Packing
+// list file … has 1 line(s) with non-numeric poNumber". The 7-digit rule for
+// "order number + own reference" didn't catch text without any digits.
+test('an order number that is only text is a Message check, and its delivery error links to it', async ({ page }) => {
+  const f = path.join(FIX, 'order-number-text.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Order number is text, not a number');
+  await expect(ov).toContainText('Promo action Supplier Bravo - giveaway');
+  await expect(ov).not.toContainText('contains more than digits');
+
+  await page.locator('#errPickTxt-quick').fill("Delivery error: Packing list file 12345678 has 1 line(s) with non-numeric poNumber, blocking downstream publish: [ean=8712345610104, poNumber=Promo action Supplier Bravo - giveaway]");
+  await expect(page.locator('#errPickSel-quick')).toHaveValue('po-not-numeric');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('Order number is text, not a number'))).toHaveLength(1);
+  expect(buckets.diff.some(t => t.includes('Order number is text'))).toBe(false);
+});

@@ -406,6 +406,10 @@ actual test fixtures, don't just keep this list as prose:
   "Cannot parse purchase order number … is not numeric" error picks the
   matching picklist entry and links it; a plain order number stays quiet
   (`tests/fixtures/ordrsp/order-number-extra-text.edi`).
+- **DESADV**: an order number that is only text (`RFF+ON:Promo action …`)
+  is one Message check, "Order number is text, not a number", in Quick check
+  and once in Compare; the pasted "non-numeric poNumber" delivery error picks
+  `po-not-numeric` (`tests/fixtures/desadv/order-number-text.edi`).
 - **ORDRSP (TRANSUSXML, upper-case containers)**: `<ORDERRESPONSES>` /
   `<ARTICLE>` is read like the `<Messages>` variant; a net price equal to
   quantity × purchase price is one Message check in both modes; a readable

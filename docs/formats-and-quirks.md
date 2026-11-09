@@ -509,6 +509,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   reported once when bol's output carries the same. Credit notes are skipped,
   because bol's INVOIC spec puts RMA, claim or repair numbers in `RFF+ON` there.
   The error picklist has an entry for the error text (`po-not-numeric`).
+- **Order number that is only text** (real DESADV from a supplier): the
+  line's `RFF+ON` held a description of a promotional shipment instead of a
+  bol order number (no digits at all), and delivery failed with "Packing list
+  file <n> has 1 line(s) with non-numeric poNumber, blocking downstream
+  publish". The 7-digit rule above missed it. `orderRefsWithExtraText` now
+  also flags a value with letters and no digits; the headline then reads
+  "Order number is text, not a number". Placeholders with a few digits
+  (`PO0001`) still stay quiet. The `po-not-numeric` picklist entry matches
+  the "non-numeric poNumber" text too.
 - **Article moved to another pallet by the transformation** (real Supplier Alfa
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet

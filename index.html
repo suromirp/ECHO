@@ -2993,14 +2993,20 @@ function checkOrderNearMiss(facts,label,add,jumpCall){
    notes are skipped by the callers) don't trip it. Single-message
    observation: both modes, reported once when bol's output carries the
    same values. */
+/* Order values bol's intake can't read as a number: a run of 7+ digits with
+   other text next to it ("8123456 REF27"), or text with no digits at all
+   ("Promo action …"). Short placeholders such as PO0001 stay quiet. */
 function orderRefsWithExtraText(facts){
-  return headerOrders(facts).filter(o=>{const v=String(o).trim();return !/^\d+$/.test(v)&&/\d{7,}/.test(v);});
+  return headerOrders(facts).filter(o=>{const v=String(o).trim();return v&&!/^\d+$/.test(v)&&(/\d{7,}/.test(v)||(!/\d/.test(v)&&/[a-z]/i.test(v)));});
 }
 function checkOrderNotNumeric(facts,label,add,jumpCall){
   const vals=orderRefsWithExtraText(facts);
   if(!vals.length)return;
   const n=(facts.lines||[]).filter(l=>l.orders&&vals.some(v=>l.orders.has(v))).length;
-  add('warn',fkey('order-not-numeric')+`${label?label+' — ':''}<strong>Order number contains more than digits</strong> <span class="seg">(RFF+ON)</span>${n?` <span class="dim">(${n} line${n===1?'':'s'})</span>`:''}`+valueTagsHtml(vals,jumpCall,'values')+moreInfo(`bol order numbers are digits only. Here the order number has extra text next to it, for example the supplier's own reference. bol's order intake can reject that with "Cannot parse purchase order number … is not numeric". The supplier's own reference can't go in RFF+ON; the order number needs to be sent exactly as in the order.`),'message');
+  const textOnly=vals.every(v=>!/\d/.test(v));
+  const head=textOnly?'Order number is text, not a number':'Order number contains more than digits';
+  const what=textOnly?'Here the order number field holds text instead of a bol order number, for example a description of the shipment.':'Here the order number has extra text next to it, for example the supplier\'s own reference.';
+  add('warn',fkey('order-not-numeric')+`${label?label+' — ':''}<strong>${head}</strong> <span class="seg">(RFF+ON)</span>${n?` <span class="dim">(${n} line${n===1?'':'s'})</span>`:''}`+valueTagsHtml(vals,jumpCall,'values')+moreInfo(`bol order numbers are digits only. ${what} bol's intake can reject that, with "Cannot parse purchase order number … is not numeric" or, on a despatch advice, "… non-numeric poNumber". Only the bol order number goes in RFF+ON, exactly as in the order.`),'message');
 }
 /* No order number (RFF+ON) in the header or on any line: a fact about one
    side's own message, so it runs in Quick check and per side in Compare
@@ -6031,10 +6037,10 @@ function verdictInnerHtml(m,hasWC){
    - elsewhere: what to check outside ECHO when nothing related is found;
      completes "ECHO sees nothing in this message that explains it; …". */
 const ERROR_CATALOGUE=[
-  {id:'po-not-numeric',label:"Cannot parse purchase order number (is not numeric)",
-    match:[/(?:could not parse file: )?cannot parse purchase order number/,/purchase order number (?:\S+ ){0,8}is not numeric/],
+  {id:'po-not-numeric',label:"Order number not numeric (Cannot parse purchase order number / non-numeric poNumber)",
+    match:[/(?:could not parse file: )?cannot parse purchase order number/,/purchase order number (?:\S+ ){0,8}is not numeric/,/non-numeric ponumber/],
     types:['ORDRSP','DESADV','INVOIC'],
-    meaning:'bol could not read the order number because it contains more than digits, for example the supplier\'s own reference next to the bol order number.',
+    meaning:'bol could not read the order number because it is not digits only: for example the supplier\'s own reference next to the bol order number, or text instead of an order number.',
     where:'The order number in <span class="seg">RFF+ON</span>, in the header or per line (XML: OrderNumberBuyer / OrderReference). It must be the bol order number only, exactly as in the order.',
     keys:['order-not-numeric'],
     elsewhere:'check the order number field in the message that was actually delivered; this file may be a corrected resend.'},
