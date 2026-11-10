@@ -2859,6 +2859,26 @@ function hasDeliveryDate(facts){
   if(DESADV_DELIVERY_DTM.some(q=>h[q]))return true;
   return (facts.lines||[]).some(l=>l.dtm&&DESADV_DELIVERY_DTM.some(q=>l.dtm[q]));
 }
+/* Expected arrival before the message date (DESADV): a real test DESADV
+   had DTM+132 ten days before its own DTM+137, and Transus's output carried
+   a different arrival date. A fact about one message, so both modes. */
+function checkArrivalBeforeDocDate(facts,label,add){
+  if(!facts||!facts.arrivalDate||!facts.docDate)return;
+  const a=facts.arrivalDate,d=facts.docDate;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(a)||!/^\d{4}-\d{2}-\d{2}$/.test(d)||a>=d)return;
+  const seg=facts.headerDtm&&facts.headerDtm['132']?'DTM+132':(facts.headerDtm&&facts.headerDtm['17']?'DTM+17':'DTM+2');
+  add('warn',fkey('arrival-before-doc')+`${label?label+' — ':''}<strong>Expected arrival is before the message date</strong> <span class="seg">(${seg})</span>: ${esc(showDate(a))}, message created ${esc(showDate(d))}.`+moreInfo(`${seg} is the expected arrival at the bol warehouse. Here it lies before the date the message was created (DTM+137). That can be a despatch date in the arrival field, or a date that wasn't updated. Worth checking which arrival date is meant.`),'message');
+}
+/* Delivery location equal to the buyer's GLN (NAD+DP = NAD+BY): NAD+DP is
+   the bol warehouse from the order. Real cases: a test DESADV and a DESADV
+   for a promotional shipment both had bol's company GLN there. Works on
+   facts and invoices alike (both carry .parties). */
+function checkDeliveryPartyIsBuyer(m,label,add){
+  const p=m&&m.parties;if(!p||!p.DP||!p.BY)return;
+  const dp=String(p.DP.gln||'').trim(),by=String(p.BY.gln||'').trim();
+  if(!dp||dp!==by)return;
+  add('warn',fkey('dp-is-buyer')+`${label?label+' — ':''}<strong>Delivery location is the buyer's GLN</strong> <span class="seg">(NAD+DP = NAD+BY)</span>: ${esc(dp)}.`+moreInfo(`NAD+DP is the bol warehouse the goods go to, as stated in the order. Here it is the same GLN as the buyer in NAD+BY, so no warehouse is named. Worth checking whether the warehouse GLN from the order was meant.`),'message');
+}
 function checkNoExpectedDelivery(facts,label,add){
   if(!facts||facts.format!=='EDIFACT'||!(facts.lines&&facts.lines.length)||hasDeliveryDate(facts))return;
   add('info',`${label?label+' — ':''}<strong>No expected delivery date</strong> <span class="seg">(DTM+132)</span> in this message.`+moreInfo(`bol's DESADV documentation names DTM+132 as the expected delivery date. This message has none, and no other delivery date either (such as DTM+17 or DTM+2). Worth checking whether an expected delivery date is meant to be sent with this despatch advice.`),'message');
@@ -3859,6 +3879,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkPackingReferenceLength,factsJump);
     perSideOnce(add,sup,bol,checkConsignmentPalletCount,factsJump);
     perSideOnce(add,sup,bol,checkNoExpectedDelivery,factsJump);
+    perSideOnce(add,sup,bol,checkArrivalBeforeDocDate,factsJump);
     compareDesadvDates(sup,bol,add);
     perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
     perSideOnce(add,sup,bol,checkRepeatedDeliveryItem,factsJump);
@@ -3935,6 +3956,7 @@ function compare(bol,sup){
     checkUnbSender(sup,'Supplier',add,factsJump('sup'));
     perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
     perSideOnce(add,sup,bol,checkOrderNotNumeric,factsJump);
+    perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
@@ -5534,6 +5556,7 @@ function compareInvoice(sup,bol){
       else{checkOrderNotNumeric(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNotNumeric(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
     }
     checkLineAllowances(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+    perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
   }
 
@@ -6490,6 +6513,7 @@ function invoiceOverviewHtml(inv,opts={}){
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
     checkLineAllowances(inv,'',note,jumpCall);
+    checkDeliveryPartyIsBuyer(inv,'',note);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn',fkey('order-missing')+'<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
@@ -6617,6 +6641,7 @@ function factsOverviewHtml(facts){
     checkPackingReferenceLength(facts,'This message',qcAdd,jumpCall);
     checkConsignmentPalletCount(facts,'',qcAdd,jumpCall);
     checkNoExpectedDelivery(facts,'',qcAdd);
+    checkArrivalBeforeDocDate(facts,'',qcAdd);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
     checkRepeatedDeliveryItem(facts,'',qcAdd,jumpCall);
     const pacCovered=checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);
@@ -6650,6 +6675,7 @@ function factsOverviewHtml(facts){
   if(lineChecks)checkZeroGtin(facts,'This message',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNearMiss(facts,'',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkOrderNotNumeric(facts,'',qcAdd,jumpCall);
+  if(type==='ORDRSP'||type==='DESADV')checkDeliveryPartyIsBuyer(facts,'',qcAdd);
   checkUnbSender(facts,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).

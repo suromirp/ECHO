@@ -518,6 +518,17 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   "Order number is text, not a number". Placeholders with a few digits
   (`PO0001`) still stay quiet. The `po-not-numeric` picklist entry matches
   the "non-numeric poNumber" text too.
+- **Delivery location equal to the buyer** (real test DESADV and a DESADV
+  for a promotional shipment): `NAD+DP` carried the same GLN as `NAD+BY`
+  (bol's company GLN) instead of a warehouse. Message check in DESADV,
+  ORDRSP and INVOIC, both modes (`checkDeliveryPartyIsBuyer`, key
+  `dp-is-buyer`). It compares DP with BY in the same message, so no GLN is
+  hardcoded.
+- **Expected arrival before the message date** (same test DESADV):
+  `DTM+132` ten days before `DTM+137`. Transus's output carried a different
+  arrival date (the day after the message); why is not yet confirmed.
+  Message check on DESADV, both modes (`checkArrivalBeforeDocDate`, key
+  `arrival-before-doc`).
 - **Article moved to another pallet by the transformation** (real Supplier Alfa
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet

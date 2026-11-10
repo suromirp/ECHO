@@ -415,6 +415,9 @@ actual test fixtures, don't just keep this list as prose:
   and on the supplier side in Compare; an empty supplier-only `ALC+C` is
   "No amount, not forwarded" in the table, not a difference
   (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
+- **DESADV**: `NAD+DP` equal to `NAD+BY` and a `DTM+132` before `DTM+137`
+  are each one Message check, in Quick check and once in Compare; a normal
+  DESADV stays quiet (`tests/fixtures/desadv/dp-buyer-past-arrival.edi`).
 - **ORDRSP (TRANSUSXML, upper-case containers)**: `<ORDERRESPONSES>` /
   `<ARTICLE>` is read like the `<Messages>` variant; a net price equal to
   quantity × purchase price is one Message check in both modes; a readable

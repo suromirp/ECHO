@@ -1436,3 +1436,28 @@ test('an order number that is only text is a Message check, and its delivery err
   expect(buckets.message.filter(t => t.includes('Order number is text, not a number'))).toHaveLength(1);
   expect(buckets.diff.some(t => t.includes('Order number is text'))).toBe(false);
 });
+
+// Real test DESADV: NAD+DP carried the buyer's GLN instead of a warehouse,
+// and DTM+132 lay ten days before the message's own DTM+137.
+test('a delivery location equal to the buyer and an arrival before the message date are Message checks', async ({ page }) => {
+  const f = path.join(FIX, 'dp-buyer-past-arrival.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText("Delivery location is the buyer's GLN");
+  await expect(ov).toContainText('Expected arrival is before the message date');
+  await expect(ov).toContainText('26-10-2026');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes("Delivery location is the buyer's GLN"))).toHaveLength(1);
+  expect(buckets.message.filter(t => t.includes('Expected arrival is before'))).toHaveLength(1);
+  expect(buckets.diff.some(t => t.includes('Delivery location') || t.includes('Expected arrival is before'))).toBe(false);
+
+  // A normal DESADV stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'order-number-text.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText("Delivery location is the buyer's GLN");
+  await expect(page.locator('#quickOverview')).not.toContainText('Expected arrival is before');
+});
