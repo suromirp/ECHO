@@ -634,6 +634,21 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   in the Charges & Allowances table as "Not forwarded (expected)", not
   flagged as a Transformation difference. Line-level *charges* are still
   expected to be forwarded and are compared normally.
+- **Discount in ALC+A with PRI+AAA as the price before discount** (real
+  invoice from a supplier, every line): `PRI+AAA` was the gross price, the
+  discount sat in `ALC+A++++TD'MOA+8`, and `MOA+203` was the net line
+  amount. Because bol drops line-level allowances, bol's output had a line
+  amount of about 65% of quantity × price on every line (already flagged on
+  bol's side). The supplier's own message gave no hint in Quick check. Now a
+  Message check in both modes (`checkLineAllowances`, key `line-allowance`):
+  "Discount sent as a line-level allowance (ALC+A)", neutral, with the
+  affected items as tags. Credit notes are skipped.
+- **Empty ALC segment only on the supplier side**: the same invoice sent an
+  `ALC+C++++TD'` with no amount after each discount. That showed up as 38
+  "charge only present in the supplier message" Transformation differences.
+  A supplier-only ALC without an amount (or 0) has nothing to forward: it
+  stays in the Charges & allowances table as "No amount, not forwarded" and
+  is no longer a difference.
 - **A `TAX` segment with a category but no rate** (e.g. `TAX+7+VAT++++E'`
   instead of `TAX+7+VAT+++:::0+E'`) is a real, confirmed cause of Transus
   rejecting a message outright ("Couldn't parse XML content" / validation

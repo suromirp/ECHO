@@ -410,6 +410,11 @@ actual test fixtures, don't just keep this list as prose:
   is one Message check, "Order number is text, not a number", in Quick check
   and once in Compare; the pasted "non-numeric poNumber" delivery error picks
   `po-not-numeric` (`tests/fixtures/desadv/order-number-text.edi`).
+- **INVOIC**: a discount as a line-level `ALC+A` with an amount is one
+  Message check ("Discount sent as a line-level allowance") in Quick check
+  and on the supplier side in Compare; an empty supplier-only `ALC+C` is
+  "No amount, not forwarded" in the table, not a difference
+  (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
 - **ORDRSP (TRANSUSXML, upper-case containers)**: `<ORDERRESPONSES>` /
   `<ARTICLE>` is read like the `<Messages>` variant; a net price equal to
   quantity × purchase price is one Message check in both modes; a readable

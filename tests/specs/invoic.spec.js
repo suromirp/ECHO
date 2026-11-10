@@ -1021,3 +1021,32 @@ test('a deposit (RAD, MOA+8, outside the VAT) is read as a line charge without f
   expect(b.diff).toHaveLength(1);
   expect(b.diff[0]).toContain('All compared values match');
 });
+
+// Real invoice: PRI+AAA was the price before discount, the discount sat in
+// ALC+A on every line, followed by an empty "ALC+C++++TD". bol doesn't carry
+// line-level allowances through, so its output had line amounts well below
+// quantity × price. The empty charge segments showed up as differences.
+test('a discount as a line-level ALC+A is a Message check; an empty supplier-only ALC is not a difference', async ({ page }) => {
+  const sup = path.join(FIX, 'line-allowance.sup.edi');
+  await openApp(page);
+  await runQuickFixture(page, sup);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Discount sent as a line-level allowance');
+  await expect(ov).toContainText('(1 line)');
+  await expect(ov).toContainText('8712345678906');
+
+  await openApp(page);
+  await runCompareFixtures(page, sup, path.join(FIX, 'line-allowance.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.message.filter(t => t.includes('Discount sent as a line-level allowance'))).toHaveLength(1);
+  expect(b.message.some(t => t.startsWith('Supplier') || t.includes('Supplier —'))).toBe(true);
+  expect(b.diff.some(t => /Charge TD/.test(t))).toBe(false);
+  await expect(page.locator('#invoiceResults')).toContainText('No amount, not forwarded');
+  await expect(page.locator('#invoiceResults')).toContainText('Not forwarded (expected)');
+
+  // An invoice without allowances stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'deposit-rad.sup.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('line-level allowance');
+});

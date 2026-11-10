@@ -5141,6 +5141,24 @@ function creditNoteRefText(seg){
   return `<strong>Credit note without a reference to the original invoice</strong> <span class="seg">(${esc(seg)})</span>`+moreInfo(`A credit note usually names the invoice it corrects (RFF+IV in EDIFACT, BillingReference in bol's UBL). This one doesn't, so the message itself doesn't say which invoice it relates to. Whether that's needed depends on the arrangement with this supplier; worth knowing when matching the credit note to an invoice.`);
 }
 function creditNoteRefSeg(inv){return inv.source==='EDIFACT'?'RFF+IV':'BillingReference';}
+/* Line-level allowances (ALC+A with an amount) on an invoice. bol's invoice
+   process doesn't carry them through (see the charges table), so bol works
+   with PRI+AAA as the net price. A real invoice had PRI+AAA as the price
+   before discount and the discount in ALC+A on every line: bol's output
+   then had a line amount of about 65% of quantity × price on every line.
+   A fact about one message, so Quick check and Compare (supplier side). */
+function lineAllowanceItems(inv){
+  if(!inv||inv.docType==='credit')return [];
+  const out=[];
+  (inv.lines||[]).forEach(l=>{if((l.charges||[]).some(c=>c.kind==='allowance'&&c.amount!==null&&c.amount!==undefined&&Math.abs(c.amount)>=0.005))out.push(l.gtin||l.art||('line '+(l.lineNo||'?')));});
+  return out;
+}
+function checkLineAllowances(inv,label,add,jumpCall){
+  const items=lineAllowanceItems(inv);
+  if(!items.length)return;
+  const n=items.length;
+  add('warn',fkey('line-allowance')+`${label?label+' — ':''}<strong>Discount sent as a line-level allowance</strong> <span class="seg">(ALC+A)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(items,jumpCall,'items')+moreInfo(`bol's invoice process doesn't carry line-level allowances through; only line-level charges are forwarded. bol then reads <span class="seg">PRI+AAA</span> as the net price per unit. If that is the price before discount, the price and line amounts on bol's side can differ from the order. bol's INVOIC guidance asks for a discount to be included in the net price instead.`),'message');
+}
 function invoiceChargeTotalIssue(inv){
   if(!inv||inv.source!=='EDIFACT')return null;
   const ex=inv.extras||{};
@@ -5515,6 +5533,8 @@ function compareInvoice(sup,bol){
       if(sx&&sx===bx)checkOrderNotNumeric(supF,'Supplier (passed on unchanged to bol)',add,v=>`jumpToInvSource('both',${jsQuote(v)})`);
       else{checkOrderNotNumeric(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNotNumeric(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
     }
+    checkLineAllowances(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+    checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
   }
 
   /* ---- header ---- */
@@ -5834,10 +5854,16 @@ function compareInvoice(sup,bol){
     const expectedDrop=ref.kind==='allowance'&&ref.level==='line'&&s&&!b;
     const sAmt=s&&s.hasAmount?Math.round(s.amount*100)/100:null;
     const bAmt=b&&b.hasAmount?Math.round(b.amount*100)/100:null;
+    // An ALC segment with no amount (or 0) that only the supplier sent
+    // carries nothing to forward: a real invoice had an empty
+    // "ALC+C++++TD" after every discounted line, which showed up as 38
+    // "charge only in the supplier message" differences. Structural, so it
+    // stays in the table but isn't a difference.
+    const emptyDrop=!expectedDrop&&s&&!b&&(sAmt===null||sAmt===0);
     chargeRows.push({kind:ref.kind,code:ref.code,desc:ref.desc,level:ref.level,lineRef:ref.lineRef,
       sup:sAmt,bol:bAmt,
-      status:expectedDrop?'expected':((s&&b)?(ok?'ok':'diff'):'diff')});
-    if(expectedDrop)return;
+      status:expectedDrop?'expected':emptyDrop?'empty':((s&&b)?(ok?'ok':'diff'):'diff')});
+    if(expectedDrop||emptyDrop)return;
     const nm=`${ref.kind==='charge'?'Charge':'Allowance'}${ref.code?' '+ref.code:''} (${ref.level==='line'?'line level'+(ref.lineRef?', line '+ref.lineRef:''):'message level'})`;
     if(s&&!b)chargeFindings.push(`${nm} of <span class="val-sup">${sAmt===null?'—':fmtAmt(sAmt,cur)}</span> is only present in the supplier message.`);
     else if(b&&!s)chargeFindings.push(`${nm} of <span class="val-bol">${bAmt===null?'—':fmtAmt(bAmt,cur)}</span> is only present in the bol output.`);
@@ -6463,6 +6489,7 @@ function invoiceOverviewHtml(inv,opts={}){
     checkZeroGtin(af,'This message',note,invoiceZeroJump(inv,jumpCall));
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
+    checkLineAllowances(inv,'',note,jumpCall);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn',fkey('order-missing')+'<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);
   }
@@ -7920,7 +7947,7 @@ function renderInvoiceCompare(res,notes){
     h+=`<div class="panel"><h2>Charges &amp; allowances</h2><div class="inv-scroll"><table class="inv">
       <tr><th>Type</th><th>Code</th><th>Description</th><th>Level</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.chargeRows.map(c=>{
-      const pill=c.status==='ok'?pillMatch():c.status==='expected'?'<span class="pill" title="bol\'s invoice process deliberately doesn\'t forward line-level allowances (discounts) — only line-level charges are carried through. Confirmed with Transus: expected, not a mapping gap.">Not forwarded (expected)</span>':pillDiff();
+      const pill=c.status==='ok'?pillMatch():c.status==='expected'?'<span class="pill" title="bol\'s invoice process deliberately doesn\'t forward line-level allowances (discounts) — only line-level charges are carried through. Confirmed with Transus: expected, not a mapping gap.">Not forwarded (expected)</span>':c.status==='empty'?'<span class="pill" title="The supplier\'s segment has no amount, so there is nothing to forward.">No amount, not forwarded</span>':pillDiff();
       return `<tr><td>${c.kind==='charge'?'Charge':'Allowance'}</td><td class="mono">${esc(c.code||'—')}</td><td class="desc">${esc(c.desc||'')}</td><td>${c.level==='line'?'line level'+(c.lineRef?' <span class="dim">('+esc(c.lineRef)+')</span>':''):'message level'}</td>
         <td class="num"><span class="s">${esc(fmtAmt(c.sup,cur)??'—')}</span></td><td class="num"><span class="b">${esc(fmtAmt(c.bol,cur)??'—')}</span></td><td>${pill}</td></tr>`;
     }).join('');
