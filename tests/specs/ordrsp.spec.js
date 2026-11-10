@@ -812,3 +812,32 @@ test('a file ECHO reads no lines from stops Compare with a clear note', async ({
   await expect(page.locator('#compareBanner')).toContainText("ECHO couldn't read any lines from the supplier file");
   await expect(page.locator('#results')).toBeHidden();
 });
+
+// Real test ORDRSP: empty control references in UNB/UNH/UNT/UNZ, bol's GLN
+// in NAD+SU, and a confirmed delivery date before the message date.
+test('empty envelope references, a supplier GLN equal to the buyer and a past confirmed date are Message checks', async ({ page }) => {
+  const f = path.join(FIX, 'envelope-su-past-date.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Reference number empty in the envelope');
+  await expect(ov).toContainText('UNB, UNH, UNT, UNZ');
+  await expect(ov).toContainText("Supplier GLN is the buyer's GLN");
+  await expect(ov).toContainText('Confirmed delivery date is before the message date');
+  await expect(ov).toContainText('(1 line)');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('Reference number empty in the envelope'))).toHaveLength(1);
+  expect(buckets.message.filter(t => t.includes("Supplier GLN is the buyer's GLN"))).toHaveLength(1);
+  expect(buckets.message.filter(t => t.includes('Confirmed delivery date is before'))).toHaveLength(1);
+  expect(buckets.diff.some(t => /envelope|Supplier GLN is|Confirmed delivery date is before/.test(t))).toBe(false);
+
+  // A normal ORDRSP stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('Reference number empty');
+  await expect(page.locator('#quickOverview')).not.toContainText("Supplier GLN is the buyer's GLN");
+  await expect(page.locator('#quickOverview')).not.toContainText('Confirmed delivery date is before');
+});

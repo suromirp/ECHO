@@ -529,6 +529,20 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   arrival date (the day after the message); why is not yet confirmed.
   Message check on DESADV, both modes (`checkArrivalBeforeDocDate`, key
   `arrival-before-doc`).
+- **Supplier GLN equal to the buyer** (real test ORDRSP): `NAD+SU` carried
+  bol's GLN, while UNB carried the supplier's own. Message check in ORDRSP,
+  DESADV and INVOIC, both modes (`checkSupplierIsBuyer`, key `su-is-buyer`).
+- **Empty envelope references** (same test ORDRSP): `UNB` without an
+  interchange reference, `UNH++…`, `UNT+47'` and `UNZ+1'`. Message check on
+  EDIFACT messages (`checkEnvelopeRefs`, key `envelope-ref`); in Compare the
+  supplier side only, because Transus writes bol's envelope.
+- **Confirmed delivery date before the message date** (same test ORDRSP):
+  `DTM+67` 28-10 in a message created 09-11. Grouped Message check on
+  ORDRSP, both modes (`checkConfirmedDateBeforeDocDate`, key
+  `confirmed-date-past`).
+- **Action 6 without QTY+12** is deliberately *not* flagged: a real message
+  with only a cancelled quantity under action 6 was correct (see
+  `validateOrdrspLine`).
 - **Article moved to another pallet by the transformation** (real Supplier Alfa
   DESADV, after Transus adjusted that supplier's data source for EANs/dates):
   the supplier puts each article in its own sub-CPS under its pallet

@@ -418,6 +418,10 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: `NAD+DP` equal to `NAD+BY` and a `DTM+132` before `DTM+137`
   are each one Message check, in Quick check and once in Compare; a normal
   DESADV stays quiet (`tests/fixtures/desadv/dp-buyer-past-arrival.edi`).
+- **ORDRSP**: empty envelope references, `NAD+SU` equal to `NAD+BY` and a
+  `DTM+67` before `DTM+137` are each one Message check, in Quick check and
+  once in Compare; a normal ORDRSP stays quiet
+  (`tests/fixtures/ordrsp/envelope-su-past-date.edi`).
 - **ORDRSP (TRANSUSXML, upper-case containers)**: `<ORDERRESPONSES>` /
   `<ARTICLE>` is read like the `<Messages>` variant; a net price equal to
   quantity × purchase price is one Message check in both modes; a readable

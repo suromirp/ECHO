@@ -682,7 +682,7 @@ function splitEsc(str,delim,rel){
 function parseUnbElements(el,delims){
   const s=splitEsc(el[2]||'',delims.comp,delims.rel),r=splitEsc(el[3]||'',delims.comp,delims.rel);
   const v=x=>(x||'').trim()||null;
-  return {sender:v(s[0]),senderQual:v(s[1]),recipient:v(r[0]),recipientQual:v(r[1])};
+  return {sender:v(s[0]),senderQual:v(s[1]),recipient:v(r[0]),recipientQual:v(r[1]),controlRef:v(el[5])};
 }
 function interchangeUnb(raw){
   const {segs,delims}=splitSegments(raw);
@@ -1165,7 +1165,9 @@ function parseFactsEdifact(raw){
   segs.forEach(seg=>{
     const el=splitEsc(seg,delims.elem,delims.rel);const tag=el[0];
     if(tag==='UNB'){if(!f.unb)f.unb=parseUnbElements(el,delims);}
-    else if(tag==='UNH'){const mi=splitEsc(el[2]||'',delims.comp,delims.rel);f.msgType=mi[0]||null;}
+    else if(tag==='UNH'){const mi=splitEsc(el[2]||'',delims.comp,delims.rel);f.msgType=mi[0]||null;f.hasUnh=true;f.unhRef=(el[1]||'').trim()||null;}
+    else if(tag==='UNT'){f.hasUnt=true;f.untRef=(el[2]||'').trim()||null;}
+    else if(tag==='UNZ'){if(f.unb){f.unb.hasUnz=true;f.unb.unzRef=(el[2]||'').trim()||null;}}
     // BGM+231+<doc>+29: the message function code is element 3 only. It
     // used to fall back to the last element, so a BGM without a function
     // code read its document number as the function (ORDRSP's header-vs-
@@ -2873,6 +2875,44 @@ function checkArrivalBeforeDocDate(facts,label,add){
    the bol warehouse from the order. Real cases: a test DESADV and a DESADV
    for a promotional shipment both had bol's company GLN there. Works on
    facts and invoices alike (both carry .parties). */
+/* Supplier GLN equal to the buyer's (NAD+SU = NAD+BY): a real test ORDRSP
+   had bol's GLN in NAD+SU while UNB carried the supplier's own. bol's
+   order-response intake answers that with "Supplier GLN … unknown" or "PO
+   does not match supplier". facts and invoices alike. */
+function checkSupplierIsBuyer(m,label,add){
+  const p=m&&m.parties;if(!p||!p.SU||!p.BY)return;
+  const su=String(p.SU.gln||'').trim(),by=String(p.BY.gln||'').trim();
+  if(!su||su!==by)return;
+  add('warn',fkey('su-is-buyer')+`${label?label+' — ':''}<strong>Supplier GLN is the buyer's GLN</strong> <span class="seg">(NAD+SU = NAD+BY)</span>: ${esc(su)}.`+moreInfo(`NAD+SU is the supplier's own GLN, the one it is registered with at bol. Here it is the same GLN as the buyer in NAD+BY. bol's intake can answer that with "Supplier GLN … unknown" or "PO does not match supplier".`),'message');
+}
+/* Envelope control references left empty: UNB/UNZ carry the interchange
+   reference, UNH/UNT the message reference. A real test ORDRSP had all
+   four empty ("UNH++…", "UNT+47'", "UNZ+1'"). EDIFACT only; for Compare
+   the supplier side only, since bol's envelope is written by Transus. */
+function envelopeRefGaps(m){
+  if(!m)return [];
+  const out=[];
+  if(m.unb&&!m.unb.controlRef)out.push('UNB');
+  if(m.hasUnh&&!m.unhRef)out.push('UNH');
+  if(m.hasUnt&&!m.untRef)out.push('UNT');
+  if(m.unb&&m.unb.hasUnz&&!m.unb.unzRef)out.push('UNZ');
+  return out;
+}
+function checkEnvelopeRefs(m,label,add){
+  const gaps=envelopeRefGaps(m);if(!gaps.length)return;
+  add('warn',fkey('envelope-ref')+`${label?label+' — ':''}<strong>Reference number empty in the envelope</strong> <span class="seg">(${gaps.join(', ')})</span>`+moreInfo(`UNB and UNZ carry the interchange reference, UNH and UNT the message reference; EDIFACT expects each to be filled, and UNB/UNZ and UNH/UNT to match. Here ${gaps.length===1?'it is':'they are'} empty in ${gaps.join(', ')}. A strict receiver may refuse the message.`),'message');
+}
+/* ORDRSP: confirmed delivery date (DTM+67) before the message date
+   (DTM+137). A real test ORDRSP confirmed 28-10 in a message created 09-11.
+   One grouped finding with the affected items as tags. */
+function checkConfirmedDateBeforeDocDate(facts,label,add,jumpCall){
+  if(!facts||facts.msgType!=='ORDRSP'||!facts.docDate||!/^\d{4}-\d{2}-\d{2}$/.test(facts.docDate))return;
+  const hits=[];
+  (facts.lines||[]).forEach(l=>{const v=l.dtm&&l.dtm['67'];if(!v)return;const d=normDate(v);if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&d<facts.docDate)hits.push(l.art||l.gtin||l.lineNo||'?');});
+  if(!hits.length)return;
+  const n=hits.length;
+  add('warn',fkey('confirmed-date-past')+`${label?label+' — ':''}<strong>Confirmed delivery date is before the message date</strong> <span class="seg">(DTM+67)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(hits,jumpCall,'items')+moreInfo(`DTM+67 is the date the supplier confirms delivery. On these lines it lies before the date the order response was created (DTM+137, ${esc(showDate(facts.docDate))}). Worth checking which delivery date is meant.`),'message');
+}
 function checkDeliveryPartyIsBuyer(m,label,add){
   const p=m&&m.parties;if(!p||!p.DP||!p.BY)return;
   const dp=String(p.DP.gln||'').trim(),by=String(p.BY.gln||'').trim();
@@ -3944,6 +3984,7 @@ function compare(bol,sup){
     const supSkip=new Set(sup.lines.filter(l=>bolPriced.has(priceKey(l)))),bolSkip=new Set(bol.lines.filter(l=>supPriced.has(priceKey(l))));
     perSideOnce(add,sup,bol,(f,label,a,j)=>checkSomeLinesWithoutPrice(f,label,a,j,f===sup?supSkip:bolSkip),factsJump);
     perSideOnce(add,sup,bol,checkNetPriceIsLineTotal,factsJump);
+    perSideOnce(add,sup,bol,checkConfirmedDateBeforeDocDate,factsJump);
   }
 
   // DTM qualifier repeated with different values within one LIN group —
@@ -3954,9 +3995,11 @@ function compare(bol,sup){
     // written by the transformation, so it says nothing about who sent the
     // supplier's message.
     checkUnbSender(sup,'Supplier',add,factsJump('sup'));
+    checkEnvelopeRefs(sup,'Supplier',add);
     perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
     perSideOnce(add,sup,bol,checkOrderNotNumeric,factsJump);
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,factsJump);
+    perSideOnce(add,sup,bol,checkSupplierIsBuyer,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
@@ -4228,15 +4271,17 @@ function parseInvoicEdifact(raw){
     const tag=el[0];
     if(tag==='UNH'){
       const mi=splitEsc(el[2]||'',delims.comp,delims.rel)[0]||'';
-      if(mi==='INVOIC'){startMsg(mi);curLine=null;curAlc=null;inSummary=false;}
+      if(mi==='INVOIC'){startMsg(mi);curLine=null;curAlc=null;inSummary=false;cur.hasUnh=true;cur.unhRef=(el[1]||'').trim()||null;}
       return;
     }
     // Interchange header, before the first UNH: given to every invoice in it.
     if(tag==='UNB'&&!inMsg){unb=parseUnbElements(el,delims);return;}
+    if(tag==='UNZ'&&!inMsg){if(unb){unb.hasUnz=true;unb.unzRef=(el[2]||'').trim()||null;}return;}
     if(!inMsg)return;
     curSegs.push(seg);
     if(tag==='UNT'){
       pushLine();
+      if(cur){cur.hasUnt=true;cur.untRef=(el[2]||'').trim()||null;}
       curLine=null;endMsg();return;
     }
     const comp=i=>splitEsc(el[i]||'',delims.comp,delims.rel);
@@ -5516,6 +5561,7 @@ function compareInvoice(sup,bol){
   }
   // UNB sender vs NAD+SU: the supplier side only (bol's UBL has no UNB).
   checkUnbSender(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+  if(sup.format==='EDIFACT')checkEnvelopeRefs(sup,'Supplier',add);
   // Blank LIN segments and no order number anywhere: single-message checks
   // ORDRSP/DESADV already run (parity rule), per side here.
   perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — `+invoiceBlankLinText(f.blankLinCount),'message');},invJump);
@@ -5557,6 +5603,7 @@ function compareInvoice(sup,bol){
     }
     checkLineAllowances(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
+    perSideOnce(add,sup,bol,checkSupplierIsBuyer,invJump);
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
   }
 
@@ -6523,6 +6570,8 @@ function invoiceOverviewHtml(inv,opts={}){
   // sender vs NAD+SU: same checks as Compare.
   if(creditNoteWithoutInvoiceRef(inv))qcAdd('info',creditNoteRefText(creditNoteRefSeg(inv)));
   checkUnbSender(inv,'',qcAdd,jumpCall);
+  checkEnvelopeRefs(inv,'',qcAdd);
+  checkSupplierIsBuyer(inv,'',qcAdd);
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -6677,6 +6726,9 @@ function factsOverviewHtml(facts){
   if(type==='ORDRSP'||type==='DESADV')checkOrderNotNumeric(facts,'',qcAdd,jumpCall);
   if(type==='ORDRSP'||type==='DESADV')checkDeliveryPartyIsBuyer(facts,'',qcAdd);
   checkUnbSender(facts,'',qcAdd,jumpCall);
+  checkEnvelopeRefs(facts,'',qcAdd);
+  if(type==='ORDRSP'||type==='DESADV')checkSupplierIsBuyer(facts,'',qcAdd);
+  if(type==='ORDRSP')checkConfirmedDateBeforeDocDate(facts,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).
   let wcNotices=[];
