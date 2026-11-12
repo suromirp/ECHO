@@ -627,6 +627,13 @@ test('a changed despatch date or expected delivery date is flagged as a transfor
   const buckets = await findingsByCategory(page);
   expect(buckets.diff.some(t => /Despatch date \(DTM\+11\) changed/.test(t))).toBe(true);
   expect(buckets.diff.some(t => /Expected delivery \(DTM\+132\) changed/.test(t))).toBe(true);
+  // bol's arrival date is the message date + 1: Transus's fallback when its
+  // mapping doesn't read the supplier's DTM+132 (confirmed by Transus).
+  const arrival = buckets.diff.find(t => /Expected delivery \(DTM\+132\) changed/.test(t));
+  expect(arrival).toContain('(message date + 1)');
+  expect(arrival).toContain("doesn't read the supplier's expected delivery date");
+  const despatch = buckets.diff.find(t => /Despatch date \(DTM\+11\) changed/.test(t));
+  expect(despatch).not.toContain('message date + 1');
 });
 
 test('identical dates on both sides are not flagged', async ({ page }) => {

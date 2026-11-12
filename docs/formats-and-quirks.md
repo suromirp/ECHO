@@ -529,6 +529,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   arrival date (the day after the message); why is not yet confirmed.
   Message check on DESADV, both modes (`checkArrivalBeforeDocDate`, key
   `arrival-before-doc`).
+- **Expected delivery replaced by "message date + 1"** (confirmed by
+  Transus in a ticket): when Transus's mapping for a supplier doesn't read
+  the supplier's DTM+132 (a supplier on its own EDIFACT format, where the
+  segment wasn't expected), bol's process uses the message date + 1. Seen
+  twice: a future date (15-03-2027) and a past one (26-10) both became the
+  day after the message. The same mapping also dropped the line-level
+  `RFF+ON` value. `compareDesadvDates` now says so when bol's arrival date
+  is exactly DTM+137 + 1 and differs from the supplier's: "(message date +
+  1)" plus a More info pointing at the supplier's mapping in Transus.
 - **Supplier GLN equal to the buyer** (real test ORDRSP): `NAD+SU` carried
   bol's GLN, while UNB carried the supplier's own. Message check in ORDRSP,
   DESADV and INVOIC, both modes (`checkSupplierIsBuyer`, key `su-is-buyer`).

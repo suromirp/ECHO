@@ -3147,7 +3147,16 @@ function compareDesadvDates(sup,bol,add){
   [['despatchDate','Despatch date','DTM+11'],['arrivalDate','Expected delivery','DTM+132']].forEach(([k,label,seg])=>{
     const s=sup[k],b=bol[k];
     if(!s||!b||s===b)return;
-    add('warn',`<strong>${label}</strong> <span class="seg">(${seg})</span> <strong>changed</strong>: <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span> → <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span>`+moreInfo(`The supplier sent the first date; bol's output says the second. Worth checking with Transus.`),'diff');
+    // Transus confirmed (ticket): when its mapping for a supplier doesn't
+    // read the expected delivery date, bol's process uses the message date
+    // + 1. Seen twice: 15-03-2027 and 26-10 both became "the day after the
+    // message" in bol's output. Said explicitly so the reader knows where
+    // to look.
+    const docD=bol.docDate||sup.docDate;
+    const nextDay=d=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(d||''))return null;const t=new Date(d+'T00:00:00Z');t.setUTCDate(t.getUTCDate()+1);return t.toISOString().slice(0,10);};
+    const fallback=k==='arrivalDate'&&docD&&b===nextDay(docD);
+    const info=fallback?`The supplier sent the first date; bol's output says the second, which is exactly the day after the message date (DTM+137, ${esc(showDate(docD))}). Transus uses the message date + 1 when its mapping for this supplier doesn't read the supplier's expected delivery date, so the supplier's DTM+132 most likely wasn't picked up. Worth asking Transus to check that supplier's mapping.`:`The supplier sent the first date; bol's output says the second. Worth checking with Transus.`;
+    add('warn',`<strong>${label}</strong> <span class="seg">(${seg})</span> <strong>changed</strong>: <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('sup')},${jsQuote(s.replace(/-/g,''))})">${esc(showDate(s))}</span> → <span class="clickable-val" onclick="jumpToFactsSource(${jsQuote('bol')},${jsQuote(b.replace(/-/g,''))})">${esc(showDate(b))}</span>${fallback?' <span class="dim">(message date + 1)</span>':''}`+moreInfo(info),'diff');
   });
 }
 
