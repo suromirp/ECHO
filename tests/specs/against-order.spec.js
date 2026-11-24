@@ -63,3 +63,13 @@ test('a DESADV checked against its order; a different order skips the checks', a
   await expect(page.locator('#quickStatus')).toContainText("isn't an order");
   await expect(page.locator('#orderNameQuick')).toBeHidden();
 });
+
+// The order route's ZIP holds the same order twice (bol + supplier folder).
+// "Add the order" takes a ZIP too and picks the ORDERS out of it.
+test('the order can be added as a ZIP', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'ordrsp', 'against-order.edi'));
+  await page.locator('#orderInputQuick').setInputFiles(path.join(FIX, 'zip', 'order-pair.zip'));
+  await expect(page.locator('#orderNameQuick')).toContainText('Order 8123458');
+  await expect(page.locator('#quickOverview')).toContainText('EAN not in the order');
+});

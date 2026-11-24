@@ -486,7 +486,7 @@
         <span class="badge hidden" id="quickBadge"></span>
       </div>
       <div class="order-opt" id="orderOptQuick">
-          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml"></span>
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameQuick"></span>
           <button class="btn ghost hidden" id="orderClearQuick" type="button">Remove order</button>
           <span class="dim" id="orderHintQuick">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
@@ -539,7 +539,7 @@
         </div>
       </div>
       <div class="order-opt" id="orderOptCompare">
-          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml"></span>
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameCompare"></span>
           <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
           <span class="dim" id="orderHintCompare">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
@@ -8443,9 +8443,27 @@ function orderLoad(mode,name,text){
   say(`Order ${f.docNumber||''} added: ${f.lines.length} line${f.lines.length===1?'':'s'}.`);
   orderRerun(mode);
 }
+// A ZIP from the order route usually holds the same order twice (bol's
+// file and the one delivered to the supplier). Take the first ORDERS
+// found, preferring the bol folder, and ignore everything else.
+async function orderLoadZip(mode,file){
+  const say=(m,e)=>mode==='compare'?cSetStatus(m,e):quickSetStatus(m,e);
+  if(typeof JSZip==='undefined'){say('ZIP import isn\u2019t available right now. Add the order file itself instead.',true);return;}
+  try{
+    const zip=await JSZip.loadAsync(file);const entries=[];
+    zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))entries.push({path,entry});});
+    entries.sort((a,b)=>(/bol/i.test(b.path.split('/')[0])?1:0)-(/bol/i.test(a.path.split('/')[0])?1:0));
+    for(const it of entries){
+      const text=decodeFileBytes(await it.entry.async('uint8array'));
+      let f=null;try{f=parseFactsList(text)[0];}catch(err){f=null;}
+      if(f&&f.msgType==='ORDERS'&&f.lines.length){orderLoad(mode,it.path.split('/').pop(),text);return;}
+    }
+    say(`No order (ORDERS) found in "${file.name}", so nothing was added.`,true);
+  }catch(err){say('Couldn\u2019t read the ZIP: '+err.message,true);}
+}
 function orderClear(mode){orderState[mode]=null;orderSetUi(mode);orderRerun(mode);}
 [['compare','Compare'],['quick','Quick']].forEach(([mode,M])=>{
-  document.getElementById('orderInput'+M).addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileText(f).then(t=>orderLoad(mode,f.name,t));e.target.value='';});
+  document.getElementById('orderInput'+M).addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;(/\.zip$/i.test(f.name)?orderLoadZip(mode,f):readFileText(f).then(t=>orderLoad(mode,f.name,t)));e.target.value='';});
   document.getElementById('orderClear'+M).addEventListener('click',()=>orderClear(mode));
 });
 document.getElementById('resetBtn').addEventListener('click',()=>{orderState.compare=null;orderSetUi('compare');});

@@ -455,7 +455,9 @@ actual test fixtures, don't just keep this list as prose:
   `orders/against-order.edi` with `ordrsp/` and `desadv/against-order.edi`):
   unknown EAN with hint, unanswered item (ORDRSP only), more than ordered,
   date before requested; a different order skips the rest; a non-ORDERS
-  file isn't accepted as the order.
+  file isn't accepted as the order. The order can also be added as a ZIP
+  (`zip/order-pair.zip`, the same order in a bol and a supplier folder):
+  the first ORDERS in it is used, the bol folder first.
 - **DESADV**: `DTM+132` on the same day as `DTM+11` is an info Message
   check in both modes (`arrival-despatch-same-day.edi`).
 - **DESADV**: no `DTM+132` and no other delivery date is an info Message
