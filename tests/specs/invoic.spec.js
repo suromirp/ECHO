@@ -598,7 +598,9 @@ test('one-side findings are Message checks, info notes are Good to know, absent-
   );
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const c = await invoiceFindingsByCategory(page);
-  expect(c.diff.filter(t => !/All compared values match/.test(t))).toHaveLength(0);
+  // The fixture's RFF+IV not reaching bol is its own diff (tested below).
+  const diffs = c.diff.filter(t => !/All compared values match|Invoice reference not in bol's output/.test(t) && t !== 'INV5000');
+  expect(diffs).toHaveLength(0);
   expect(c.info.some(t => /This is a credit note/.test(t))).toBe(true);
 });
 
@@ -872,7 +874,8 @@ test('one-sided header values and totals are table rows, not also findings', asy
 // A credit note (BGM+381 / bol UBL InvoiceTypeCode 2) without a reference
 // to the invoice it corrects (RFF+IV / BillingReference): info, Message
 // check, in both modes. bol's UBL lacking BillingReference while the
-// supplier sent RFF+IV is shown in Invoice details only.
+// supplier sent RFF+IV is a Transformation difference: a real case had a
+// returns team re-entering that reference by hand.
 test('a credit note without a reference to the original invoice is an info Message check, in both modes', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(
@@ -896,7 +899,7 @@ test('a credit note without a reference to the original invoice is an info Messa
   }
 
   // The supplier names the original invoice (RFF+IV), bol's UBL doesn't:
-  // no finding, the Invoice details row shows it.
+  // a Transformation difference (warn), and the Invoice details row.
   await openApp(page);
   await runCompareFixtures(
     page,
@@ -905,6 +908,13 @@ test('a credit note without a reference to the original invoice is an info Messa
   );
   await expect(page.locator('#invoiceResults')).toBeVisible();
   await expect(page.locator('#invoiceResults')).not.toContainText('Credit note without a reference');
+  const d = await invoiceFindingsByCategory(page);
+  const dropped = d.diff.filter(t => /Invoice reference not in bol's output/.test(t));
+  expect(dropped).toHaveLength(1);
+  expect(dropped[0]).toContain('RFF+IV');
+  expect(dropped[0]).toContain('INV5000');
+  expect(d.message.some(t => /Invoice reference not in bol's output/.test(t))).toBe(false);
+  await expect(page.locator('#invoiceResults ul.findings > li', { hasText: "Invoice reference not in bol's output" })).toHaveClass(/f-warn/);
   const row = page.locator('#invoiceResults tr', { hasText: 'Original invoice' }).first();
   await expect(row).toContainText('INV5000');
   await expect(row.locator('.pill')).toHaveText('One side only');

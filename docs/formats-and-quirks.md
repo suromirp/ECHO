@@ -1266,11 +1266,20 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   accepted too) or UBL `BillingReference` (header or line). Info, Message
   check (`creditNoteWithoutInvoiceRef`), in Quick check and in Compare. In
   Compare bol's side is only named together with the supplier's ("passed on
-  unchanged"): whether bol's UBL is expected to carry a `BillingReference`
-  isn't confirmed, so the supplier sending `RFF+IV` and bol's output having
-  none is the "Original invoice" row in Invoice details (One side only), not
-  a finding. The other XML dialects have no explicit credit-note flag and
+  unchanged"). The other XML dialects have no explicit credit-note flag and
   aren't checked.
+- **The supplier's `RFF+IV` not reaching bol's UBL** (real Supplier Kilo
+  credit notes for returns): the supplier moved its return reference from
+  `RFF+CO` to `RFF+IV` on request, the test credit notes (sent as
+  attachments, so only the supplier's file was checked) looked fine, but in
+  production bol's UBL carried no `BillingReference` at all and the line
+  `DocumentReference` only held the `RFF+DQ` packing slip. A returns team
+  ended up re-entering the reference by hand for months. Earlier this was
+  only the "Original invoice" row (One side only); it is now a warn
+  Transformation difference in Compare (`checkInvoiceRefDropped`, key
+  `invoice-ref-dropped`), only when bol's side is UBL and has no
+  `BillingReference` anywhere. Lesson: a test file sent outside the EDI
+  route proves the supplier's mapping, not what reaches bol.
 - **Credit notes**: the supplier's EDIFACT BGM function code (381/384)
   and bol's UBL `InvoiceTypeCode` both say which document it is. bol uses
   **`1` = invoice, `2` = credit note**, checked on three real bol UBL files:

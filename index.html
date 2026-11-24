@@ -5217,6 +5217,20 @@ function creditNoteRefText(seg){
   return `<strong>Credit note without a reference to the original invoice</strong> <span class="seg">(${esc(seg)})</span>`+moreInfo(`A credit note usually names the invoice it corrects (RFF+IV in EDIFACT, BillingReference in bol's UBL). This one doesn't, so the message itself doesn't say which invoice it relates to. Whether that's needed depends on the arrangement with this supplier; worth knowing when matching the credit note to an invoice.`);
 }
 function creditNoteRefSeg(inv){return inv.source==='EDIFACT'?'RFF+IV':'BillingReference';}
+/* The supplier names the invoice / reference a credit note relates to
+   (RFF+IV / OI / ACW) and bol's UBL carries no BillingReference at all.
+   Earlier treated as structural (only shown in Invoice details); a real
+   case showed teams downstream use this reference to match returns and
+   ended up re-entering it by hand, so the value being lost on the way is a
+   transformation difference. Only against bol's UBL, the one bol dialect
+   whose BillingReference is parsed. */
+function checkInvoiceRefDropped(sup,bol,add){
+  if(!sup||!bol||bol.source!=='bol XML (UBL)')return;
+  const refs=sup.invoiceRefs||[];
+  if(!refs.length||(bol.invoiceRefs&&bol.invoiceRefs.length))return;
+  const seg=sup.source==='EDIFACT'?'RFF+IV':'invoice reference';
+  add('warn',fkey('invoice-ref-dropped')+`<strong>Invoice reference not in bol's output</strong> <span class="seg">(${esc(seg)} → BillingReference)</span>: `+valueTagsHtml(refs,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`,'reference')+moreInfo(`The supplier's message names the invoice or reference this ${sup.extras&&sup.extras.bgmCode==='381'?'credit note':'message'} relates to, but bol's output has no BillingReference, so that value doesn't reach bol. Teams that match credit notes to returns or invoices then have to look it up by hand. Worth asking whether the mapping can carry it over.`),'diff');
+}
 /* Line-level allowances (ALC+A with an amount) on an invoice. bol's invoice
    process doesn't carry them through (see the charges table), so bol works
    with PRI+AAA as the net price. A real invoice had PRI+AAA as the price
@@ -5558,16 +5572,14 @@ function compareInvoice(sup,bol){
     }
   }
   perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=gs1CheckDigitFinding(gs1CheckDigitIssues(f.lines.map(l=>l.gtin),[]),j);if(t)a('warn',`${label} — ${t}`,'message');},invJump);
-  // Credit note without a reference to the original invoice. bol's side is
-  // only named together with the supplier's: whether bol's UBL is expected
-  // to carry a BillingReference isn't confirmed, so the supplier sending
-  // RFF+IV and bol's output having none is shown in Invoice details
-  // ("Original invoice"), not as a finding (rule 3).
+  // Credit note without a reference to the original invoice: per side
+  // only when the supplier didn't send one either.
   {
     const sNo=creditNoteWithoutInvoiceRef(sup),bNo=creditNoteWithoutInvoiceRef(bol);
     if(sNo&&bNo)add('info',PASSED_ON_LABEL+' — '+creditNoteRefText([...new Set([creditNoteRefSeg(sup),creditNoteRefSeg(bol)])].join(' / ')),'message');
     else if(sNo)add('info','Supplier — '+creditNoteRefText(creditNoteRefSeg(sup)),'message');
   }
+  checkInvoiceRefDropped(sup,bol,add);
   // UNB sender vs NAD+SU: the supplier side only (bol's UBL has no UNB).
   checkUnbSender(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
   if(sup.format==='EDIFACT')checkEnvelopeRefs(sup,'Supplier',add);

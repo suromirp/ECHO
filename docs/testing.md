@@ -455,8 +455,9 @@ actual test fixtures, don't just keep this list as prose:
   check in both modes; `DTM+17` alone is enough to stay silent.
 - **INVOIC**: a credit note (`BGM+381`, UBL type 2) without `RFF+IV` /
   `BillingReference` is an info Message check in both modes; the supplier's
-  `RFF+IV` without a bol `BillingReference` is only the "Original invoice"
-  Invoice details row.
+  `RFF+IV` without a bol `BillingReference` is a warn Transformation
+  difference in Compare (`credit-type-code-2` fixtures), plus the "Original
+  invoice" Invoice details row.
 - **INVOIC**: summary `MOA+259` (total charges) is read, shown as Total
   charges and checked against the charge ALC amounts like `MOA+131`; both
   stated and off is one finding.
