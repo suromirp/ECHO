@@ -138,6 +138,9 @@
   button.btn.primary:disabled{opacity:.4;cursor:not-allowed;}
   .btn.ghost{background:transparent;}
   .filebtn{position:relative;overflow:hidden;display:inline-flex;}
+  .order-opt{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;font-size:13px;}
+  .order-opt .fname{font-weight:600;}
+  .order-opt .dim{color:var(--text-faint);}
   .filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
 
   .status{font-size:13px;margin-top:10px;min-height:16px;color:var(--text-dim);}
@@ -482,6 +485,12 @@
         <button class="btn ghost" id="quickClearBtn">Clear</button>
         <span class="badge hidden" id="quickBadge"></span>
       </div>
+      <div class="order-opt" id="orderOptQuick">
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml"></span>
+          <span class="fname hidden" id="orderNameQuick"></span>
+          <button class="btn ghost hidden" id="orderClearQuick" type="button">Remove order</button>
+          <span class="dim" id="orderHintQuick">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
+        </div>
       <div class="status" id="quickStatus"></div>
     </div>
 
@@ -529,6 +538,12 @@
           <input type="file" id="inputBol" class="hidden">
         </div>
       </div>
+      <div class="order-opt" id="orderOptCompare">
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml"></span>
+          <span class="fname hidden" id="orderNameCompare"></span>
+          <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
+          <span class="dim" id="orderHintCompare">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
+        </div>
       <div class="actions">
         <button class="btn primary" id="compareBtn" disabled>Compare</button>
         <button class="btn ghost" id="resetBtn">Reset</button>
@@ -3692,6 +3707,99 @@ function worthCheckingHtml(sideLabel,notices,jumpCall){
    every per-side Message check in Compare (docs/ui-conventions.md
    "One finding per cause"). */
 const PASSED_ON_LABEL='Supplier (passed on unchanged to bol)';
+/* ---- Against the order (optional ORDERS file, both modes) ----
+   A supplier's ORDRSP or DESADV checked against the bol order it answers.
+   Real cases: a supplier sending the EAN of a box instead of the ordered
+   single item (quantity a divisor of the ordered one), and a supplier that
+   passed the test phase but confirmed its pick date instead of the delivery
+   date (only visible against the requested date). About the supplier's own
+   message, so Message checks; in Compare run on the supplier side only. */
+const orderState={compare:null,quick:null};
+function orderLineIndex(order){
+  const m=new Map();
+  (order.lines||[]).forEach(l=>{
+    const g=normalizeGtin(l.gtin);if(!g)return;
+    const e=m.get(g)||{gtin:l.gtin,qty:0,dates:new Set()};
+    const q=parseFloat(l.qty['21']!==undefined?l.qty['21']:l.qty['12']);
+    if(!isNaN(q))e.qty+=q;
+    const d=normDate(l.dtm&&l.dtm['2'])||order.arrivalDate;
+    if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d))e.dates.add(d);
+    m.set(g,e);
+  });
+  return m;
+}
+function fmtQty(n){return Number.isInteger(n)?String(n):String(+n.toFixed(3));}
+function checkAgainstOrder(facts,orderRef,label,add,jumpCall){
+  if(!facts||!orderRef||!orderRef.facts)return;
+  const type=facts.msgType;if(type!=='ORDRSP'&&type!=='DESADV')return;
+  const order=orderRef.facts,orderNo=String(order.docNumber||'').trim();
+  const pre=label?label+' — ':'';
+  const jc=jumpCall||(()=>'');
+  const tag=(v,txt)=>`<li><span class="clickable-val" onclick="${jc(v)}">${esc(txt)}</span></li>`;
+  const list=lis=>{const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis.join('')}</ul>`;return lis.length>20?`<details><summary>Show ${lis.length} items</summary>${ul}</details>`:ul;};
+  // The order number first: against a different order every other check
+  // would only report noise.
+  const msgOrders=headerOrders(facts).map(o=>String(o).trim()).filter(Boolean);
+  if(orderNo&&msgOrders.length&&!msgOrders.includes(orderNo)){
+    add('warn',fkey('order-ref-other')+`${pre}<strong>The added order is a different order</strong>: this message refers to ${msgOrders.map(o=>`<code>${esc(o)}</code>`).join(', ')}, the order is <code>${esc(orderNo)}</code>.`+moreInfo(`The order file you added (BGM ${esc(orderNo)}) isn't the order this message answers (RFF+ON). The other order checks are skipped; add the matching order to run them.`),'message');
+    return;
+  }
+  const idx=orderLineIndex(order);
+  if(!idx.size)return;
+  // Lines of this message that belong to the order (a DESADV can cover
+  // several orders: a line naming only other orders is left out).
+  const own=facts.lines.filter(l=>{const o=[...(l.orders||[])].map(x=>String(x).trim());return !o.length||!orderNo||o.includes(orderNo);});
+  const msg=new Map();
+  own.forEach(l=>{
+    const g=normalizeGtin(l.gtin);if(!g)return;
+    const e=msg.get(g)||{gtin:l.gtin,qty:0,dates:new Set()};
+    const n=k=>{const v=parseFloat(l.qty[k]);return isNaN(v)?0:v;};
+    e.qty+=type==='ORDRSP'?n('12')+n('83'):n('12');
+    if(type==='ORDRSP'){const d=normDate(l.dtm&&l.dtm['67']);if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d))e.dates.add(d);}
+    msg.set(g,e);
+  });
+  if(type==='DESADV'&&facts.arrivalDate)msg.forEach(e=>e.dates.add(String(facts.arrivalDate).slice(0,10)));
+  const missing=[...idx.keys()].filter(g=>!msg.has(g));
+  // 1. EAN not in the order, with a hint towards the ordered EAN it may
+  // stand for: same company prefix (first 7 digits) or a quantity that is
+  // a whole multiple / divisor of the ordered quantity.
+  const unknown=[...msg.keys()].filter(g=>!idx.has(g));
+  if(unknown.length){
+    const lis=unknown.map(g=>{
+      const e=msg.get(g);
+      const ratio=c=>{const a=e.qty,b=idx.get(c).qty;if(!a||!b||a===b)return 0;const r=a>b?a/b:b/a;return Number.isInteger(r)?r:0;};
+      const prefix=c=>c.padStart(13,'0').slice(0,7)===g.padStart(13,'0').slice(0,7);
+      const cand=missing.filter(c=>ratio(c)>1&&prefix(c))[0]||missing.filter(c=>ratio(c)>1)[0]||(missing.filter(prefix).length===1?missing.filter(prefix)[0]:null);
+      let hint='';
+      if(cand){const o=idx.get(cand);hint=` · ordered EAN ${o.gtin} (${fmtQty(o.qty)} ordered)?`;}
+      return tag(e.gtin,`${e.gtin} · ${fmtQty(e.qty)} here${hint}`);
+    });
+    add('warn',fkey('ean-not-in-order')+`${pre}<strong>EAN not in the order</strong> on ${unknown.length} item${unknown.length===1?'':'s'}. `+list(lis)+moreInfo(`These EANs don't appear in the order you added (${esc(orderNo||'ORDERS')}). bol matches a line on the ordered EAN, so a line with another EAN can't be matched. Common causes: the EAN of another packaging level (a box or inner pack instead of the ordered unit, then the quantity is usually a multiple or divisor of the ordered one), or a replacement item. Where an ordered EAN looks related, it is shown with a question mark.`),'message');
+  }
+  // 2. ORDRSP: ordered items the response doesn't mention at all.
+  if(type==='ORDRSP'&&missing.length){
+    add('warn',fkey('ordered-not-answered')+`${pre}<strong>Ordered item not in this response</strong> on ${missing.length} item${missing.length===1?'':'s'}. `+list(missing.map(g=>{const o=idx.get(g);return `<li>${esc(o.gtin)} · ${esc(fmtQty(o.qty))} ordered</li>`;}))+moreInfo(`An order response usually answers every ordered line (accept, change or cancel). These ordered EANs don't appear in it. If an EAN above under "EAN not in the order" is the same item, it's the same issue.`),'message');
+  }
+  // 3. More than ordered.
+  const over=[...msg.keys()].filter(g=>idx.has(g)&&msg.get(g).qty>idx.get(g).qty+1e-9);
+  if(over.length){
+    const what=type==='ORDRSP'?'confirmed (QTY+12 + QTY+83)':'despatched (QTY+12)';
+    add('warn',fkey('more-than-ordered')+`${pre}<strong>More than ordered</strong> on ${over.length} item${over.length===1?'':'s'}. `+list(over.map(g=>tag(msg.get(g).gtin,`${msg.get(g).gtin} · ${fmtQty(msg.get(g).qty)} ${type==='ORDRSP'?'confirmed':'despatched'}, ${fmtQty(idx.get(g).qty)} ordered`)))+moreInfo(`The quantity ${what} is higher than the quantity in the order you added. Sometimes a unit difference (boxes vs pieces), sometimes an over-delivery. Worth checking which quantity is meant.`),'message');
+  }
+  // 4. Date before the requested delivery date.
+  const early=[];
+  msg.forEach((e,g)=>{
+    if(!idx.has(g))return;
+    const req=[...idx.get(g).dates].sort()[0];if(!req)return;
+    const d=[...e.dates].sort()[0];
+    if(d&&d<req)early.push({gtin:e.gtin,d,req});
+  });
+  if(early.length){
+    const seg=type==='ORDRSP'?'DTM+67':'DTM+132';
+    const head=type==='ORDRSP'?'Confirmed delivery date before the requested date':'Expected arrival before the requested delivery date';
+    add('info',fkey('date-before-requested')+`${pre}<strong>${head}</strong> <span class="seg">(${seg} vs order DTM+2)</span> on ${early.length} item${early.length===1?'':'s'}. `+list(early.map(x=>tag(x.gtin,`${x.gtin} · ${showDate(x.d)}, requested ${showDate(x.req)}`)))+moreInfo(`The order asks for delivery on the requested date (DTM+2); this message gives an earlier date. Delivering early can be agreed, but an earlier date in ${seg} can also be the supplier's pick or despatch day instead of the day the goods arrive at bol. A real supplier was taken off EDI over exactly that. Worth checking once which date the supplier sends.`),'message');
+  }
+}
 function perSideOnce(add,sup,bol,run,jumpFor){
   const cap=(facts,label,side)=>{const out=[];run(facts,label,(...a)=>out.push(a),jumpFor(side));return out;};
   const s=cap(sup,'Supplier','sup'),b=cap(bol,'Bol','bol');
@@ -4104,6 +4212,7 @@ function compare(bol,sup){
       rest=>`<strong>${rest} more item(s) also show a net price difference</strong> — see the Line comparison below for the full list.`);
   }
 
+  if(orderState.compare)checkAgainstOrder(sup,orderState.compare,'Supplier',add,factsJump('sup'));
   // action matrix data
   const buckets=['accept','cancel','backorder'];
   const actionMatrix={};
@@ -6763,6 +6872,7 @@ function factsOverviewHtml(facts){
   checkEnvelopeRefs(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkSupplierIsBuyer(facts,'',qcAdd);
   if(type==='ORDRSP')checkConfirmedDateBeforeDocDate(facts,'',qcAdd,jumpCall);
+  if(orderState.quick)checkAgainstOrder(facts,orderState.quick,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).
   let wcNotices=[];
@@ -8233,7 +8343,7 @@ function runCompare(){
   document.getElementById('compareBanner').innerHTML='';
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
   if(tSup==='ORDERS'||tBol==='ORDERS'){
-    cSetStatus(pickOrdersBlockMsg(),true);
+    cSetStatus(pickOrdersBlockMsg()+' To check a message against its order, use \u201cAdd the order\u201d below the two files.',true);
     return;
   }
   const isInvoice=(tSup==='INVOIC'||tBol==='INVOIC');
@@ -8309,6 +8419,37 @@ function runCompare(){
 document.getElementById('compareBtn').addEventListener('click',runCompare);
 document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('compareBanner').innerHTML='';cClearSide('bol');cClearSide('sup');document.getElementById('results').classList.add('hidden');document.getElementById('invoiceResults').classList.add('hidden');document.getElementById('invoiceResults').innerHTML='';document.getElementById('actionToggle').checked=false;document.getElementById('actionMatrix').classList.remove('visible');document.getElementById('factsNotesPanel').classList.add('hidden');document.getElementById('factsNotes').innerHTML='';document.getElementById('backorderPanel').classList.add('hidden');document.getElementById('lineFilterNote').innerHTML='';lastLineRows=null;lastReportText='';lastTransusTextEn='';lastTransusTextNl='';errPickMount('compare',null,null);document.getElementById('eanBlockArea').innerHTML='';syncLangSwitchUI();hideMatchNav('rawSup');hideMatchNav('rawBol');cSetStatus(pickCompareIntro());});
 
+
+/* Optional order file (both modes): read with the facts parser, kept per
+   mode, and the current result is re-run when it changes. */
+function orderSetUi(mode){
+  const st=orderState[mode],M=mode==='compare'?'Compare':'Quick';
+  const nm=document.getElementById('orderName'+M);
+  nm.textContent=st?`Order ${st.facts.docNumber||'?'} · ${st.facts.lines.length} line${st.facts.lines.length===1?'':'s'} (${st.name})`:'';
+  nm.classList.toggle('hidden',!st);
+  document.getElementById('orderClear'+M).classList.toggle('hidden',!st);
+  document.getElementById('orderHint'+M).classList.toggle('hidden',!!st);
+}
+function orderRerun(mode){
+  if(mode==='compare'){if(cstate.bol&&cstate.sup&&!document.getElementById('results').classList.contains('hidden'))runCompare();}
+  else if(document.getElementById('quickInput').value.trim())quickFormat();
+}
+function orderLoad(mode,name,text){
+  const say=(m,e)=>mode==='compare'?cSetStatus(m,e):quickSetStatus(m,e);
+  let f=null;
+  try{f=parseFactsList(text)[0];}catch(err){f=null;}
+  if(!f||f.msgType!=='ORDERS'||!f.lines.length){say(`"${name}" isn't an order (ORDERS) ECHO can read, so it wasn't added.`,true);return;}
+  orderState[mode]={name,facts:f};orderSetUi(mode);
+  say(`Order ${f.docNumber||''} added: ${f.lines.length} line${f.lines.length===1?'':'s'}.`);
+  orderRerun(mode);
+}
+function orderClear(mode){orderState[mode]=null;orderSetUi(mode);orderRerun(mode);}
+[['compare','Compare'],['quick','Quick']].forEach(([mode,M])=>{
+  document.getElementById('orderInput'+M).addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileText(f).then(t=>orderLoad(mode,f.name,t));e.target.value='';});
+  document.getElementById('orderClear'+M).addEventListener('click',()=>orderClear(mode));
+});
+document.getElementById('resetBtn').addEventListener('click',()=>{orderState.compare=null;orderSetUi('compare');});
+document.getElementById('quickClearBtn').addEventListener('click',()=>{orderState.quick=null;orderSetUi('quick');});
 </script>
 </body>
 </html>

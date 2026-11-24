@@ -72,7 +72,7 @@ test('one-line XML is pretty-printed for display, and jump-to-source lands on th
 test('"Import file" looks like a button', async ({ page }) => {
   await openApp(page);
   await page.locator('#tabQuickBtn').click();
-  const imp = page.locator('.filebtn');
+  const imp = page.locator('.filebtn', { hasText: 'Import file' });
   const style = await imp.evaluate(e => { const c = getComputedStyle(e); return { b: c.borderTopWidth, p: c.paddingLeft }; });
   expect(style.b).toBe('1px');
   expect(parseFloat(style.p)).toBeGreaterThan(8);

@@ -538,6 +538,23 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   (`checkArrivalIsDespatchDay`, key `arrival-is-despatch`). In a sweep of
   real DESADVs it fired on 3 of 8, so it is common: keep it info. Lesson
   for testing: ask the supplier which day `DTM+67` / `DTM+132` mean.
+- **Against the order** (optional ORDERS file next to an ORDRSP or DESADV,
+  both modes; `checkAgainstOrder`): the supplier's message checked against
+  the bol order it answers. Real cases behind it: a supplier sending the
+  EAN of another packaging level than the ordered unit, and a supplier that
+  confirmed its pick date instead of the delivery date (invisible in one
+  message). Findings, all Message checks (Compare runs them on the supplier
+  side only): a different order number (then nothing else runs, key
+  `order-ref-other`); EAN not in the order, with a "?" hint towards an
+  ordered EAN that isn't in the message and has the same 7-digit prefix
+  and/or a quantity that is a whole multiple or divisor (`ean-not-in-order`);
+  ORDRSP only, ordered items not answered (`ordered-not-answered`); more
+  than ordered, ORDRSP `QTY+12`+`QTY+83` or DESADV `QTY+12` vs order
+  `QTY+21` (`more-than-ordered`); and, info, `DTM+67` / `DTM+132` before the
+  order's `DTM+2` (`date-before-requested`). A DESADV not containing every
+  ordered item is a partial delivery, not flagged. Lines naming only other
+  orders (multi-order DESADV) are left out. INVOIC isn't checked against the
+  order yet.
 - **Expected delivery replaced by "message date + 1"** (confirmed by
   Transus in a ticket): when Transus's mapping for a supplier doesn't read
   the supplier's DTM+132 (a supplier on its own EDIFACT format, where the
