@@ -529,6 +529,15 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   arrival date (the day after the message); why is not yet confirmed.
   Message check on DESADV, both modes (`checkArrivalBeforeDocDate`, key
   `arrival-before-doc`).
+- **Expected arrival on the despatch day** (`DTM+132` = `DTM+11`): a large
+  supplier passed the test phase, then was taken off EDI because its ORDRSP
+  sent the pick date instead of the delivery date and its DESADV couldn't
+  give the real arrival day. A single message can't show which date is
+  meant; arrival on the despatch day is the one visible hint. Same-day
+  delivery happens, so info only, Message check on DESADV, both modes
+  (`checkArrivalIsDespatchDay`, key `arrival-is-despatch`). In a sweep of
+  real DESADVs it fired on 3 of 8, so it is common: keep it info. Lesson
+  for testing: ask the supplier which day `DTM+67` / `DTM+132` mean.
 - **Expected delivery replaced by "message date + 1"** (confirmed by
   Transus in a ticket): when Transus's mapping for a supplier doesn't read
   the supplier's DTM+132 (a supplier on its own EDIFACT format, where the

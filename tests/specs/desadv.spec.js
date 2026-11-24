@@ -1468,3 +1468,28 @@ test('a delivery location equal to the buyer and an arrival before the message d
   await expect(page.locator('#quickOverview')).not.toContainText("Delivery location is the buyer's GLN");
   await expect(page.locator('#quickOverview')).not.toContainText('Expected arrival is before');
 });
+
+// A supplier that could only send its pick / despatch day as arrival date
+// was taken off EDI. DTM+132 on the same day as DTM+11 is an info Message
+// check in both modes (same-day delivery can be right).
+test('expected arrival on the despatch day is an info Message check, in both modes', async ({ page }) => {
+  const f = path.join(FIX, 'arrival-despatch-same-day.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Expected arrival is the despatch day');
+  await expect(ov).toContainText('23-11-2026');
+  await expect(ov.locator('ul.findings li', { hasText: 'Expected arrival is the despatch day' })).toHaveClass(/f-info/);
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('Expected arrival is the despatch day'))).toHaveLength(1);
+  expect(buckets.diff.some(t => t.includes('Expected arrival is the despatch day'))).toBe(false);
+
+  // Arrival after the despatch day stays quiet.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'date-shift.bol.edi'));
+  await expect(page.locator('#quickOverview .ov-type')).toBeVisible();
+  await expect(page.locator('#quickOverview')).not.toContainText('Expected arrival is the despatch day');
+});

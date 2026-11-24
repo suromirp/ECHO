@@ -2871,6 +2871,17 @@ function checkArrivalBeforeDocDate(facts,label,add){
   const seg=facts.headerDtm&&facts.headerDtm['132']?'DTM+132':(facts.headerDtm&&facts.headerDtm['17']?'DTM+17':'DTM+2');
   add('warn',fkey('arrival-before-doc')+`${label?label+' — ':''}<strong>Expected arrival is before the message date</strong> <span class="seg">(${seg})</span>: ${esc(showDate(a))}, message created ${esc(showDate(d))}.`+moreInfo(`${seg} is the expected arrival at the bol warehouse. Here it lies before the date the message was created (DTM+137). That can be a despatch date in the arrival field, or a date that wasn't updated. Worth checking which arrival date is meant.`),'message');
 }
+/* Expected arrival on the despatch day (DTM+132 = DTM+11, date part). A
+   real supplier was taken off EDI because it could only send its pick /
+   despatch day, not the day the goods arrive at bol; in a single message
+   that looks like any other date. Same-day delivery does happen, so info
+   only, and only when both dates are in the message. */
+function checkArrivalIsDespatchDay(facts,label,add){
+  if(!facts||!facts.arrivalDate||!facts.despatchDate)return;
+  const a=String(facts.arrivalDate).slice(0,10),d=String(facts.despatchDate).slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(a)||a!==d)return;
+  add('info',fkey('arrival-is-despatch')+`${label?label+' — ':''}<strong>Expected arrival is the despatch day</strong> <span class="seg">(DTM+132 = DTM+11)</span>: ${esc(showDate(a))}.`+moreInfo(`DTM+132 is the day the goods are expected at the bol warehouse, DTM+11 the day they leave the supplier. Here both are the same day. Same-day delivery can be right; it can also mean the supplier sends its pick or despatch day as arrival date. Worth checking once which date the supplier means.`),'message');
+}
 /* Delivery location equal to the buyer's GLN (NAD+DP = NAD+BY): NAD+DP is
    the bol warehouse from the order. Real cases: a test DESADV and a DESADV
    for a promotional shipment both had bol's company GLN there. Works on
@@ -3929,6 +3940,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkConsignmentPalletCount,factsJump);
     perSideOnce(add,sup,bol,checkNoExpectedDelivery,factsJump);
     perSideOnce(add,sup,bol,checkArrivalBeforeDocDate,factsJump);
+    perSideOnce(add,sup,bol,checkArrivalIsDespatchDay,factsJump);
     compareDesadvDates(sup,bol,add);
     perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
     perSideOnce(add,sup,bol,checkRepeatedDeliveryItem,factsJump);
@@ -6712,6 +6724,7 @@ function factsOverviewHtml(facts){
     checkConsignmentPalletCount(facts,'',qcAdd,jumpCall);
     checkNoExpectedDelivery(facts,'',qcAdd);
     checkArrivalBeforeDocDate(facts,'',qcAdd);
+    checkArrivalIsDespatchDay(facts,'',qcAdd);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
     checkRepeatedDeliveryItem(facts,'',qcAdd,jumpCall);
     const pacCovered=checkMissingPacWithSscc(facts,'This message',qcAdd,jumpCall);

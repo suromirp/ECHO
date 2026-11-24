@@ -451,6 +451,8 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: a consignment `PAC` count that differs from the pallet SSCCs
   under it is an info Message check in both modes; nested units with their
   own SSCC aren't counted, and a matching count is silent.
+- **DESADV**: `DTM+132` on the same day as `DTM+11` is an info Message
+  check in both modes (`arrival-despatch-same-day.edi`).
 - **DESADV**: no `DTM+132` and no other delivery date is an info Message
   check in both modes; `DTM+17` alone is enough to stay silent.
 - **INVOIC**: a credit note (`BGM+381`, UBL type 2) without `RFF+IV` /
