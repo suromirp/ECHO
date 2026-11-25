@@ -5390,10 +5390,24 @@ function lineAllowanceItems(inv){
   (inv.lines||[]).forEach(l=>{if((l.charges||[]).some(c=>c.kind==='allowance'&&c.amount!==null&&c.amount!==undefined&&Math.abs(c.amount)>=0.005))out.push(l.gtin||l.art||('line '+(l.lineNo||'?')));});
   return out;
 }
+/* The allowance is already in the net price when the line amount equals
+   quantity × PRI+AAA (plus the line's charges) without deducting it: the
+   ALC+A is then only listed for information, nothing gets lost. */
+function allowanceAlreadyInNetPrice(l){
+  if(l.qty==null||l.netPrice==null||l.lineAmount==null)return false;
+  const ch=(l.charges||[]).reduce((s,c)=>c.amount==null||c.kind!=='charge'?s:s+c.amount,0);
+  const base=l.qty*l.netPrice;
+  return Math.abs(Math.abs(l.lineAmount)-Math.abs(base+ch))<0.015||Math.abs(Math.abs(l.lineAmount)-Math.abs(base))<0.015;
+}
 function checkLineAllowances(inv,label,add,jumpCall){
   const items=lineAllowanceItems(inv);
   if(!items.length)return;
   const n=items.length;
+  const withAllow=(inv.lines||[]).filter(l=>(l.charges||[]).some(c=>c.kind==='allowance'&&c.amount!=null&&Math.abs(c.amount)>=0.005));
+  if(withAllow.length&&withAllow.every(allowanceAlreadyInNetPrice)){
+    add('info',fkey('line-allowance-in-price')+`${label?label+' — ':''}<strong>Discount listed as a line-level allowance, already in the net price</strong> <span class="seg">(ALC+A)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(items,jumpCall,'items')+moreInfo(`On these lines quantity × <span class="seg">PRI+AAA</span>${withAllow.some(l=>(l.charges||[]).some(c=>c.kind==='charge'))?' plus the line\'s charges':''} already gives the line amount, so the net price is after discount and the allowance is only listed. bol's invoice process doesn't carry line-level allowances through, but here nothing is lost by that.`),'message');
+    return;
+  }
   add('warn',fkey('line-allowance')+`${label?label+' — ':''}<strong>Discount sent as a line-level allowance</strong> <span class="seg">(ALC+A)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(items,jumpCall,'items')+moreInfo(`bol's invoice process doesn't carry line-level allowances through; only line-level charges are forwarded. bol then reads <span class="seg">PRI+AAA</span> as the net price per unit. If that is the price before discount, the price and line amounts on bol's side can differ from the order. bol's INVOIC guidance asks for a discount to be included in the net price instead.`),'message');
 }
 function invoiceChargeTotalIssue(inv){
@@ -5445,8 +5459,12 @@ function invoiceArithmeticEntries(inv,jumpFor){
   inv.lines.forEach(l=>{
     const ar=checkLineArithmetic(l.qty,l.netPrice,l.lineAmount);
     if(!ar)return;
-    const adj=(l.charges||[]).reduce((s,c)=>c.amount==null?s:s+(c.kind==='charge'?c.amount:-c.amount),0);
-    if(adj&&Math.abs(Math.abs(ar.diff)-Math.abs(adj))<0.015)return;
+    // The gap can be the line's charges minus allowances (UBL), or only its
+    // charges when the discount is already in the net price and the ALC+A
+    // is just listed (real EDIFACT invoice: MOA+203 = qty × PRI+AAA + ALC+C).
+    const sum=kind=>(l.charges||[]).reduce((s,c)=>c.amount==null||c.kind!==kind?s:s+c.amount,0);
+    const ch=sum('charge'),al=sum('allowance');
+    if([ch-al,ch,-al].some(adj=>adj&&Math.abs(Math.abs(ar.diff)-Math.abs(adj))<0.015))return;
     const itemLabel=l.gtin||l.art||('line '+(l.lineNo||'?'));
     out.push({ar,qty:l.qty,netPrice:l.netPrice,grossPrice:l.grossPrice,itemLabel,jump:jumpFor(l.gtin||l.art||itemLabel)});
   });

@@ -703,6 +703,18 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   Message check in both modes (`checkLineAllowances`, key `line-allowance`):
   "Discount sent as a line-level allowance (ALC+A)", neutral, with the
   affected items as tags. Credit notes are skipped.
+- **Discount in ALC+A with PRI+AAA already after discount** (real invoice
+  from another supplier, every line): `MOA+203` = quantity × `PRI+AAA` +
+  a deposit charge (`ALC+C++++RAD'MOA+8`, VAT 0% E), and the `ALC+A++++TD`
+  discount was only listed (gross − discount = `PRI+AAA` × quantity). ECHO
+  warned "Discount sent as a line-level allowance" and grouped the lines as
+  "about 114.8% of quantity × net price", but the totals reconciled and bol's
+  output carried every amount. Now the line arithmetic also accepts a gap
+  equal to the line's charges alone, or its allowances alone (not only
+  charges − allowances), and when every line with an allowance already
+  reconciles without deducting it, the Message check is info
+  (`line-allowance-in-price`): "Discount listed as a line-level allowance,
+  already in the net price".
 - **Empty ALC segment only on the supplier side**: the same invoice sent an
   `ALC+C++++TD'` with no amount after each discount. That showed up as 38
   "charge only present in the supplier message" Transformation differences.

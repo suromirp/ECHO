@@ -415,6 +415,9 @@ actual test fixtures, don't just keep this list as prose:
   and on the supplier side in Compare; an empty supplier-only `ALC+C` is
   "No amount, not forwarded" in the table, not a difference
   (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
+- **INVOIC**: an `ALC+A` already in the net price plus an `ALC+C` charge in
+  `MOA+203` is the info "already in the net price" and no arithmetic gap
+  (`tests/fixtures/invoic/allowance-in-net-price.sup.edi`).
 - **DESADV**: `NAD+DP` equal to `NAD+BY` and a `DTM+132` before `DTM+137`
   are each one Message check, in Quick check and once in Compare; a normal
   DESADV stays quiet (`tests/fixtures/desadv/dp-buyer-past-arrival.edi`).

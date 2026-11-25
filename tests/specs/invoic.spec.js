@@ -1060,3 +1060,16 @@ test('a discount as a line-level ALC+A is a Message check; an empty supplier-onl
   await runQuickFixture(page, path.join(FIX, 'deposit-rad.sup.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('line-level allowance');
 });
+
+// Real invoice: PRI+AAA already after discount, the discount only listed in
+// ALC+A, and a deposit charge (ALC+C RAD) added to MOA+203. The line amount
+// is quantity × net price + charge: no arithmetic gap, and the allowance is
+// info, not "Discount sent as a line-level allowance".
+test('an allowance already in the net price and a charge in the line amount are not flagged as gaps', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'allowance-in-net-price.sup.edi'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Discount listed as a line-level allowance, already in the net price');
+  await expect(ov).not.toContainText('Discount sent as a line-level allowance');
+  await expect(ov).not.toContainText('of quantity × net price');
+});
