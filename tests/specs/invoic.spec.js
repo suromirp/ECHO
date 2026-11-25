@@ -1073,3 +1073,25 @@ test('an allowance already in the net price and a charge in the line amount are 
   await expect(ov).not.toContainText('Discount sent as a line-level allowance');
   await expect(ov).not.toContainText('of quantity × net price');
 });
+
+// EDIFACT written out as XML, one element per segment (real INVOIC, D01B).
+// Read by turning it back into EDIFACT. The same invoice also had MOA+176
+// inside each summary TAX group (the last one, 0.00, used to win), an
+// exempt summary TAX without a rate that bol carries as 0%, and MOA+131
+// 0.00 with only line-level charges.
+test('an INVOIC in segment-per-element XML is read and compared like EDIFACT', async ({ page }) => {
+  const sup = path.join(FIX, 'segment-xml.sup.xml');
+  await openApp(page);
+  await runCompareFixtures(page, sup, path.join(FIX, 'segment-xml.bol.ubl.xml'));
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  expect(b.diff).toEqual([]);
+  expect(b.message.some(t => /MOA\+131/.test(t))).toBe(false);
+  await expect(page.locator('#invoiceResults')).not.toContainText('VAT rates differ');
+  await expect(page.locator('#invoiceResults')).toContainText('INV9801');
+
+  await openApp(page);
+  await runQuickFixture(page, sup);
+  await expect(page.locator('#quickOverview')).toContainText('INV9801');
+  await expect(page.locator('#quickOverview')).toContainText('8712345678906');
+});

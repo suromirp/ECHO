@@ -415,6 +415,10 @@ actual test fixtures, don't just keep this list as prose:
   and on the supplier side in Compare; an empty supplier-only `ALC+C` is
   "No amount, not forwarded" in the table, not a difference
   (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
+- **INVOIC**: EDIFACT as segment-per-element XML is read like EDIFACT;
+  `MOA+176` per summary TAX group, an exempt summary TAX without rate (bol
+  0%) and `MOA+131:0.00` with only line charges give no difference
+  (`segment-xml.sup.xml` / `.bol.ubl.xml`).
 - **INVOIC**: an `ALC+A` already in the net price plus an `ALC+C` charge in
   `MOA+203` is the info "already in the net price" and no arithmetic gap
   (`tests/fixtures/invoic/allowance-in-net-price.sup.edi`).

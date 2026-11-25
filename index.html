@@ -1857,7 +1857,53 @@ function splitEdifactMessages(raw){
    no <?xml declaration) used to fall through to the EDIFACT parser and
    silently produce zero lines. isXmlText also accepts a <?xml declaration
    after leading whitespace/text. */
+/* EDIFACT written out as XML, one element per segment (real supplier
+   INVOIC, D01B): <Envelope><Body><INVOIC><UNB><cmp01><e01_0001>…, groups as
+   <g001>…, simple elements as eNN_<data element tag>, composites as cmpNN
+   (NN = which composite). The NN of a simple element isn't reliable (TAX
+   had e03_5305 where 5305 is the second simple element), so a simple
+   element is placed by its data element tag and a composite by its number,
+   using a small layout per segment; an unknown segment or element keeps
+   document order. Turned back into EDIFACT text, the existing EDIFACT
+   parser does the rest. Signal: a <UNH> whose first composite holds
+   e01_0065 (the message type). */
+const SEGXML_LAYOUT={UNB:'c c c c 0020 c 0026 0029 0031 0032 0035',UNH:'0062 c 0068 c',UNT:'0074 0062',UNZ:'0036 0020',
+  BGM:'c c 1225 4343',DTM:'c',FTX:'4451 4453 c c 3453 4447',RFF:'c',NAD:'3035 c c c c 3164 c 3251 3207',CTA:'3139 c',COM:'c',
+  CUX:'c c 5402 6341',PAT:'4279 c c',TDT:'8051 8028 c c c 8101 c c 8281',LIN:'1082 1229 c c 1222 7083',PIA:'4347 c c c c c',
+  IMD:'7077 c c 7383',QTY:'c',MOA:'c',PRI:'c 5213',TAX:'5283 c c 5286 c 5305 3446 1227',ALC:'5463 c 4471 1227 c',PCD:'c',
+  UNS:'0081',CNT:'c',PAC:'7224 c c c',GIN:'7405 c c c c c',MEA:'6311 c c 7383'};
+function isSegmentXml(raw){return /<UNH\b[^>]*>\s*<cmp01>\s*<e01_0065>/.test(raw||'');}
+function segmentXmlToEdifact(raw){
+  if(!isSegmentXml(raw))return raw;
+  let doc;try{doc=new DOMParser().parseFromString(prepareXmlText(raw).text,'application/xml');}catch(e){return raw;}
+  if(!doc||doc.querySelector('parsererror'))return raw;
+  const unh=doc.getElementsByTagName('UNH')[0];if(!unh)return raw;
+  const escv=v=>v.replace(/([?:+'])/g,'?$1');
+  const kids=el=>[...el.children];
+  const num=name=>{const m=/^(?:e|cmp)(\d+)/.exec(name);return m?parseInt(m[1],10):0;};
+  const comp=el=>{const parts=[];kids(el).forEach(k=>{const i=num(k.tagName);if(i)parts[i-1]=escv(k.textContent.trim());});
+    const a=Array.from(parts,v=>v||'');while(a.length&&!a[a.length-1])a.pop();return a.join(':');};
+  const segs=[];
+  const seg=el=>{
+    const tag=el.tagName;
+    if(tag==='UNA')return;
+    const lay=(SEGXML_LAYOUT[tag]||'').split(' ').filter(Boolean);
+    const els=lay.map(()=>'');const extra=[];
+    const cPos=lay.map((t,i)=>t==='c'?i:-1).filter(i=>i>=0);
+    kids(el).forEach(k=>{
+      if(/^cmp\d+$/.test(k.tagName)){const n=num(k.tagName),at=cPos[n-1];if(at!==undefined)els[at]=comp(k);else extra.push(comp(k));}
+      else{const m=/^e\d+_(\w+)$/.exec(k.tagName);if(!m)return;const at=lay.indexOf(m[1]);const v=escv(k.textContent.trim());if(at>=0)els[at]=v;else extra.push(v);}
+    });
+    const all=els.concat(extra);while(all.length&&!all[all.length-1])all.pop();
+    segs.push(tag+(all.length?'+'+all.join('+'):''));
+  };
+  const walk=el=>kids(el).forEach(k=>{if(/^g\d+$/.test(k.tagName))walk(k);else if(/^[A-Z][A-Z0-9]{2}$/.test(k.tagName))seg(k);});
+  walk(unh.parentElement);
+  if(!segs.length)return raw;
+  return "UNA:+.? '"+segs.map(x=>x+"'").join('');
+}
 function parseFactsList(raw){
+  raw=segmentXmlToEdifact(raw);
   const head=raw.replace(/^[\s\uFEFF]+/,'');
   if(isXmlText(raw)) return parseFactsTransusXmlList(raw);
   if(/^"ENV"/.test(head)) return [parseFactsCsv(raw)];
@@ -4623,7 +4669,11 @@ function parseInvoicEdifact(raw){
         }
         /* header / summary */
         if(q==='125')cur.totals.taxable=(cur.totals.taxable===null?v:cur.totals.taxable);
-        else if(q==='176')cur.totals.tax=v;
+        // MOA+176 can also sit inside each summary TAX group (real invoice:
+        // a message-level 248.49, then 248.49 under the 9% group and 0.00
+        // under the exempt group). The last one used to win (0.00). The
+        // message-level one wins; without it, the groups are added up.
+        else if(q==='176'){if(cur.extras.sumTaxSeen){cur.extras.tax176Groups=(cur.extras.tax176Groups||0)+v;if(!cur.extras.tax176Top)cur.totals.tax=Math.round(cur.extras.tax176Groups*100)/100;}else{cur.totals.tax=v;cur.extras.tax176Top=true;}}
         else if(q==='124'){if(cur.totals.tax===null)cur.totals.tax=v;cur.extras.taxMoa=v;}
         else if(q==='9')cur.totals.payable=v;
         // 77 = "Invoice amount" per the official EDIFACT 5025 code list — a
@@ -4666,6 +4716,7 @@ function parseInvoicEdifact(raw){
         }
         else if(curLine){if(pct!==null)curLine.vatPct=pct;}
         else if(pct!==null)uniqPush(cur.taxRates,pct);
+        if(inSummary)cur.extras.sumTaxSeen=true;
         // A duty/tax/fee segment that names a category (e.g. "S"/"E") but
         // has no rate at all is a common, silent cause of validation
         // failures downstream — Transus rejects it even though it doesn't
@@ -5191,6 +5242,7 @@ function looksLikeBolUbl(raw){
 /* welk berichttype zit hierin? */
 function detectMsgType(raw){
   if(!raw||!raw.trim())return null;
+  raw=segmentXmlToEdifact(raw);
   if(/^"ENV"/.test(raw.replace(/^[\s﻿]+/,''))){
     const rows=raw.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(splitCsvRow);
     const hdr=rows.find(r=>r[0]==='HDR');
@@ -5422,6 +5474,12 @@ function invoiceChargeTotalIssue(inv){
   const cands=[ch-al,ch+al,Math.abs(ch)+Math.abs(al),Math.abs(ch)-Math.abs(al)].map(v=>Math.abs(v));
   // MOA+259 is "total charges": the charges alone fit too (generous: the
   // charges/allowances combinations still count, in case it's used that way).
+  // Some suppliers mean only the message-level ALCs (none: 0.00) and keep
+  // line-level charges out of it (real invoice: MOA+131:0.00 with three
+  // line-level RAD charges). Generous (rule 7): that counts too.
+  const hdr=inv.charges||[];
+  const hsum=k=>Math.round(hdr.filter(c=>c.kind===k&&c.amount!=null).reduce((s,c)=>s+c.amount,0)*100)/100;
+  cands.push(Math.abs(hsum('charge')-hsum('allowance')),Math.abs(hsum('charge')+hsum('allowance')));
   const cands259=[Math.abs(ch),...cands];
   const TOL=0.015;
   const off=stated.filter(([seg,v])=>!(seg==='MOA+259'?cands259:cands).some(c=>Math.abs(c-Math.abs(v))<TOL));
@@ -5537,6 +5595,7 @@ function diffXmlLeaves(a,b){
    matter which dialect/branch below ends up handling the (now-clean)
    text, and the concatenated-XML split above always sees clean text too. */
 function parseInvoices(raw){
+  if(isSegmentXml(raw)){const r=parseInvoicesInner(segmentXmlToEdifact(raw));r.forEach(inv=>{inv.segmentXml=true;});return r;}
   if(isXmlText(raw)){
     // Same preparation for every XML path (see prepareXmlText): text before
     // the declaration skipped, illegal control characters stripped.
@@ -6171,7 +6230,13 @@ function compareInvoice(sup,bol){
 
   /* VAT rates */
   if(sup.taxRates.length||bol.taxRates.length){
-    if(sup.taxRates.length&&bol.taxRates.length&&!sameSet(sup.taxRates,bol.taxRates))
+    // A summary TAX with an exempt/zero category but no rate (TAX+7+VAT++++E)
+    // that bol's output carries as 0%: structural, not a different rate
+    // (real invoice; the missing rate itself is already a Message check).
+    const zeroCats=new Set(['E','Z','AE','K','G','O']);
+    const supRates=sup.taxRates.slice();
+    if(!supRates.includes(0)&&bol.taxRates.includes(0)&&(sup.taxIssues||[]).some(t=>t.ref==='the invoice summary'&&zeroCats.has(t.category)))supRates.push(0);
+    if(sup.taxRates.length&&bol.taxRates.length&&!sameSet(supRates,bol.taxRates))
       add('err',fkey('vat-diff')+`VAT rates differ — supplier [${sup.taxRates.join(', ')}] vs bol [${bol.taxRates.join(', ')}].`);
   }
 

@@ -64,7 +64,7 @@ Always the "bol output" side for INVOIC. Confirmed traps:
   already did for a genuinely missing value — only overriding when the
   line sum is non-zero, so a real zero total is never clobbered.
 
-## Four distinct supplier-side XML dialects beyond bol's UBL and EDIFACT
+## Five distinct supplier-side XML dialects beyond bol's UBL and EDIFACT
 
 Always check root structure and distinctive fields before assuming a
 schema — a root element literally named `<Invoice>` does not mean it's
@@ -296,6 +296,39 @@ bol's EDIFACT output for the same delivery:
   Transformation differences: quantity per EAN and per SSCC ("Pallet mapping
   differs"), and "1 SSCC only in the bol output" with an effect line naming
   the value as the supplier's internal handling-unit number.
+
+### 5. EDIFACT as XML, one element per segment (INVOIC)
+
+A real supplier invoice (D01B, EAN010) arrived as
+`<Envelope><Header>…</Header><Body><INVOIC><UNA>…<UNB><cmp01><e01_0001>…`:
+every segment an element named after its tag, segment groups as `<g001>`,
+composites as `cmpNN` (NN = which composite in the segment) and simple
+elements as `eNN_<data element tag>`. ECHO said "Couldn't read an invoice
+from the supplier file". It's now turned back into EDIFACT text
+(`segmentXmlToEdifact`) before any parser sees it, so the EDIFACT parser
+and every EDIFACT check apply unchanged. Signal: a `<UNH>` whose first
+composite holds `e01_0065`, which no other dialect has.
+- The NN of a simple element can't be used as its position: the
+  composites and simple elements have separate counters, and the names
+  don't say how they interleave. A simple element is placed by its data
+  element tag, a composite by its number, using `SEGXML_LAYOUT` per
+  segment. An unknown segment or element keeps document order. Check the
+  layout when a new segment matters: `TAX` has the simple `5286` between
+  `C533` and `C243` (`TAX+7+VAT+++:::9+S`).
+- The same invoice put `MOA+176` both at summary level and inside each
+  summary `TAX` group (248.49, then 248.49 under 9% and 0.00 under the
+  exempt group). The last one used to win: a false "VAT amount differs"
+  0.00 vs 248.49. Now the message-level `MOA+176` wins; with only group
+  amounts, they're added up. Not specific to this dialect.
+- Its exempt summary `TAX+7+VAT++++E` (no rate) is shown by bol as a 0%
+  subtotal. "VAT rates differ [9] vs [9, 0]" was structural: a summary
+  TAX with an exempt/zero category (E, Z, AE, K, G, O) and no rate now
+  counts as 0% when bol's output has 0%. The missing rate itself stays the
+  existing Message check.
+- `MOA+131:0.00` with only line-level charges: some suppliers mean only
+  the message-level ALCs. That counts as a match now (rule 7).
+- The `UNB` carried the test indicator (`0035` = 1) and Transus still
+  processed it.
 
 ## A flat quoted-CSV dialect, neither XML nor EDIFACT segment syntax
 
