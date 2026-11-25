@@ -841,3 +841,26 @@ test('empty envelope references, a supplier GLN equal to the buyer and a past co
   await expect(page.locator('#quickOverview')).not.toContainText("Supplier GLN is the buyer's GLN");
   await expect(page.locator('#quickOverview')).not.toContainText('Confirmed delivery date is before');
 });
+
+// Action 3 (EDIFACT "changed") isn't in bol's guidelines, but Transus
+// carries it as action 6 with the same quantities and DTM+67 (real ORDRSP,
+// 78 lines). That's structural: one Good-to-know note, no per-line action
+// difference. A line whose quantity also changed still counts.
+test('action 3 carried as action 6 is Good to know, not an action difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'action3-remapped-to-6.sup.edi'), path.join(FIX, 'action3-remapped-to-6.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const buckets = await findingsByCategory(page);
+  expect(buckets.info.some(t => /Action 3 \(changed\) carried as action 6 in bol's output on 2 items/.test(t))).toBe(true);
+  const diffs = buckets.diff.join('\n');
+  expect(diffs).not.toContain('8712345000059: action codes differ');
+  expect(diffs).toContain('8712345000073: action codes differ');
+  expect(buckets.message.some(t => /isn't one bol\/Transus maps/.test(t))).toBe(false);
+
+  // Quick check on the supplier file: an info note, not a warning.
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'action3-remapped-to-6.sup.edi'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Action code 3 (changed)');
+  await expect(ov).not.toContainText("isn't one bol/Transus maps");
+});

@@ -2019,6 +2019,7 @@ const ACTION_RULE_EXPLAIN={
   'action5-has-cancelled':{level:'err',h:'Action 5 with a cancelled quantity (QTY+182)',more:'Action 5 means fully accepted, and these lines also carry a cancelled quantity. Action 6 is the code bol uses for a partial cancellation.'},
   'action6-no-backorder-has-confirmed':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:ACTION6_DATE_ONLY_MORE},
   'action6-date-only-bgm29':{level:'info',h:'Action 6 used as a delivery-date-only amendment',more:ACTION6_DATE_ONLY_MORE+" The header says BGM+29 (accepted without amendment), which bol's ORDRSP guidelines pair with action 5 only. Transus converts these lines to action 5 in bol's output, so this is expected."},
+  'action3-changed':{level:'info',h:'Action code 3 (changed)',more:"Action 3 is the general EDIFACT code for 'changed'. bol's ORDRSP guidelines use 2 (cancelled), 5 (accepted) and 6 (accepted with amendment). Transus has been seen carrying action 3 into bol's output as action 6, with the same quantities and dates, so nothing is lost on the way."},
   'action6-no-backorder-no-data':{level:'warn',h:'Action 6 without any quantity',more:"Action 6 (accepted with amendment), but no backorder, cancelled or confirmed quantity is present, so these lines don't show what was amended."},
   'action6-backorder-no-date':{level:'warn',h:'Backorder quantity (QTY+83) without a backorder date (DTM+506)',more:"These lines carry a backorder quantity but no DTM+506, the date bol's ORDRSP guidelines ask for to say when the backordered units are expected. Without it there's no date for the backordered part."},
   'action2-missing-cancelled':{level:'err',h:'Action 2 without a cancelled quantity (QTY+182)',more:'Action 2 (cancelled) normally states the cancelled quantity in QTY+182. None is present on these lines.'},
@@ -2110,6 +2111,12 @@ function validateOrdrspLine(ctx,line){
     if(has('12'))keys.push('action2-has-confirmed');
     if(above0('83'))keys.push('action2-has-backorder');
     if(ctx.bgm==='29')keys.push('bgm29-has-cancelled');
+  }else if(a==='3'){
+    // EDIFACT 1229 '3' (changed): not in bol's guidelines, but Transus
+    // carries it as action 6 with nothing lost (real ORDRSP, 78 lines;
+    // docs/formats-and-quirks.md). Info, not "isn't mapped".
+    keys.push('action3-changed');
+    if(noDeliveryDate)keys.push('action6-missing-date');
   }else keys.push(`action-unknown:${a??'(none)'}`);
   const rank={ok:0,info:1,warn:2,err:3};
   keys.forEach(k=>{const l=actionRule(k).level;if(rank[l]>rank[level])level=l;});
@@ -3866,6 +3873,15 @@ function compare(bol,sup){
         row.actionDiff=false;row.dateOnlyRemap=true;
       }
     }
+    // Supplier action 3 (changed) that bol's output carries as action 6
+    // with the same quantities and DTM+67: Transus maps 3 to 6 (real ORDRSP,
+    // 78 lines; docs/formats-and-quirks.md). Structural, one Good-to-know note.
+    row.code3Remap=false;
+    if(type==='ORDRSP'&&row.actionDiff&&b&&s&&!row.qtyDiff){
+      const only=(arr,code)=>arr.length>0&&arr.every(a=>a===code);
+      const dates=x=>[...x.dtm67].sort().join(',');
+      if(only(row.supActions,'3')&&only(row.bolActions,'6')&&dates(s)===dates(b)){row.actionDiff=false;row.code3Remap=true;}
+    }
     row.bolOrders=b?[...b.orders]:[];row.supOrders=s?[...s.orders]:[];
     row.orderDiff=(row.bolOrders.slice().sort().join(',')!==row.supOrders.slice().sort().join(','));
     row.orderOnlyBol=row.orderDiff&&supOrdersOnlyOnBol;
@@ -3923,6 +3939,13 @@ function compare(bol,sup){
   addCapped('err',actionDiffs,
     ({label,r})=>`Item <code>${esc(label)}</code>: action codes differ — supplier [${esc(r.supActions.join(', ')||'—')}] vs bol [${esc(r.bolActions.join(', ')||'—')}].`,
     rest=>`<strong>${rest} more item(s) also show an action code difference</strong> — see the Line comparison below for the full list.`);
+  const remapped3=rows.filter(r=>r.code3Remap);
+  if(remapped3.length){
+    const n=remapped3.length;
+    const lis=remapped3.map(r=>{const v=r.gtin||r.art||'';return `<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(v)})">${esc(r.art||r.gtin||'?')}</span></li>`;}).join('');
+    const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+    add('info',`<strong>Action 3 (changed) carried as action 6 in bol's output</strong> on ${n} item${n===1?'':'s'}. ${n>20?`<details><summary>Show ${n} items</summary>${ul}</details>`:ul}`+moreInfo(`The supplier sent action 3, the general EDIFACT code for 'changed', which bol's ORDRSP guidelines don't use. bol's output carries these lines as action 6 (accepted with amendment) with the same quantities and delivery date, so nothing was lost. A structural difference, not a mapping question.`),'info');
+  }
   const remapped=rows.filter(r=>r.dateOnlyRemap);
   if(remapped.length){
     const n=remapped.length;
@@ -4078,6 +4101,7 @@ function compare(bol,sup){
     // (dateOnlyRemap) is explained once, by the Good-to-know note above; its
     // "delivery-date-only amendment" rule isn't repeated here.
     const remapKeys=new Set(rows.filter(r=>r.dateOnlyRemap).map(r=>r.key));
+    const remap3Keys=new Set(rows.filter(r=>r.code3Remap).map(r=>r.key));
     let addTo=add;
     const validate=(facts,lab)=>{
       const entries=[];
@@ -4090,7 +4114,8 @@ function compare(bol,sup){
           flaggedActionItems.add(itemKey);
           const jumpVal=l.gtin||l.art||l.lineNo||'';
           const remapped=remapKeys.has(keyFn(l));
-          res.keys.forEach(k=>{if(remapped&&ACTION6_DATE_ONLY_KEYS.has(k))return;entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`});});
+          const remapped3=remap3Keys.has(keyFn(l));
+          res.keys.forEach(k=>{if(remapped&&ACTION6_DATE_ONLY_KEYS.has(k))return;if(remapped3&&k==='action3-changed')return;entries.push({key:k,item:itemKey,jump:`jumpToFactsSource(${jsQuote(side)},${jsQuote(jumpVal)})`});});
         }
       });
       groupActionFindings(entries).forEach(g=>addTo(g.level,`${lab} — ${g.text}`,'message'));
@@ -4218,7 +4243,8 @@ function compare(bol,sup){
   const actionMatrix={};
   buckets.forEach(bk=>actionMatrix[bk]={bol:0,sup:0});
   bol.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].bol++;});
-  sup.lines.forEach(l=>{const bk=actionBucket(l.action);if(bk)actionMatrix[bk].sup++;});
+  const remap3Set=new Set(rows.filter(r=>r.code3Remap).map(r=>r.key));
+  sup.lines.forEach(l=>{const bk=actionBucket(l.action)||(l.action==='3'&&remap3Set.has(keyFn(l))?'backorder':null);if(bk)actionMatrix[bk].sup++;});
 
   // The headline is about the transformation, so only Transformation
   // differences (cat 'diff') can make it say bol's output differs ("lost in
@@ -7325,7 +7351,7 @@ function render(result,bol,sup,notes){
   // (dateOnlyRemap) are explained once, by the Good-to-know note, so they
   // aren't listed here a second time.
   const backorderRows=result.rows.filter(r=>{
-    if(r.dateOnlyRemap)return false;
+    if(r.dateOnlyRemap||r.code3Remap)return false;
     const has83=r.qtys.some(x=>x.q==='83'&&((Number(x.bol)||0)!==0||(Number(x.sup)||0)!==0));
     const hasAction6=(r.bolActions&&r.bolActions.includes('6'))||(r.supActions&&r.supActions.includes('6'));
     return has83||hasAction6;

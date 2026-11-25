@@ -1011,6 +1011,19 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   this was found via a real supplier integration question (not a visible
   ECHO bug), there's no fixture-worthy "before" state to test against —
   the test suite only asserts the current, corrected wording.
+- **Action 3 (EDIFACT "changed") is carried as action 6.** A real ORDRSP
+  (`BGM+4`, 78 lines) sent `LIN+…+3` on every line, all fully confirmed
+  (`QTY+83:0`, `QTY+182:0`, one `DTM+67`). bol's guidelines only list 2, 5
+  and 6, and ECHO called 3 "not one bol/Transus maps" (warn) plus 78
+  "action codes differ" diffs. The raw bol output shows Transus mapped every
+  line to action 6 with the same `QTY+12`, `DTM+67` and price: nothing lost.
+  Now an item whose supplier side is only action 3 and bol side only action
+  6, with no quantity difference and the same `DTM+67`, is not an action
+  difference (`code3Remap` in `compare()`): one grouped Good-to-know note,
+  counted as amendment in the action overview, left out of Amendment
+  details. On its own (Quick check, or a line that isn't remapped) action 3
+  is the info rule `action3-changed`, not the unknown-code warning. A
+  changed quantity or date still counts as a difference.
 - **ORDRSP single-message checks taken from bol's ORDRSP guidelines**
   (Message checks, `cat:'message'`, Quick check and per side in Compare).
   All of them sit in `validateOrdrspLine` / `ACTION_RULE_EXPLAIN`, so they

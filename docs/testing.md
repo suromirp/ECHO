@@ -458,6 +458,10 @@ actual test fixtures, don't just keep this list as prose:
   file isn't accepted as the order. The order can also be added as a ZIP
   (`zip/order-pair.zip`, the same order in a bol and a supplier folder):
   the first ORDERS in it is used, the bol folder first.
+- **ORDRSP**: supplier action 3 carried as bol action 6 with the same
+  quantity and date is one Good-to-know note; a line whose quantity changed
+  still shows the action difference; Quick check shows the info rule, not
+  the unknown-code warning (`action3-remapped-to-6.sup/bol.edi`).
 - **DESADV**: `DTM+132` on the same day as `DTM+11` is an info Message
   check in both modes (`arrival-despatch-same-day.edi`).
 - **DESADV**: no `DTM+132` and no other delivery date is an info Message
