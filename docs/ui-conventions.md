@@ -431,10 +431,16 @@ part of the work, so the ZIP drop zone takes more than one package.
   one message shows `1`. **Check all** runs every unmarked package once
   and then opens the first one with a ⚠, else a !. During that run a
   single-message ZIP is only marked, it does not switch to Quick check.
+- **Install note for the Transus helper**: a closed line behind Settings,
+  shown only while the helper has not marked the page (`data-pkg-bridge`
+  on `<html>`). It says what the helper does and how to get it: the file
+  is shared inside the team, it is not in this repo and ECHO does not
+  link to it. Because of this note the Settings line is there for
+  everyone without the helper.
 - **Watch a download folder** sits behind a small collapsed "⚙ Settings"
   line at the very bottom of the page, above the footer, so it is not in view all the time; it opens
   by itself while a folder is being watched. (Chrome and Edge only, the
-  line stays hidden elsewhere): pick the folder once, ECHO lists the newest 40
+  button stays hidden elsewhere): pick the folder once, ECHO lists the newest 40
   packages, newest first, and checks every few seconds for new ones. A
   new package gets a dot and, with the checkbox on, opens by itself.
   The folder is only read. Chrome and Edge refuse the Downloads folder

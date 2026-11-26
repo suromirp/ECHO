@@ -198,6 +198,9 @@
   .zq-pair>summary:hover,.zq-pair[open]>summary{color:var(--text);}
   .zq-pair-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 6px;}
   .zq-pair-row select{min-width:0;max-width:320px;flex:1 1 200px;padding:6px 8px;font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:8px;}
+  .pkg-help-text{margin:10px 0 0;max-width:68ch;}
+  .pkg-help-steps{margin:8px 0;padding-left:20px;color:var(--text);}
+  .pkg-help-steps li{margin:3px 0;}
   .zq-pair-part{margin:10px 0 4px;color:var(--text);}
   .zq-pair-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
   #zqPairOut{margin-top:8px;}
@@ -898,6 +901,11 @@
     <div class="zq-pair-row"><select id="zqPairA" aria-label="First message"></select><span class="dim">against</span><select id="zqPairB" aria-label="Second message"></select><button class="btn ghost" id="zqPairBtn" type="button">Show what differs in build-up</button></div>
     <div class="dim zq-pair-hint">Puts the supplier's own files from two packages side by side: which building blocks (segment and qualifier, or XML element) one has and the other doesn't. Values are not compared.</div>
     <div id="zqPairOut"></div>
+  </details>
+  <details class="zq-pair hidden" id="pkgHelp"><summary>Open Transus messages here in one click</summary>
+    <div class="pkg-help-text">A small browser helper adds a button in the Transus portal that sends a message package straight to this page, so you don't have to download and drag it. It runs on your own computer; nothing is sent anywhere else.</div>
+    <ol class="pkg-help-steps"><li>Install the Tampermonkey extension in your browser.</li><li>Ask your EDI colleague for the ECHO helper file and add it to Tampermonkey.</li><li>Reload this page and the Transus portal.</li></ol>
+    <div class="dim">This note disappears once the helper is active.</div>
   </details>
   </details>
   <footer>
@@ -9460,6 +9468,17 @@ async function watchScan(first){
     watchStop();cSetStatus('Stopped watching the folder: '+err.message,true);
   }finally{watch.busy=false;}
 }
+// The install note for the Transus helper: only while the helper is not
+// there. The helper marks the page after load, so this follows the mark.
+function pkgHelpSync(){
+  const on=document.documentElement.dataset.pkgBridge==='1';
+  const more=document.getElementById('zipMore');
+  document.getElementById('pkgHelp').classList.toggle('hidden',on);
+  if(!on)more.classList.remove('hidden');
+  else if(![...more.querySelectorAll(':scope>.zip-tools>*,:scope>details')].some(e=>!e.classList.contains('hidden')))more.classList.add('hidden');
+}
+pkgHelpSync();
+new MutationObserver(pkgHelpSync).observe(document.documentElement,{attributes:true,attributeFilter:['data-pkg-bridge']});
 function watchUi(on){
   const show=(id,v)=>document.getElementById(id).classList.toggle('hidden',!v);
   if(on)document.getElementById('zipMore').open=true;

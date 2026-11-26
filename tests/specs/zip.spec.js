@@ -240,3 +240,12 @@ test('package list: keyboard steps, search across packages, build-up of two mess
   expect(d.onlyB).toEqual(['PAC']);
   expect(d.both).toBe(6);
 });
+
+test('install note for the Transus helper shows only without the helper', async ({ page }) => {
+  await openApp(page);
+  await expect(page.locator('#zipMore')).toBeVisible();
+  await page.locator('#zipMore > summary').click();
+  await expect(page.locator('#pkgHelp')).toBeVisible();
+  await page.evaluate(() => { document.documentElement.dataset.pkgBridge = '1'; });
+  await expect(page.locator('#pkgHelp')).toBeHidden();
+});

@@ -55,6 +55,7 @@ test('the import block folds to one line while a result is shown', async ({ page
   await expect(page.locator('#dropSup')).toBeVisible();
   await page.locator('#compareBtn').click();
   await expect(panel).toHaveClass(/collapsed/);
+  await page.locator('#importChangeBtn').click();
   await page.locator('#resetBtn').click();
   await expect(panel).not.toHaveClass(/collapsed/);
   await expect(page.locator('#zipDrop')).toBeVisible();
