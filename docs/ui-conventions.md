@@ -329,3 +329,22 @@ allowances", not in the Findings: green left border and an "Adds up" pill
 when every observation reconciles, amber and "N points worth a look"
 otherwise. Observations are one line each with a ✓ or a !. Only the points
 worth a look are repeated as one Message check that links to the card.
+
+## Package list and watched download folder
+
+Downloading each message package and importing it by hand is the slow
+part of the work, so the ZIP drop zone takes more than one package.
+
+- **One ZIP** behaves as before: it opens, no list appears.
+- **Several ZIPs** (dropped or selected together) land in a row of
+  buttons under the drop zone. The first opens; a click opens another.
+  The open one is highlighted, ones already seen are dimmed.
+- **Watch a download folder** (Chrome and Edge only, the button stays
+  hidden elsewhere): pick the folder once, ECHO lists the newest 40
+  packages, newest first, and checks every few seconds for new ones. A
+  new package gets a dot and, with the checkbox on, opens by itself.
+  The folder is only read. The choice is remembered in the browser, so
+  next time it is one click ("Watch … again") plus the browser's own
+  permission question.
+- Nothing is uploaded: the packages are read from disk in the browser,
+  same as a dropped file.

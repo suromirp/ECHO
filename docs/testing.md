@@ -531,3 +531,10 @@ actual test fixtures, don't just keep this list as prose:
 
 When a new bug is found and fixed, add its scenario to this list and to
 the actual test suite in the same commit as the fix.
+
+- Package list (`zip.spec.js`): two ZIPs selected together give two list
+  buttons, the first open, a click opens the other; a single ZIP shows
+  no list. The watched folder is tested with a stubbed directory handle
+  (the real picker can't be driven headless): packages listed newest
+  first, non-ZIP files ignored, a package that appears later is picked
+  up and opened.

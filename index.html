@@ -167,6 +167,15 @@
 
   /* drops for compare */
   .zip-drop{border:1.5px dashed var(--border-strong);border-radius:8px;background:var(--panel-2);padding:15px;text-align:center;cursor:pointer;margin-bottom:14px;transition:border-color .15s,background .15s;}
+  .zip-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 12px;font-size:12px;}
+  .zip-tools:empty{display:none;}
+  .watch-auto{display:inline-flex;align-items:center;gap:5px;color:var(--text-dim);cursor:pointer;}
+  .zip-queue{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;max-height:132px;overflow:auto;}
+  .zq-item{font-family:var(--mono);font-size:12px;border:1px solid var(--border-strong);border-radius:6px;background:var(--panel-2);color:var(--text);padding:4px 9px;cursor:pointer;}
+  .zq-item:hover{border-color:var(--accent);}
+  .zq-item.opened{color:var(--text-dim);}
+  .zq-item.active{border-color:var(--accent);background:var(--panel-3);color:var(--text);}
+  .zq-item .zq-new{color:var(--accent);margin-right:4px;}
   .zip-drop.over{border-color:var(--accent);background:var(--panel-3);}
   .zip-drop .t{font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:4px;}
   .zip-drop .h{font-size:12px;color:var(--text-dim);line-height:1.5;}
@@ -530,8 +539,16 @@
       <div class="zip-drop" id="zipDrop">
         <div class="t">Drop the package here 📦</div>
         <div class="h">ECHO will sort out supplier and bol. Two folders: one with <code>bol</code>/<code>bolcom</code> in the name and one for the supplier — matched automatically.</div>
-        <input type="file" id="zipInput" accept=".zip" class="hidden">
+        <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
+      <div class="zip-tools">
+        <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer.">📂 Watch a download folder…</button>
+        <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
+        <span class="dim hidden" id="watchState"></span>
+        <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
+        <button class="btn ghost hidden" id="watchStopBtn" type="button">Stop watching</button>
+      </div>
+      <div class="zip-queue hidden" id="zipQueue"></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
         <div class="drop" id="dropSup" data-side="sup">
@@ -8855,8 +8872,108 @@ const zipDrop=document.getElementById('zipDrop'),zipInput=document.getElementByI
 zipDrop.addEventListener('click',()=>zipInput.click());
 zipDrop.addEventListener('dragover',e=>{e.preventDefault();zipDrop.classList.add('over');});
 zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
-zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');const f=e.dataTransfer.files[0];if(f)handleZip(f);});
-zipInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)handleZip(f);e.target.value='';});
+zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');zipTake([...e.dataTransfer.files]);});
+zipInput.addEventListener('change',e=>{zipTake([...e.target.files]);e.target.value='';});
+
+/* ---- Package list: several ZIPs at once, and a watched download folder ----
+   Downloading each message package from Transus and importing it by hand
+   is the slow part of the work. Two ways around it, both local: drop
+   several ZIPs in one go and click through them, or pick the download
+   folder once and let ECHO list what is in it and pick up new packages
+   as they land (File System Access API: Chrome and Edge). The folder is
+   only read; nothing is written or sent anywhere. */
+const zipQ=[];let zipQActive=null;
+function zipQRender(){
+  const box=document.getElementById('zipQueue');
+  box.classList.toggle('hidden',!zipQ.length);
+  box.innerHTML=zipQ.map((q,i)=>`<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${esc(q.name.replace(/\.zip$/i,''))}</button>`).join('');
+}
+function zipQAdd(items,front){
+  const have=new Set(zipQ.map(q=>q.key));
+  const add=items.filter(q=>!have.has(q.key));
+  if(front)zipQ.unshift(...add);else zipQ.push(...add);
+  zipQRender();return add;
+}
+async function zipQOpen(q){
+  try{
+    const file=q.file||await q.handle.getFile();
+    q.opened=true;zipQActive=q.key;zipQRender();
+    showTab('compare');
+    await handleZip(file);
+  }catch(err){cSetStatus(`Couldn\u2019t open "${q.name}": ${err.message}`,true);}
+}
+document.getElementById('zipQueue').addEventListener('click',e=>{const b=e.target.closest('.zq-item');if(b)zipQOpen(zipQ[+b.dataset.i]);});
+function zipTake(files){
+  const zips=files.filter(f=>/\.zip$/i.test(f.name));
+  if(files.length===1&&!zipQ.length){handleZip(files[0]);return;}
+  if(!zips.length){if(files[0])handleZip(files[0]);return;}
+  const added=zipQAdd(zips.map(f=>({key:f.name,name:f.name,file:f})),false);
+  const first=added[0]||zipQ.find(q=>q.key===zips[0].name);
+  if(first)zipQOpen(first);
+  if(zips.length>1)cSetStatus(`${zips.length} packages added. Click one in the list to open it.`);
+}
+const watch={dir:null,timer:null,names:new Set(),busy:false};
+const WATCH_LIST_MAX=40,WATCH_EVERY_MS=3000;
+function watchDb(){return new Promise((res,rej)=>{const r=indexedDB.open('echo-watch',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function watchSave(h){try{const db=await watchDb();await new Promise((res,rej)=>{const t=db.transaction('kv','readwrite');if(h)t.objectStore('kv').put(h,'dir');else t.objectStore('kv').delete('dir');t.oncomplete=res;t.onerror=()=>rej(t.error);});}catch(e){}}
+async function watchSaved(){try{const db=await watchDb();return await new Promise(res=>{const r=db.transaction('kv').objectStore('kv').get('dir');r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null);});}catch(e){return null;}}
+async function watchScan(first){
+  if(!watch.dir||watch.busy)return;
+  watch.busy=true;
+  try{
+    const found=[];
+    for await(const h of watch.dir.values()){
+      if(h.kind!=='file'||!/\.zip$/i.test(h.name)||watch.names.has(h.name))continue;
+      watch.names.add(h.name);
+      const f=await h.getFile();
+      if(f.size)found.push({key:h.name,name:h.name,handle:h,time:f.lastModified,fresh:!first});
+    }
+    found.sort((a,b)=>b.time-a.time);
+    const added=zipQAdd(first?found.slice(0,WATCH_LIST_MAX):found,true);
+    if(!first&&added.length){
+      cSetStatus(`New package: ${added[0].name}.`);
+      if(document.getElementById('watchAuto').checked)await zipQOpen(added[0]);
+    }
+    if(first)document.getElementById('watchState').textContent=`Watching \u201c${watch.dir.name}\u201d \u00b7 ${found.length} package${found.length===1?'':'s'}${found.length>WATCH_LIST_MAX?`, newest ${WATCH_LIST_MAX} listed`:''}`;
+  }catch(err){
+    watchStop();cSetStatus('Stopped watching the folder: '+err.message,true);
+  }finally{watch.busy=false;}
+}
+function watchUi(on){
+  const show=(id,v)=>document.getElementById(id).classList.toggle('hidden',!v);
+  show('watchBtn',!on);show('watchState',on);show('watchAutoWrap',on);show('watchStopBtn',on);
+  if(on)show('watchResumeBtn',false);
+}
+async function watchStart(dir){
+  watchStop();
+  watch.dir=dir;watch.names=new Set();watchUi(true);
+  await watchScan(true);
+  if(watch.dir)watch.timer=setInterval(()=>watchScan(false),WATCH_EVERY_MS);
+}
+function watchStop(){
+  if(watch.timer)clearInterval(watch.timer);
+  watch.timer=null;watch.dir=null;watchUi(false);
+}
+if(typeof window.showDirectoryPicker==='function'){
+  document.getElementById('watchBtn').classList.remove('hidden');
+  document.getElementById('watchBtn').addEventListener('click',async()=>{
+    let dir=null;
+    try{dir=await window.showDirectoryPicker({id:'echo-packages',mode:'read',startIn:'downloads'});}catch(e){return;}
+    watchSave(dir);watchStart(dir);
+  });
+  document.getElementById('watchStopBtn').addEventListener('click',()=>{watchStop();watchSave(null);});
+  // The folder picked last time: one click to pick it up again (the
+  // browser asks for read access once per session).
+  watchSaved().then(h=>{
+    if(!h||watch.dir)return;
+    const b=document.getElementById('watchResumeBtn');
+    b.textContent=`\u21bb Watch \u201c${h.name}\u201d again`;b.classList.remove('hidden');
+    b.addEventListener('click',async()=>{
+      try{if((await h.requestPermission({mode:'read'}))!=='granted')return;}catch(e){return;}
+      watchStart(h);
+    });
+  });
+}
 
 /* An XML file that can't be read at all stops the comparison with a banner
    per affected side — comparing an empty message against a full one only
