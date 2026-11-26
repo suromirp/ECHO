@@ -341,6 +341,10 @@ part of the work, so the ZIP drop zone takes more than one package.
 - **Several ZIPs** (dropped or selected together) land in a row of
   buttons under the drop zone. The first opens; a click opens another.
   The open one is highlighted, ones already seen are dimmed.
+- **Kind in the list**: once a package has been read, its button shows
+  the message kind in words (Order response, Despatch advice, Invoice,
+  Order) in front of the file name, because a row of message IDs says
+  nothing about what is in them.
 - **Marks in the list**: a package that has been compared carries the
   level of its verdict card (✓, !, ⚠), read from that card so the two
   can't disagree. A pair that gave no comparison shows `·`, a ZIP with

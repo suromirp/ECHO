@@ -173,13 +173,14 @@
   .zip-more>summary{cursor:pointer;color:var(--text-faint);width:max-content;}
   .zip-more>summary:hover{color:var(--text-dim);}
   .zip-more .zip-tools{margin:8px 0 2px;}
-  .watch-auto{display:inline-flex;align-items:center;gap:5px;color:var(--text-dim);cursor:pointer;}
+  .watch-auto{display:inline-flex;align-items:center;gap:5px;color:var(--text-dim);cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;margin-bottom:0;}
   .zip-queue{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;max-height:132px;overflow:auto;}
   .zq-item{font-family:var(--mono);font-size:12px;border:1px solid var(--border-strong);border-radius:6px;background:var(--panel-2);color:var(--text);padding:4px 9px;cursor:pointer;}
   .zq-item:hover{border-color:var(--accent);}
   .zq-item.opened{color:var(--text-dim);}
   .zq-item.active{border-color:var(--accent);background:var(--panel-3);color:var(--text);}
   .zq-item .zq-new{color:var(--accent);margin-right:4px;}
+  .zq-item .zq-kind{font-family:var(--sans,inherit);font-weight:600;margin-right:6px;}
   .zq-item .zq-lv{margin-right:5px;font-weight:700;color:var(--text-dim);}
   .zq-item .zq-lv.ok{color:var(--ok);}.zq-item .zq-lv.warn{color:var(--warn);}.zq-item .zq-lv.err{color:var(--err);}
   .zip-drop.over{border-color:var(--accent);background:var(--panel-3);}
@@ -8848,9 +8849,10 @@ async function handleZip(file,quiet){
     // read it, then switches — and repeats the explanation as a
     // hard-to-miss banner in Quick check itself, not just status text.
     if(entries.length===1){
-      if(quiet)return 'single';
       const only=entries[0];
       const text=decodeFileBytes(await only.entry.async('uint8array'));
+      zipLastText=text;
+      if(quiet)return 'single';
       const name=only.path.split('/').pop();
       cSetStatus(`This ZIP only contains one message ("${name}") — no supplier/bol pair to compare. Opening it in Quick check instead…`);
       await new Promise(r=>setTimeout(r,1100));
@@ -8871,6 +8873,7 @@ async function handleZip(file,quiet){
     if(!bolE||!supE){if(entries.length>=2){supE=supE||entries[0];bolE=bolE||entries.find(e=>e!==supE)||entries[1];}}
     if(!bolE||!supE){cSetStatus('Couldn\u2019t distinguish two separate messages in the ZIP.',true);return;}
     const bolText=decodeFileBytes(await bolE.entry.async('uint8array'));const supText=decodeFileBytes(await supE.entry.async('uint8array'));
+    zipLastText=supText;
     cSetSide('bol',bolE.path.split('/').pop(),bolText);cSetSide('sup',supE.path.split('/').pop(),supText);
     cstate.source={zip:file.name,paths:[supE.path,bolE.path],supFolder:supE.path.includes('/')?supE.path.split('/')[0]:null};
     cSetStatus('ZIP loaded. Bol ↔ supplier assigned automatically.');
@@ -8891,13 +8894,16 @@ zipInput.addEventListener('change',e=>{zipTake([...e.target.files]);e.target.val
    folder once and let ECHO list what is in it and pick up new packages
    as they land (File System Access API: Chrome and Edge). The folder is
    only read; nothing is written or sent anywhere. */
-const zipQ=[];let zipQActive=null,zipSolo=null;
+const zipQ=[];let zipQActive=null,zipSolo=null,zipLastText='';
+// What kind of message a package holds, shown in front of its name once
+// it has been read, so the list says more than a row of message IDs.
+const ZQ_KIND={ORDRSP:'Order response',DESADV:'Despatch advice',INVOIC:'Invoice',ORDERS:'Order'};
 function zipQRender(){
   const box=document.getElementById('zipQueue');
   box.classList.toggle('hidden',!zipQ.length);
   box.innerHTML=zipQ.map((q,i)=>{
     const lv=ZQ_LEVEL[q.level];
-    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</button>`;
+    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:''}${q.kind?`<span class="zq-kind">${esc(q.kind)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</button>`;
   }).join('')
     +(zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'');
 }
@@ -8935,7 +8941,9 @@ async function zipQOpen(q,quiet){
     if(!quiet)q.opened=true;
     zipQActive=q.key;zipQRender();
     showTab('compare');
+    zipLastText='';
     const r=await handleZip(file,quiet);
+    q.kind=ZQ_KIND[detectMsgType(zipLastText)]||q.kind||'';
     q.level=r==='single'?'single':zipQLevel();
     zipQRender();
   }catch(err){cSetStatus(`Couldn\u2019t open "${q.name}": ${err.message}`,true);}

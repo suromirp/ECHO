@@ -97,6 +97,10 @@ test('Check all marks every package in the list', async ({ page }) => {
   await page.locator('#zipQueue .zq-check').click();
   await expect(page.locator('#zipQueue .zq-lv')).toHaveCount(4);
   await expect(page.locator('#zipQueue .zq-check')).toHaveCount(0);
+  // Each button also says what kind of message the package holds.
+  await expect(page.locator('#zipQueue .zq-kind')).toHaveCount(4);
+  await expect(items.nth(1).locator('.zq-kind')).toHaveText('Order');
+  await expect(items.nth(0).locator('.zq-kind')).toHaveText(/Order response|Despatch advice|Invoice/);
   await expect(items.nth(1).locator('.zq-lv')).toHaveClass(/\bna\b/);
   await expect(items.nth(2).locator('.zq-lv')).toHaveClass(/single/);
   await expect(items.nth(0).locator('.zq-lv')).toHaveClass(/\b(ok|warn|err)\b/);
