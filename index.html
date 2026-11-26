@@ -169,7 +169,7 @@
   .zip-drop{border:1.5px dashed var(--border-strong);border-radius:8px;background:var(--panel-2);padding:15px;text-align:center;cursor:pointer;margin-bottom:14px;transition:border-color .15s,background .15s;}
   .zip-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 12px;font-size:12px;}
   .zip-tools:empty{display:none;}
-  .zip-more{margin:-6px 0 10px;font-size:12px;}
+  .zip-more{margin:26px 0 0;font-size:12px;}
   .zip-more>summary{cursor:pointer;color:var(--text-faint);width:max-content;}
   .zip-more>summary:hover{color:var(--text-dim);}
   .zip-more .zip-tools{margin:8px 0 2px;}
@@ -548,15 +548,6 @@
         <div class="h">ECHO will sort out supplier and bol. Two folders: one with <code>bol</code>/<code>bolcom</code> in the name and one for the supplier — matched automatically.</div>
         <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
-      <details class="zip-more hidden" id="zipMore"><summary>⚙ Settings</summary>
-      <div class="zip-tools">
-        <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer.">📂 Watch a download folder…</button>
-        <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
-        <span class="dim hidden" id="watchState"></span>
-        <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
-        <button class="btn ghost hidden" id="watchStopBtn" type="button">Stop watching</button>
-      </div>
-      </details>
       <div class="zip-queue hidden" id="zipQueue"></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
@@ -680,6 +671,15 @@
     <div id="invoiceResults" class="hidden"></div>
   </section>
 
+  <details class="zip-more hidden" id="zipMore"><summary>⚙ Settings</summary>
+  <div class="zip-tools">
+    <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer.">📂 Watch a download folder…</button>
+    <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
+    <span class="dim hidden" id="watchState"></span>
+    <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
+    <button class="btn ghost hidden" id="watchStopBtn" type="button">Stop watching</button>
+  </div>
+  </details>
   <footer>
     ECHO supports <strong>ORDRSP</strong>, <strong>DESADV</strong> and <strong>INVOIC</strong>. Messages are processed locally in your browser and are not sent to a server.<br>
     Comparisons focus on normalized business data rather than cosmetic message differences.
