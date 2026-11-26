@@ -335,7 +335,9 @@ worth a look are repeated as one Message check that links to the card.
 Downloading each message package and importing it by hand is the slow
 part of the work, so the ZIP drop zone takes more than one package.
 
-- **One ZIP** behaves as before: it opens, no list appears.
+- **One ZIP** behaves as before: it opens, no list appears. A second,
+  different ZIP arriving later starts the list with the first one kept
+  in it, so packages that come in one at a time are not lost.
 - **Several ZIPs** (dropped or selected together) land in a row of
   buttons under the drop zone. The first opens; a click opens another.
   The open one is highlighted, ones already seen are dimmed.

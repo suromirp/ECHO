@@ -8891,7 +8891,7 @@ zipInput.addEventListener('change',e=>{zipTake([...e.target.files]);e.target.val
    folder once and let ECHO list what is in it and pick up new packages
    as they land (File System Access API: Chrome and Edge). The folder is
    only read; nothing is written or sent anywhere. */
-const zipQ=[];let zipQActive=null;
+const zipQ=[];let zipQActive=null,zipSolo=null;
 function zipQRender(){
   const box=document.getElementById('zipQueue');
   box.classList.toggle('hidden',!zipQ.length);
@@ -8946,7 +8946,13 @@ document.getElementById('zipQueue').addEventListener('click',e=>{
 });
 function zipTake(files){
   const zips=files.filter(f=>/\.zip$/i.test(f.name));
-  if(files.length===1&&!zipQ.length){handleZip(files[0]);return;}
+  // One ZIP on its own just opens. A second, different one arriving later
+  // (dropped separately, or sent one by one from the portal) starts the
+  // list, with the first one in it, so neither gets lost.
+  if(files.length===1&&!zipQ.length){
+    if(!zips.length||!zipSolo||zipSolo.name===zips[0].name){zipSolo=zips[0]||null;handleZip(files[0]);return;}
+    zipQAdd([{key:zipSolo.name,name:zipSolo.name,file:zipSolo,opened:true}],false);
+  }
   if(!zips.length){if(files[0])handleZip(files[0]);return;}
   const added=zipQAdd(zips.map(f=>({key:f.name,name:f.name,file:f})),false);
   const first=added[0]||zipQ.find(q=>q.key===zips[0].name);

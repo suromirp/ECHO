@@ -540,4 +540,5 @@ the actual test suite in the same commit as the fix.
   up and opened. An opened package carries the level of its verdict
   card; "Check all" marks all four fixture ZIPs (a level for the pairs,
   `·` for the ORDERS pair, `1` for the single message) and leaves the
-  view on Compare.
+  view on Compare. ZIPs arriving one at a time build the list from
+  the second one on; the same ZIP twice does not.

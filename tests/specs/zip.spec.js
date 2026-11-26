@@ -65,6 +65,25 @@ test('several ZIPs at once give a clickable package list', async ({ page }) => {
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
 });
 
+// Packages that arrive one at a time (dropped separately, or sent one by
+// one from the portal) build the list too: the second arrival starts it and
+// the first is kept in it. The same package again does not.
+test('ZIPs arriving one by one build the package list', async ({ page }) => {
+  const dir = path.join(__dirname, '..', 'fixtures', 'zip');
+  await openApp(page);
+  await page.locator('#zipInput').setInputFiles(path.join(dir, 'Message_ID_100000001.zip'));
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+  await page.locator('#zipInput').setInputFiles(path.join(dir, 'Message_ID_100000001.zip'));
+  await expect(page.locator('#zipQueue')).toBeHidden();
+  await page.locator('#zipInput').setInputFiles(path.join(dir, 'utf16-pair.zip'));
+  const items = page.locator('#zipQueue .zq-item');
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toContainText('Message_ID_100000001');
+  await expect(items.nth(0)).toHaveClass(/opened/);
+  await expect(items.nth(1)).toHaveClass(/active/);
+  await expect(items.nth(1).locator('.zq-lv')).toHaveCount(1);
+});
+
 // "Check all" runs every unmarked package once, so the list shows which
 // ones are worth opening. A pair ECHO doesn't compare and a single message
 // get their own neutral mark instead of a level, and the single message
