@@ -245,6 +245,16 @@
      with meaning, where to look and related findings opens under it. */
   .fkey{display:none;}
   .err-pick{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:16px;}
+  .err-pick:not(.open){background:none;border:0;padding:0;}
+  .err-pick:not(.open)>.err-pick-row,.err-pick:not(.open)>.err-card,.err-pick.open>.err-pick-open{display:none;}
+  .err-pick-open{font-size:12.5px;color:var(--text-dim);}
+  .err-about{margin-top:8px;}
+  .err-about>summary{cursor:pointer;width:max-content;color:var(--text-dim);font-size:12.5px;padding:0;border:0;background:none;box-shadow:none;font-weight:400;}
+  .findings li[data-may]{flex-wrap:wrap;}
+  .findings li[data-may]::after,.note-inline[data-may]::after{content:"Can lead to: " attr(data-may);flex:0 0 100%;display:block;margin-top:5px;padding-left:25px;font-size:12px;color:var(--text-dim);}
+  .note-inline[data-may]::after{padding-left:0;}
+  .err-focus .findings li:not(.findings-cat):not(.err-hit){opacity:.42;}
+  .err-focus .findings li.err-hit{box-shadow:0 0 0 2px rgba(255,224,76,.7);}
   .err-pick-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:13px;}
   .err-pick-row .err-pick-label{font-weight:600;color:var(--text);}
   .err-pick select,.err-pick .mini-input{font-family:var(--sans);padding:6px 9px;}
@@ -7215,23 +7225,73 @@ function errorTextValues(text){
 const errPick={};
 function errPickMount(mode,slot,opts){
   const prev=errPick[mode];
+  if(prev)errMark(prev,[]);
   if(prev&&prev.slot&&prev.slot!==slot)prev.slot.innerHTML='';
   if(!slot||!opts){if(slot)slot.innerHTML='';delete errPick[mode];return;}
-  errPick[mode]={slot,scope:opts.scope,msgType:opts.msgType||null,raws:opts.raws||[],jump:opts.jump||null,id:'',text:'',fromText:false,targets:[]};
-  const opt=ERROR_CATALOGUE.map(e=>`<option value="${esc(e.id)}">${esc(e.label)}</option>`).join('');
-  slot.innerHTML=`<div class="err-pick" id="errPick-${mode}">
+  errPick[mode]={slot,open:false,scope:opts.scope,msgType:opts.msgType||null,raws:opts.raws||[],jump:opts.jump||null,id:'',text:'',fromText:false,targets:[]};
+  slot.innerHTML=`<div class="err-pick" id="errPick-${mode}" data-err="">
+    <button type="button" class="btn ghost err-pick-open" id="errPickOpen-${mode}" onclick="errPickOpen('${mode}',true)" title="Paste the error text bol or Transus gave, or pick it from the list. Pasting works anywhere on this page.">Got an error message?</button>
     <div class="err-pick-row">
       <span class="err-pick-label">Got an error message?</span>
-      <select id="errPickSel-${mode}" aria-label="Known error messages" onchange="errPickSelect('${mode}',this.value)"><option value="">Pick a known error…</option>${opt}</select>
-      <input type="text" class="mini-input" id="errPickTxt-${mode}" placeholder="or paste the error text" aria-label="Paste the error text" autocomplete="off" oninput="errPickTyped('${mode}')" onkeydown="if(event.key==='Enter')errPickTyped('${mode}',true)">
+      <input type="text" class="mini-input" id="errPickTxt-${mode}" placeholder="Paste or type the error text" aria-label="Paste or type the error text" autocomplete="off" oninput="errPickTyped('${mode}')" onkeydown="if(event.key==='Enter')errPickTyped('${mode}',true)">
       <button type="button" class="btn ghost hidden" id="errPickClear-${mode}" onclick="errPickClear('${mode}')">Clear</button>
+      <button type="button" class="btn ghost" onclick="errPickOpen('${mode}',false)">Close</button>
     </div>
     <div class="err-card hidden" id="errPickCard-${mode}" aria-live="polite"></div>
   </div>`;
+  setTimeout(()=>errMayTag(mode),0);
 }
+function errPickOpen(mode,on){
+  const st=errPick[mode],box=document.getElementById('errPick-'+mode);if(!st||!box)return;
+  if(!on)errPickClear(mode);
+  st.open=!!on;box.classList.toggle('open',st.open);
+  errPickRender(mode);
+  if(on){const inp=document.getElementById('errPickTxt-'+mode);if(inp)inp.focus();}
+}
+/* Each finding that a known error can come from says so itself, in one
+   quiet line under it. The line is drawn from an attribute (CSS), so the
+   finding's own text, and anything copied from it, stays as it was. */
+function errShort(e){return e.label.replace(/\s*\(.*\)\s*$/,'');}
+function errMayTag(mode){
+  const st=errPick[mode];if(!st)return;
+  const scope=typeof st.scope==='function'?st.scope():st.scope;if(!scope)return;
+  scope.querySelectorAll('[data-fkey]').forEach(m=>{
+    const host=m.closest('li')||m.closest('.note-inline');
+    if(!host||host.closest('.err-pick')||host.classList.contains('f-ok'))return;
+    const keys=m.dataset.fkey.split(' ');
+    const names=ERROR_CATALOGUE.filter(e=>e.keys.some(k=>keys.includes(k))&&(!e.types||!st.msgType||e.types.includes(st.msgType))).map(errShort);
+    const all=[...new Set((host.dataset.may?host.dataset.may.split(' · '):[]).concat(names))];
+    if(all.length)host.dataset.may=all.join(' · ');
+  });
+}
+function errMark(st,hosts){
+  (st.marked||[]).forEach(el=>el.classList.remove('err-hit'));
+  if(st.markScope)st.markScope.classList.remove('err-focus');
+  st.marked=hosts||[];st.markScope=null;
+  if(!st.marked.length)return;
+  const scope=typeof st.scope==='function'?st.scope():st.scope;
+  st.marked.forEach(el=>el.classList.add('err-hit'));
+  if(scope){scope.classList.add('err-focus');st.markScope=scope;}
+}
+// Pasting an error text anywhere on a result (not in a field) is enough:
+// a text ECHO recognises opens the bar with it. Anything else is left alone.
+document.addEventListener('paste',ev=>{
+  const t=ev.target;
+  if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;
+  const mode=document.getElementById('viewQuick').classList.contains('active')?'quick':'compare';
+  if(!errPick[mode]||!document.getElementById('errPick-'+mode))return;
+  const text=((ev.clipboardData&&ev.clipboardData.getData('text'))||'').trim();
+  if(!text||text.length>600||!matchErrorText(text))return;
+  ev.preventDefault();
+  errPickOpen(mode,true);
+  const inp=document.getElementById('errPickTxt-'+mode);inp.value=text.replace(/\s+/g,' ');
+  errPickTyped(mode,true);
+  document.getElementById('errPick-'+mode).scrollIntoView({block:'center'});
+});
 function errPickSelect(mode,id){
   const st=errPick[mode];if(!st)return;
   st.id=id||'';st.fromText=false;
+  if(st.id&&!st.open){st.open=true;const b=document.getElementById('errPick-'+mode);if(b)b.classList.add('open');}
   errPickRender(mode);
 }
 function errPickTyped(mode,now){
@@ -7255,14 +7315,22 @@ function errPickClear(mode){
 }
 function errPickRender(mode){
   const st=errPick[mode];if(!st)return;
-  const sel=document.getElementById('errPickSel-'+mode),card=document.getElementById('errPickCard-'+mode),clr=document.getElementById('errPickClear-'+mode);
+  const box=document.getElementById('errPick-'+mode),card=document.getElementById('errPickCard-'+mode),clr=document.getElementById('errPickClear-'+mode);
   if(!card)return;
-  if(sel)sel.value=st.id||'';
+  if(box)box.dataset.err=st.id||'';
   if(clr)clr.classList.toggle('hidden',!st.id&&!st.text);
   st.targets=[];
-  if(!st.id&&!st.text){card.classList.add('hidden');card.innerHTML='';return;}
+  errMayTag(mode);
+  if(!st.id&&!st.text){
+    errMark(st,[]);
+    // Open and still empty: the known errors, one click each.
+    if(st.open){card.innerHTML=`<div class="err-row dim">Or pick a known one:</div>${errorChoicesHtml(mode,'')}`;card.classList.remove('hidden');}
+    else{card.classList.add('hidden');card.innerHTML='';}
+    return;
+  }
   card.innerHTML=errorCardHtml(mode);
   card.classList.remove('hidden');
+  errMark(st,st.id?st.targets:[]);
 }
 /* Findings (or file banners) in the result carrying one of the keys. */
 function relatedFindingHosts(scope,keys){
@@ -7305,30 +7373,38 @@ function errorValuesHtml(st){
   });
   return `<div class="err-row"><span class="err-k">From your error text:</span> ${parts.join('; ')}</div>`;
 }
+/* The known errors as buttons; with typed words, the ones holding all of
+   them first-hand, else the whole list. */
+function errorChoicesHtml(mode,text){
+  const words=(text||'').toLowerCase().split(/\s+/).filter(w=>w.length>2);
+  const hit=words.length?ERROR_CATALOGUE.filter(x=>words.every(w=>x.label.toLowerCase().includes(w))):[];
+  return `<div class="err-choices">${(hit.length?hit:ERROR_CATALOGUE).map(x=>`<button type="button" class="btn ghost" data-id="${esc(x.id)}" onclick="errPickSelect('${mode}','${x.id}')">${esc(x.label)}</button>`).join('')}</div>`;
+}
 function errorCardHtml(mode){
   const st=errPick[mode];
   const e=ERROR_CATALOGUE.find(x=>x.id===st.id);
   if(!e){
-    return `<div class="err-title">ECHO doesn't recognise this error text yet.</div><div class="err-row">Pick the closest one from the list:</div><div class="err-choices">${ERROR_CATALOGUE.map(x=>`<button type="button" class="btn ghost" onclick="errPickSelect('${mode}','${x.id}')">${esc(x.label)}</button>`).join('')}</div>${errorValuesHtml(st)}`;
+    const some=errorChoicesHtml(mode,st.text);
+    const narrowed=(some.match(/<button/g)||[]).length<ERROR_CATALOGUE.length;
+    return `<div class="err-title">${narrowed?'Known errors with these words:':"ECHO doesn't recognise this error text yet."}</div>${narrowed?'':'<div class="err-row">Pick the closest one from the list:</div>'}${some}${errorValuesHtml(st)}`;
   }
   const scope=typeof st.scope==='function'?st.scope():st.scope;
   const hosts=scope?relatedFindingHosts(scope,e.keys):[];
   st.targets=hosts;
   const art=t=>/^[AEIOU]/.test(t)?'an':'a';
   let h=`<div class="err-title">"${esc(e.label)}"${st.fromText?' <span class="dim">matched from your text</span>':''}</div>`;
-  h+=`<div class="err-row"><span class="err-k">What it usually means:</span> ${e.meaning}</div>`;
-  h+=`<div class="err-row"><span class="err-k">Where to look:</span> ${e.where}</div>`;
+  const about=`<details class="err-about"${hosts.length?'':' open'}><summary>What it means and where to look</summary><div class="err-row"><span class="err-k">What it usually means:</span> ${e.meaning}</div><div class="err-row"><span class="err-k">Where to look:</span> ${e.where}</div></details>`;
   if(e.types&&st.msgType&&!e.types.includes(st.msgType)){
     const ts=e.types.length>1?e.types.slice(0,-1).join(', ')+' or '+e.types[e.types.length-1]:e.types[0];
     h+=`<div class="err-row"><span class="err-k">Message type:</span> this error usually comes with ${art(e.types[0])} ${esc(ts)}, and this is ${art(st.msgType)} ${esc(st.msgType)}, so it may be about another message.</div>`;
   }
   if(hosts.length){
     const items=hosts.map((el,i)=>{const s=findingHostSummary(el);return `<li><span class="fi"${s.level?` style="color:var(--${s.level})"`:''}>${esc(s.icon)}</span> <a href="#" onclick="return errPickGo('${mode}',${i})">${esc(s.text)}</a> <span class="seg">${esc(s.section)}</span></li>`;}).join('');
-    h+=`<div class="err-row err-found"><span class="err-k">In this message:</span> ECHO found ${hosts.length===1?'one related finding':hosts.length+' related findings'}. Click to jump to ${hosts.length===1?'it':'one'}.</div><ul class="err-related">${items}</ul>`;
+    h+=`<div class="err-row err-found"><span class="err-k">In this message:</span> ECHO found ${hosts.length===1?'one related finding':hosts.length+' related findings'}, marked below. Click to jump to ${hosts.length===1?'it':'one'}.</div><ul class="err-related">${items}</ul>`;
   }else{
     h+=`<div class="err-row err-none"><span class="err-k">In this message:</span> ECHO sees nothing in this message that explains it; ${e.elsewhere}</div>`;
   }
-  return h+errorValuesHtml(st);
+  return h+errorValuesHtml(st)+about;
 }
 /* Scroll to a related finding and flash it (open any collapsed parent). */
 function errPickGo(mode,i){

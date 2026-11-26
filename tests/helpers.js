@@ -27,4 +27,19 @@ async function findingTexts(page, ulSelector) {
   return page.locator(`${ulSelector} li`).allInnerTexts();
 }
 
-module.exports = { INDEX_PATH, INDEX_URL, openApp, runCompareFixtures, runQuickFixture, findingTexts };
+/** Open the "Got an error message?" bar of a mode ('compare' | 'quick'). */
+async function openErr(page, mode) {
+  const open = page.locator(`#errPickOpen-${mode}`);
+  await open.waitFor({ state: 'attached' });
+  if (await open.isVisible()) await open.click();
+}
+
+/** Pick a known error by id from the list of buttons. */
+async function pickErr(page, mode, id) {
+  await openErr(page, mode);
+  const clear = page.locator(`#errPickClear-${mode}`);
+  if (await clear.isVisible()) await clear.click();
+  await page.locator(`#errPickCard-${mode} .err-choices [data-id="${id}"]`).click();
+}
+
+module.exports = { INDEX_PATH, INDEX_URL, openApp, runCompareFixtures, runQuickFixture, findingTexts, openErr, pickErr };

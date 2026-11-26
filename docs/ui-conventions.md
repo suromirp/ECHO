@@ -165,15 +165,26 @@ eye; they never count towards the verdict.
 
 Colleagues often open ECHO because bol's system or Transus returned an
 error for a message. One slim bar, in Compare right under the verdict (ORDRSP/DESADV and
-INVOIC) and in Quick check right above the Overview, has a dropdown of
-known errors and a text field to paste the error text. Pasted text is
+INVOIC) and in Quick check right above the Overview. It is closed until
+asked for: a small "Got an error message?" button, which opens one text
+field (paste or type) with the known errors as buttons under it. Pasting
+a recognised error text anywhere on a result, outside a field, opens it
+with that text; unrecognised pasted text is left alone. None of this
+needs the Transus helper.
+
+Without anything picked, a finding that a known error can come from says
+so itself in a quiet line under it ("Can lead to: …"). That line is drawn
+by CSS from a `data-may` attribute, so the finding's own text and
+everything copied from it stay unchanged; "can lead to" because ECHO
+doesn't know which error bol actually gave. With an error picked, the
+related findings are outlined in place and the other findings fade.
+
+The field replaces the former dropdown plus text field. Pasted text is
 matched by keywords (`matchErrorText`: lower case, quotes and extra spaces
 ignored, so IDs, numbers and quotes around the text don't matter; the
 entry whose keywords start earliest in the text wins). The card under it
 says:
 
-- what the error usually means (1-2 neutral sentences) and where to look
-  (segment / XML field);
 - **In this message**: links to the related findings in the current
   result (and the XML file banners); a click scrolls to the finding,
   opens a collapsed parent and flashes it. With none: "ECHO sees nothing
@@ -184,6 +195,9 @@ says:
 - values from the pasted text with 5+ digits (an EAN, order number,
   SSCC): "is in this message" (click jumps to the source) or "doesn't
   appear in this message";
+- what the error usually means (1-2 neutral sentences) and where to look
+  (segment / XML field), behind "What it means and where to look"; open
+  by itself when no related finding was found;
 - no match: "ECHO doesn't recognise this error text yet." and the whole
   list as buttons.
 

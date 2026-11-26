@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
-const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
+const { openApp, runCompareFixtures, runQuickFixture, openErr, pickErr } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'ordrsp');
 
@@ -765,8 +765,9 @@ test('an order number with extra text next to the digits is a Message check in b
   expect(buckets.diff.some(t => t.includes('Order number contains'))).toBe(false);
 
   // The pasted delivery error links to it.
+  await openErr(page, 'compare');
   await page.locator('#errPickTxt-compare').fill("Delivery error: Could not parse file: Cannot parse purchase order number for line 8712345610104: '8123456 REF27 ABCDEF' is not numeric");
-  await expect(page.locator('#errPickSel-compare')).toHaveValue('po-not-numeric');
+  await expect(page.locator('#errPick-compare')).toHaveAttribute('data-err', 'po-not-numeric');
   await expect(page.locator('#errPickCard-compare .err-related a')).toHaveCount(1);
 
   await openApp(page);

@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
-const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
+const { openApp, runCompareFixtures, runQuickFixture, openErr, pickErr } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'desadv');
 
@@ -1434,8 +1434,9 @@ test('an order number that is only text is a Message check, and its delivery err
   await expect(ov).toContainText('Promo action Supplier Bravo - giveaway');
   await expect(ov).not.toContainText('contains more than digits');
 
+  await openErr(page, 'quick');
   await page.locator('#errPickTxt-quick').fill("Delivery error: Packing list file 12345678 has 1 line(s) with non-numeric poNumber, blocking downstream publish: [ean=8712345610104, poNumber=Promo action Supplier Bravo - giveaway]");
-  await expect(page.locator('#errPickSel-quick')).toHaveValue('po-not-numeric');
+  await expect(page.locator('#errPick-quick')).toHaveAttribute('data-err', 'po-not-numeric');
 
   await openApp(page);
   await runCompareFixtures(page, f, f);

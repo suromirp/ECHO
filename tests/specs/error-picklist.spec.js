@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
-const { openApp, runCompareFixtures, runQuickFixture } = require('../helpers');
+const { openApp, runCompareFixtures, runQuickFixture, openErr, pickErr } = require('../helpers');
 
 const FIX = path.join(__dirname, '..', 'fixtures');
 const D = f => path.join(FIX, 'desadv', f);
@@ -23,7 +23,7 @@ test('Compare: picking an error from the dropdown links the related finding and 
   const card = page.locator('#errPickCard-compare');
   await expect(card).toBeHidden();
 
-  await page.locator('#errPickSel-compare').selectOption('po-not-found');
+  await pickErr(page, 'compare', 'po-not-found');
   await expect(card).toBeVisible();
   await expect(card).toContainText('"Purchase Order not found"');
   await expect(card).toContainText('What it usually means:');
@@ -46,14 +46,16 @@ test('pasted error text is matched by keywords, tolerant of IDs, numbers and quo
   await runCompareFixtures(page, D('order-number-missing-digit.sup.edi'), D('order-number-missing-digit.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
   const card = page.locator('#errPickCard-compare');
+  await openErr(page, 'compare');
   await page.locator('#errPickTxt-compare').fill('Delivery 4711 failed: “PURCHASE ORDER   not found” (700001) 2026-10-26 10:15');
   await expect(card).toContainText('"Purchase Order not found"');
   await expect(card).toContainText('matched from your text');
-  await expect(page.locator('#errPickSel-compare')).toHaveValue('po-not-found');
+  await expect(page.locator('#errPick-compare')).toHaveAttribute('data-err', 'po-not-found');
   await expect(card.locator('.err-related a')).toHaveCount(1);
   // The order number from the error text is looked up in the message.
   await expect(card).toContainText('700001 is in this message');
   await expect(card.locator('.clickable-val', { hasText: '700001' })).toHaveCount(1);
+  await openErr(page, 'compare');
   await page.locator('#errPickTxt-compare').fill('Purchase Order not found: 123456789');
   await expect(card).toContainText("123456789 doesn't appear in this message");
 
@@ -77,16 +79,19 @@ test('no match: says so plainly and offers the list; Clear resets', async ({ pag
   await openApp(page);
   await runQuickFixture(page, D('two-messages.edi'));
   const card = page.locator('#errPickCard-quick');
+  await openErr(page, 'quick');
   await page.locator('#errPickTxt-quick').fill('Something completely unrelated happened 42');
   await expect(card).toContainText("ECHO doesn't recognise this error text yet.");
-  await expect(page.locator('#errPickSel-quick')).toHaveValue('');
+  await expect(page.locator('#errPick-quick')).toHaveAttribute('data-err', '');
   const n = await page.evaluate(() => ERROR_CATALOGUE.length);
   await expect(card.locator('.err-choices button')).toHaveCount(n);
   await card.locator('.err-choices button', { hasText: 'SSCC not found' }).click();
   await expect(card).toContainText('"SSCC not found / pallet without SSCC"');
-  await expect(page.locator('#errPickSel-quick')).toHaveValue('sscc');
+  await expect(page.locator('#errPick-quick')).toHaveAttribute('data-err', 'sscc');
   await page.locator('#errPickClear-quick').click();
-  await expect(card).toBeHidden();
+  // Open and empty again: the known errors, one click each.
+  await expect(card.locator('.err-choices button')).toHaveCount(n);
+  await expect(page.locator('#errPick-quick')).toHaveAttribute('data-err', '');
   await expect(page.locator('#errPickTxt-quick')).toHaveValue('');
 });
 
@@ -96,7 +101,7 @@ test('Quick check: a clean message says honestly that ECHO sees nothing related'
   await expect(page.locator('#quickOverview .quick-summary')).toContainText('Nothing unusual found.');
   // The control sits above the overview.
   await expect(page.locator('#quickErrPick .err-pick')).toBeVisible();
-  await page.locator('#errPickSel-quick').selectOption('po-not-found');
+  await pickErr(page, 'quick', 'po-not-found');
   const card = page.locator('#errPickCard-quick');
   await expect(card).toContainText('ECHO sees nothing in this message that explains it; check in bol');
   await expect(card.locator('.err-related')).toHaveCount(0);
@@ -105,7 +110,7 @@ test('Quick check: a clean message says honestly that ECHO sees nothing related'
 test('Quick check: related findings for the packing reference and the price errors', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, D('packing-reference-too-long.sup.edi'));
-  await page.locator('#errPickSel-quick').selectOption('packref-too-long');
+  await pickErr(page, 'quick', 'packref-too-long');
   const card = page.locator('#errPickCard-quick');
   const link = card.locator('.err-related a', { hasText: 'Packing reference too long' });
   await expect(link).toHaveCount(1);
@@ -114,11 +119,12 @@ test('Quick check: related findings for the packing reference and the price erro
 
   await openApp(page);
   await runQuickFixture(page, O('no-price-anywhere.sup.edi'));
+  await openErr(page, 'quick');
   await page.locator('#errPickTxt-quick').fill('Unit price is unknown; item EAN: 8700000000018');
   await expect(card).toContainText('"Unit price is unknown"');
   await expect(card.locator('.err-related a', { hasText: 'none of the' })).toHaveCount(1);
   // An error that usually comes with another message type says so.
-  await page.locator('#errPickSel-quick').selectOption('packref-too-long');
+  await pickErr(page, 'quick', 'packref-too-long');
   await expect(card).toContainText('this error usually comes with a DESADV, and this is an ORDRSP');
 });
 
@@ -126,7 +132,7 @@ test('Compare: nothing related in a clean pair; INVOIC: the VAT error links the 
   await openApp(page);
   await runCompareFixtures(page, D('gtin-padding.sup.edi'), D('gtin-padding.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
-  await page.locator('#errPickSel-compare').selectOption('packref-too-long');
+  await pickErr(page, 'compare', 'packref-too-long');
   await expect(page.locator('#errPickCard-compare')).toContainText('ECHO sees nothing in this message that explains it; check the packing reference in the source system.');
 
   await runCompareFixtures(page, I('tax-missing-rate.sup.edi'), I('tax-missing-rate.bol.ubl.xml'));
@@ -134,6 +140,7 @@ test('Compare: nothing related in a clean pair; INVOIC: the VAT error links the 
   await expect(page.locator('#invoiceResults #errPick-compare')).toBeVisible();
   // Only one picker in Compare, even after an ORDRSP/DESADV result before.
   await expect(page.locator('#errPick-compare')).toHaveCount(1);
+  await openErr(page, 'compare');
   await page.locator('#errPickTxt-compare').fill('VAT percentage/amount is missing');
   const card = page.locator('#errPickCard-compare');
   await expect(card).toContainText('"VAT percentage/amount is missing"');
@@ -145,13 +152,14 @@ test('Copy report gets one "Error reported" line; Copy for Transus does not', as
   await runCompareFixtures(page, D('order-number-missing-digit.sup.edi'), D('order-number-missing-digit.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
   expect(await page.evaluate(() => reportTextWithError(lastReportText))).not.toContain('Error reported');
-  await page.locator('#errPickSel-compare').selectOption('po-not-found');
+  await pickErr(page, 'compare', 'po-not-found');
   let report = await page.evaluate(() => reportTextWithError(lastReportText));
   const lines = report.split('\n');
   expect(lines.filter(l => l.startsWith('Error reported:'))).toEqual(['Error reported: Purchase Order not found']);
   // After the context lines, before the findings.
   expect(lines.indexOf('Error reported: Purchase Order not found')).toBeLessThan(lines.indexOf(''));
   // Pasted text wins over the label: it's what the colleague actually got.
+  await openErr(page, 'compare');
   await page.locator('#errPickTxt-compare').fill('Purchase Order not found: 700001');
   await expect(page.locator('#errPickCard-compare')).toContainText('matched from your text');
   report = await page.evaluate(() => reportTextWithError(lastReportText));
@@ -200,4 +208,34 @@ test('rejection texts for order responses and despatch advices pick their own en
     'buyer-gln', 'buyer-gln', 'message-type', 'message-type', 'no-lines', 'invalid-ean',
     'invalid-quantity', 'invalid-quantity', 'packref-invalid', 'duplicate-reference', 'po-not-found',
     'packref-too-long']);
+});
+
+test('findings say which known error they can lead to; a pasted error marks them; the bar is closed until asked for', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, D('order-number-missing-digit.sup.edi'), D('order-number-missing-digit.bol.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const target = page.locator('#findings li', { hasText: 'Order number looks incomplete' });
+  // Said by the finding itself, without anything picked; its own text is untouched.
+  await expect(target).toHaveAttribute('data-may', /Purchase Order not found/);
+  expect(await target.innerText()).not.toContain('Can lead to');
+  // Closed: one small button, no field.
+  await expect(page.locator('#errPickOpen-compare')).toBeVisible();
+  await expect(page.locator('#errPickTxt-compare')).toBeHidden();
+  // Pasting a known error text anywhere on the page opens it and marks the finding.
+  await page.evaluate(() => {
+    const dt = new DataTransfer(); dt.setData('text', 'Purchase Order not found: 700001');
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('#errPick-compare')).toHaveAttribute('data-err', 'po-not-found');
+  await expect(page.locator('#errPickTxt-compare')).toHaveValue('Purchase Order not found: 700001');
+  await expect(target).toHaveClass(/\berr-hit\b/);
+  await expect(page.locator('#results')).toHaveClass(/\berr-focus\b/);
+  // Unknown text pasted outside a field is left alone.
+  await page.locator('#errPickClear-compare').click();
+  await expect(target).not.toHaveClass(/\berr-hit\b/);
+  await page.evaluate(() => {
+    const dt = new DataTransfer(); dt.setData('text', 'just some note 12345');
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('#errPickTxt-compare')).toHaveValue('');
 });
