@@ -468,6 +468,18 @@ part of the work, so the ZIP drop zone takes more than one package.
 - Nothing is uploaded: the packages are read from disk in the browser,
   same as a dropped file.
 
+## BigQuery query for invoices
+
+Settings has a field for the colleague's own BigQuery query, with
+`{invoice}` where the invoice number goes (`{invoices}` gives a quoted
+list for `IN (...)`). It is kept in this browser (localStorage) and never
+in the repo: table names are internal. Every invoice result, in Compare
+and Quick check, has "Copy BigQuery query": it fills in the invoice
+number(s) of the supplier message (one query per invoice for
+`{invoice}`) and copies it. ECHO never runs the query. Without a query
+the button opens the Settings field. The Transus helper keeps a copy of
+the query for its own button in the portal.
+
 ## Installed app
 
 On GitHub Pages Chrome and Edge offer to install ECHO (address bar icon,

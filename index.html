@@ -200,6 +200,7 @@
   .zq-pair>summary:hover,.zq-pair[open]>summary{color:var(--text);}
   .zq-pair-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 6px;}
   .zq-pair-row select{min-width:0;max-width:320px;flex:1 1 200px;padding:6px 8px;font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:8px;}
+  .bq-query{display:block;width:100%;min-height:90px;margin:8px 0 4px;font:12px/1.45 var(--mono);color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:8px;resize:vertical;}
   .pkg-help-text{margin:10px 0 0;max-width:68ch;}
   .pkg-help-steps{margin:8px 0;padding-left:20px;color:var(--text);}
   .pkg-help-steps li{margin:3px 0;}
@@ -903,7 +904,7 @@
     <div id="invoiceResults" class="hidden"></div>
   </section>
 
-  <details class="zip-more hidden" id="zipMore"><summary><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>Settings</summary>
+  <details class="zip-more" id="zipMore"><summary><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>Settings</summary>
   <div class="zip-tools">
     <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer."><svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg>Watch a download folder…</button>
     <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
@@ -915,6 +916,11 @@
     <div class="zq-pair-row"><select id="zqPairA" aria-label="First message"></select><span class="dim">against</span><select id="zqPairB" aria-label="Second message"></select><button class="btn ghost" id="zqPairBtn" type="button">Show what differs in build-up</button></div>
     <div class="dim zq-pair-hint">Puts the supplier's own files from two packages side by side: which building blocks (segment and qualifier, or XML element) one has and the other doesn't. Values are not compared.</div>
     <div id="zqPairOut"></div>
+  </details>
+  <details class="zq-pair" id="bqSetup"><summary>BigQuery query for invoices</summary>
+    <div class="pkg-help-text">Paste the query you run for an invoice, with <code>{invoice}</code> where the invoice number goes. With several invoices in one message you get one query per invoice; <code>{invoices}</code> instead gives them as one list, for <code>IN ({invoices})</code>. The query is kept in this browser only, and ECHO never runs it: the button on an invoice copies it, you paste it in BigQuery.</div>
+    <textarea id="bqQuery" class="bq-query" spellcheck="false" aria-label="BigQuery query for invoices" placeholder="SELECT … WHERE invoice_number = '{invoice}'"></textarea>
+    <div class="dim" id="bqState"></div>
   </details>
   <details class="zq-pair hidden" id="pkgHelp"><summary>Open Transus messages here in one click</summary>
     <div class="pkg-help-text">A small browser helper adds a button in the Transus portal that sends a message package straight to this page, so you don't have to download and drag it. It runs on your own computer; nothing is sent anywhere else.</div>
@@ -1271,6 +1277,7 @@ function quickFormat(){
           if(invs.length===1)return `<div class="panel"><h2>Overview</h2>${body}</div>`;
           return `<details class="inv-det"${i===0?' open':''}><summary>Invoice ${esc(inv.number||('#'+(i+1)))} — ${inv.docType==='credit'?'credit note':'invoice'}${inv.date?' · '+esc(showDate(inv.date)):''}</summary><div class="panel">${body}</div></details>`;
         }).join('');
+        ovHtml+=`<div class="actions bq-actions">${bqButtonHtml(raw)}</div>`;
         if(invs.length>1)ovNote=`${invs.length} invoices found in this file.`;
       }else if(invs.xmlError){xmlErr=invs.xmlError;ovHtml=xmlErrPanel(xmlErr);}
       else ovHtml=`<div class="panel"><h2>Overview</h2><div class="empty-state">This looks like an INVOIC, but no invoice could be extracted from it.</div></div>`;
@@ -8992,7 +8999,7 @@ function renderInvoiceCompare(res,notes){
   const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
     +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
   h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${findingsListHtml(res.findings,'ifc')}</ul>${worthCheckingGroupHtml(wcHtml,'ifc-wc')}`;
-  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
+  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button>${bqButtonHtml(cstate.sup&&cstate.sup.text)}<button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
 
   /* header: collapsed by default, the summary says how many fields differ */
   const hdrDiffer=res.hdr.filter(r=>r.status==='diff').length;
@@ -9508,6 +9515,53 @@ document.getElementById('zipQueue').addEventListener('click',e=>{
   if(e.target.closest('.zq-check')){zipQCheckAll();return;}
   const b=e.target.closest('.zq-item');if(b&&!zipQBusy)zipQOpen(zipQ[+b.dataset.i]);
 });
+/* ---- BigQuery query for invoices ----
+   A colleague's own query, kept in this browser (localStorage), never in
+   the repo: table names are internal. ECHO fills in the invoice number(s)
+   and copies it; it never runs it. {invoice}: one query per invoice;
+   {invoices}: one quoted list. Numbers are escaped for a SQL string. */
+const BQ_KEY='echo.bqInvoiceQuery';
+function bqTpl(){try{return localStorage.getItem(BQ_KEY)||'';}catch(e){return '';}}
+function bqFill(tpl,nums){
+  const q=n=>String(n).replace(/[\\']/g,'\\$&');
+  nums=[...new Set((nums||[]).map(n=>String(n||'').trim()).filter(Boolean))];
+  if(!tpl||!nums.length)return '';
+  let t=tpl.replace(/\{invoices\}/g,nums.map(n=>`'${q(n)}'`).join(', '));
+  if(!/\{invoice\}/.test(t))return t;
+  if(nums.length===1)return t.replace(/\{invoice\}/g,q(nums[0]));
+  const one=t.trim().replace(/;\s*$/,'');
+  return nums.map(n=>one.replace(/\{invoice\}/g,q(n))+';').join('\n\n');
+}
+function bqNumbers(raw){try{return parseInvoices(raw||'').map(i=>i.number).filter(Boolean);}catch(e){return [];}}
+function bqButtonHtml(raw){
+  const nums=bqNumbers(raw);
+  if(!nums.length)return '';
+  return `<button type="button" class="btn ghost bq-btn" data-inv="${esc(nums.join('\n'))}" onclick="bqCopy(this)" title="Copies your BigQuery query with ${nums.length===1?'this invoice number':'these invoice numbers'} filled in. Set the query once in Settings.">Copy BigQuery query</button>`;
+}
+function bqCopy(btn){
+  const tpl=bqTpl(),nums=(btn.dataset.inv||'').split('\n');
+  if(!tpl){
+    const more=document.getElementById('zipMore'),box=document.getElementById('bqSetup');
+    more.open=true;box.open=true;
+    box.scrollIntoView({block:'center'});
+    document.getElementById('bqQuery').focus();
+    document.getElementById('bqState').textContent='No query yet. Paste yours here once; after that the button copies it filled in.';
+    return;
+  }
+  copyTextToClipboard(bqFill(tpl,nums),btn);
+}
+(function(){
+  const ta=document.getElementById('bqQuery'),st=document.getElementById('bqState');
+  ta.value=bqTpl();
+  const say=()=>{const v=ta.value.trim();st.textContent=!v?'':/\{invoices?\}/.test(v)?'Saved in this browser.':'Saved, but there is no {invoice} or {invoices} in it yet.';};
+  say();
+  ta.addEventListener('input',()=>{
+    try{if(ta.value.trim())localStorage.setItem(BQ_KEY,ta.value);else localStorage.removeItem(BQ_KEY);}catch(e){}
+    say();
+    // The Transus helper keeps a copy for its own button in the portal.
+    document.dispatchEvent(new CustomEvent('echo-bq-query'));
+  });
+})();
 /* ---- Installed app (PWA): files opened with ECHO ----
    On GitHub Pages ECHO can be installed (manifest.webmanifest, sw.js).
    Opened as a local file, none of this runs and the page works as before.
