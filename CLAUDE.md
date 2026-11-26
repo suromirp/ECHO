@@ -23,7 +23,11 @@ need two messages to compare are Compare-only. Every time this project
 shipped a check in only one mode, it was an oversight, not a choice — when
 adding a check, explicitly ask which category it's in.
 
-Distribution: public repo `suromirp/ECHO`, GitHub Pages.
+Distribution: public repo `suromirp/ECHO`, GitHub Pages. On Pages ECHO
+is also an installable app: `manifest.webmanifest`, `sw.js` and `icons/`
+sit next to `index.html`. They only add install, offline and "open with
+ECHO"; `index.html` must keep working on its own as a local file. A new
+file ECHO needs offline goes into `FILES` in `sw.js`.
 
 ## Seven rules — do not deviate
 

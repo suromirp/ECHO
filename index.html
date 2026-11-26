@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ECHO — EDI inspector</title>
+<meta name="theme-color" content="#0a0e1a">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0e1a'/%3E%3Ccircle cx='32' cy='32' r='4.2' fill='%239EBDF4'/%3E%3Cpath d='M40 24 Q44 32 40 40' fill='none' stroke='%239EBDF4' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M47.5 17.5 Q55 32 47.5 46.5' fill='none' stroke='%239EBDF4' stroke-width='4' stroke-linecap='round' opacity='.65'/%3E%3Cpath d='M24 24 Q20 32 24 40' fill='none' stroke='%239EBDF4' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M16.5 17.5 Q9 32 16.5 46.5' fill='none' stroke='%239EBDF4' stroke-width='4' stroke-linecap='round' opacity='.65'/%3E%3C/svg%3E">
 <style>
   :root{
@@ -9506,6 +9508,30 @@ document.getElementById('zipQueue').addEventListener('click',e=>{
   if(e.target.closest('.zq-check')){zipQCheckAll();return;}
   const b=e.target.closest('.zq-item');if(b&&!zipQBusy)zipQOpen(zipQ[+b.dataset.i]);
 });
+/* ---- Installed app (PWA): files opened with ECHO ----
+   On GitHub Pages ECHO can be installed (manifest.webmanifest, sw.js).
+   Opened as a local file, none of this runs and the page works as before.
+   "Open with ECHO" on a file hands it over through launchQueue: packages
+   go to the package list, one loose message to Quick check. Two loose
+   files are not compared: which one is the supplier's can't be told
+   from the file alone, so the first opens in Quick check and the status
+   says how to compare. */
+function openLaunchedFiles(files){
+  files=(files||[]).filter(Boolean);
+  if(!files.length)return;
+  const zips=files.filter(f=>/\.zip$/i.test(f.name));
+  if(zips.length){showTab('compare');zipTake(zips);return;}
+  showTab('quick');
+  quickTakeFile(files[0]);
+  if(files.length>1)setTimeout(()=>quickSetStatus(`Opened ${files[0].name}. To compare two files, drop them on the Supplier and bol boxes in Compare.`),50);
+}
+if('launchQueue' in window)window.launchQueue.setConsumer(async p=>{
+  if(!p||!p.files||!p.files.length)return;
+  const files=await Promise.all(p.files.map(h=>h.getFile().catch(()=>null)));
+  openLaunchedFiles(files);
+});
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 function zipTake(files){
   const zips=files.filter(f=>/\.zip$/i.test(f.name));
   // One ZIP on its own just opens. A second, different one arriving later

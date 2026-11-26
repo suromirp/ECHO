@@ -467,3 +467,20 @@ part of the work, so the ZIP drop zone takes more than one package.
   permission question.
 - Nothing is uploaded: the packages are read from disk in the browser,
   same as a dropped file.
+
+## Installed app
+
+On GitHub Pages Chrome and Edge offer to install ECHO (address bar icon,
+or menu > Install). The installed app has its own window, opens without
+a network, and is offered under "Open with" for .zip, .xml, .edi,
+.edifact, .dat and .txt files. Opened files land as if dropped: packages
+in the package list (Compare), one loose message in Quick check. Two
+loose files are not compared: which is the supplier's can't be told from
+the file alone, so the first opens in Quick check and the status says to
+use the Supplier and bol boxes.
+
+The service worker is network first: a new version on Pages is used as
+soon as it is reachable, the cached copy only when offline, so there is
+no "reload for the new version" step. It caches ECHO's own files only,
+never a message. Opened as a local file, none of this runs.
+
