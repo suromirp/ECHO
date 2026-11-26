@@ -189,6 +189,18 @@
   .zq-note{font-size:11.5px;color:var(--text-faint);white-space:nowrap;}
   .zq-supplier{font-family:var(--sans);font-size:12.5px;color:var(--text);margin-right:10px;}
   .pkg-from{display:inline-block;white-space:nowrap;}
+  .zq-find{flex:1 1 180px;max-width:340px;margin-left:auto;padding:4px 10px;font:inherit;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:999px;}
+  .zq-find:focus{outline:none;border-color:var(--accent);}
+  .zq-none{padding:10px 12px;font-size:12.5px;color:var(--text-dim);}
+  .zq-pair{margin-top:8px;font-size:12.5px;color:var(--text-dim);}
+  .zq-pair>summary{cursor:pointer;width:max-content;color:var(--text-faint);font-size:12px;font-weight:400;padding:2px 4px;border:0;background:none;box-shadow:none;}
+  .zq-pair-tags .seg{padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--panel-2);}
+  .zq-pair>summary:hover,.zq-pair[open]>summary{color:var(--text);}
+  .zq-pair-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 6px;}
+  .zq-pair-row select{min-width:0;max-width:320px;flex:1 1 200px;padding:6px 8px;font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:8px;}
+  .zq-pair-part{margin:10px 0 4px;color:var(--text);}
+  .zq-pair-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  #zqPairOut{margin-top:8px;}
   .pkg-status{font-family:var(--sans);color:var(--text-dim);margin-left:8px;}
   .pkg-link{font-family:var(--sans);color:var(--accent);margin-left:8px;white-space:nowrap;}
   .zq-lv{color:var(--text-dim);}
@@ -536,7 +548,7 @@
   .import-sum .role.sup{color:var(--elem);}
   #importPanel.collapsed{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:11px 16px;animation:fadeIn .25s ease-out backwards;}
   #importPanel.collapsed>h2,#importPanel.collapsed>.zip-drop,#importPanel.collapsed>.sep-or,#importPanel.collapsed>.drops,#importPanel.collapsed #orderHintCompare{display:none;}
-  #importPanel.collapsed>.zip-queue{flex:1 1 100%;margin:0;}
+  #importPanel.collapsed>.zip-queue,#importPanel.collapsed>.zq-pair{flex:1 1 100%;margin:0;}
   #importPanel.collapsed>.order-opt,#importPanel.collapsed>.actions{margin:0;}
   #importPanel.collapsed>.status{flex:1 1 100%;margin:0;min-height:0;font-size:12px;}
   #importPanel.collapsed .btn{padding:6px 12px;min-height:32px;font-size:12.5px;}
@@ -747,6 +759,11 @@
         <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
       <div class="zip-queue hidden" id="zipQueue"></div>
+      <details class="zq-pair hidden" id="zqPair"><summary>Two messages from one supplier</summary>
+        <div class="zq-pair-row"><select id="zqPairA" aria-label="First message"></select><span class="dim">against</span><select id="zqPairB" aria-label="Second message"></select><button class="btn ghost" id="zqPairBtn" type="button">Show what differs in build-up</button></div>
+        <div class="dim zq-pair-hint">Puts the supplier's own files from two packages side by side: which building blocks (segment and qualifier, or XML element) one has and the other doesn't. Values are not compared.</div>
+        <div id="zqPairOut"></div>
+      </details>
       <div class="import-sum hidden" id="importSum"><span id="importSumText"></span><button class="btn ghost" id="importChangeBtn" type="button" title="Show the import block again to load other files"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg>Change files</button></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
@@ -9226,14 +9243,103 @@ const zipQ=[];let zipQActive=null,zipSolo=null,zipLastText='';
 // What kind of message a package holds, shown in front of its name once
 // it has been read, so the list says more than a row of message IDs.
 const ZQ_KIND={ORDRSP:'Order response',DESADV:'Despatch advice',INVOIC:'Invoice',ORDERS:'Order'};
+/* Search across the whole list: the raw text of every package is kept
+   (lower case) once it has been peeked at, so an EAN, SSCC or number
+   typed here leaves only the packages that contain it. */
+let zipQFind='';
+function zipQShown(){
+  const f=zipQFind.trim().toLowerCase();
+  return f.length<3?zipQ:zipQ.filter(q=>q.hay===undefined||q.hay.includes(f));
+}
 function zipQRender(){
   const box=document.getElementById('zipQueue');
   box.classList.toggle('hidden',!zipQ.length);
-  const check=zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'';
-  box.innerHTML=`<div class="zq-head"><span>Packages (${zipQ.length})</span>${check}</div><div class="zq-list">`+zipQ.map((q,i)=>{
+  // The list is redrawn whole; put the cursor back where it was.
+  const foc=document.activeElement,inFind=!!foc&&foc.id==='zqFind',pos=inFind?foc.selectionStart:0,inList=!inFind&&box.contains(foc);
+  const shown=zipQShown(),many=zipQ.length>1;
+  const check=many&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking…':'Check all'}</button>`:'';
+  const find=many?`<input type="search" class="zq-find" id="zqFind" value="${esc(zipQFind)}" placeholder="Find an EAN, SSCC or number in all packages" aria-label="Find in all packages" title="Shows only the packages that contain what you type (3 characters or more).">`:'';
+  box.innerHTML=`<div class="zq-head"><span title="${many?'Alt+↑ and Alt+↓ open the previous and next package. With a package selected, ↑ and ↓ do too.':''}">Packages (${shown.length<zipQ.length?shown.length+' of '+zipQ.length:zipQ.length})</span>${find}${check}</div><div class="zq-list">`+(shown.length?'':`<div class="zq-none">No package contains “${esc(zipQFind.trim())}”.</div>`)+zipQ.map((q,i)=>{
+    if(!shown.includes(q))return '';
     const lv=ZQ_LEVEL[q.level];
-    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">\u25cf</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${(pkgMeta[q.name]||{}).supplier?`<span class="zq-supplier">${esc(pkgMeta[q.name].supplier)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
+    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' · '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">●</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${(pkgMeta[q.name]||{}).supplier?`<span class="zq-supplier">${esc(pkgMeta[q.name].supplier)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
   }).join('')+'</div>';
+  if(inFind){const f=document.getElementById('zqFind');if(f){f.focus();try{f.setSelectionRange(pos,pos);}catch(err){}}}
+  else if(inList){const a=box.querySelector('.zq-item.active');if(a)a.focus({preventScroll:true});}
+  zqPairSync();
+}
+/* ---- Two messages from one supplier: what is each built from? ----
+   Not a transformation check. It takes the supplier's own file from two
+   packages and lists the building blocks one has and the other doesn't:
+   segment + qualifier for EDIFACT (DTM+137, RFF+ON), element path for XML.
+   Values are never compared, so two different orders can be put side by
+   side to see what the supplier started or stopped sending. */
+const MSG_SHAPE_PLAIN=new Set(['LIN','CPS','PAC','SEQ']);
+function msgShape(raw){
+  const m=new Map(),put=k=>m.set(k,(m.get(k)||0)+1);
+  if(isXmlText(raw)&&!isSegmentXml(raw)){
+    const doc=new DOMParser().parseFromString(prepareXmlText(raw).text,'application/xml');
+    if(doc.getElementsByTagName('parsererror').length)return null;
+    const walk=(el,path)=>{const p=path?path+' / '+el.localName:el.localName,kids=[...el.children];
+      if(kids.length)kids.forEach(k=>walk(k,p));else if(el.textContent.trim())put(p);};
+    walk(doc.documentElement,'');
+    return {kind:'XML',m};
+  }
+  const {segs,delims}=splitSegments(isSegmentXml(raw)?segmentXmlToEdifact(raw):raw);
+  if(!segs.some(x=>/^UNH/.test(x)))return null;
+  segs.forEach(x=>{
+    const el=splitEsc(x,delims.elem,delims.rel),tag=el[0];
+    if(!/^[A-Z]{3}$/.test(tag)||/^UN[ABHTZ]$/.test(tag))return;
+    const q=splitEsc(el[1]||'',delims.comp,delims.rel)[0];
+    put(MSG_SHAPE_PLAIN.has(tag)||!/^[A-Z0-9]{1,3}$/.test(q)?tag:tag+delims.elem+q);
+  });
+  return {kind:'EDIFACT',m};
+}
+function msgShapeDiff(a,b){
+  const only=(x,y)=>[...x.m.keys()].filter(k=>!y.m.has(k)).sort();
+  return {onlyA:only(a,b),onlyB:only(b,a),both:[...a.m.keys()].filter(k=>b.m.has(k)).length};
+}
+function zqPairLabel(q){return [q.kind,(pkgMeta[q.name]||{}).supplier,q.name.replace(/\.zip$/i,'')].filter(Boolean).join(' · ');}
+function zqPairSync(){
+  const box=document.getElementById('zqPair');
+  box.classList.toggle('hidden',zipQ.length<2);
+  const sig=zipQ.map(zqPairLabel).join('|');
+  if(box.dataset.sig===sig)return;
+  box.dataset.sig=sig;
+  ['zqPairA','zqPairB'].forEach((id,n)=>{
+    const sel=document.getElementById(id),was=sel.value;
+    sel.innerHTML=zipQ.map(q=>`<option value="${esc(q.key)}">${esc(zqPairLabel(q))}</option>`).join('');
+    sel.value=zipQ.some(q=>q.key===was)?was:((zipQ[n]||zipQ[0]||{}).key||'');
+  });
+}
+function zqPairRun(){
+  const out=document.getElementById('zqPairOut');
+  const pick=id=>zipQ.find(q=>q.key===document.getElementById(id).value);
+  const A=pick('zqPairA'),B=pick('zqPairB');
+  const say=t=>{out.innerHTML=`<div class="dim">${t}</div>`;};
+  if(!A||!B)return;
+  if(A===B){say('Pick two different packages.');return;}
+  if(A.supText===undefined||B.supText===undefined){say('Still reading these packages. Try again in a moment.');return;}
+  let a=null,b=null;
+  try{a=msgShape(A.supText);b=msgShape(B.supText);}catch(err){a=b=null;}
+  if(!a||!b){say('ECHO couldn’t read the build-up of one of these two messages.');return;}
+  if(a.kind!==b.kind){say(`These two are in different formats (${a.kind} and ${b.kind}), so their build-up can’t be put side by side.`);return;}
+  const d=msgShapeDiff(a,b);
+  const tags=(arr,m)=>arr.map(k=>`<span class="seg">${esc(k)}${m.get(k)>1?' ×'+m.get(k):''}</span>`).join(' ');
+  const part=(label,arr,m)=>arr.length?`<div class="zq-pair-part"><strong>${label} (${arr.length})</strong><div class="zq-pair-tags">${tags(arr,m)}</div></div>`:'';
+  out.innerHTML=(d.onlyA.length||d.onlyB.length)
+    ?part('Only in the first message',d.onlyA,a.m)+part('Only in the second message',d.onlyB,b.m)+`<div class="dim">${d.both} building block${d.both===1?' is':'s are'} in both. Values are not compared.</div>`
+    :`<div class="dim">Both messages are built from the same ${d.both} building blocks. Values are not compared.</div>`;
+}
+document.getElementById('zqPairBtn').addEventListener('click',zqPairRun);
+// Previous / next package from the keyboard.
+let zipQStepping=false;
+async function zipQStep(d){
+  if(zipQBusy||zipQStepping)return;
+  const list=zipQShown(),i=list.findIndex(q=>q.key===zipQActive),n=i<0?list[0]:list[i+d];
+  if(!n)return;
+  zipQStepping=true;
+  try{await zipQOpen(n);}finally{zipQStepping=false;}
 }
 /* What a package came out as, read from the result that is on screen
    right after it was compared: the same level as the verdict card, so the
@@ -9268,15 +9374,18 @@ function zipQAdd(items,front){
 async function zipQPeek(items){
   if(typeof JSZip==='undefined')return;
   for(const q of items){
-    if(q.kind)continue;
+    if(q.hay!==undefined)continue;
     try{
       const zip=await JSZip.loadAsync(q.file||await q.handle.getFile());const es=[];
       zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))es.push({path,entry});});
       const e=es.find(x=>!/bol/.test(x.path.toLowerCase().split('/')[0]))||es[0];
-      if(!e||q.kind)continue;
-      q.kind=ZQ_KIND[detectMsgType(decodeFileBytes(await e.entry.async('uint8array')))]||'';
-      if(q.kind)zipQRender();
-    }catch(err){}
+      if(!e){q.hay='';continue;}
+      const texts=[];
+      for(const x of es)texts.push(x===e?(q.supText=decodeFileBytes(await x.entry.async('uint8array'))):decodeFileBytes(await x.entry.async('uint8array')));
+      q.hay=texts.join('\n').toLowerCase();
+      if(!q.kind)q.kind=ZQ_KIND[detectMsgType(q.supText)]||'';
+      zipQRender();
+    }catch(err){q.hay='';}
   }
 }
 async function zipQOpen(q,quiet){
@@ -9292,6 +9401,15 @@ async function zipQOpen(q,quiet){
     zipQRender();
   }catch(err){cSetStatus(`Couldn\u2019t open "${q.name}": ${err.message}`,true);}
 }
+document.getElementById('zipQueue').addEventListener('input',e=>{if(e.target.id==='zqFind'){zipQFind=e.target.value;zipQRender();}});
+document.getElementById('zipQueue').addEventListener('keydown',e=>{
+  if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!e.altKey&&e.target.closest('.zq-item')){e.preventDefault();zipQStep(e.key==='ArrowDown'?1:-1);}
+});
+document.addEventListener('keydown',e=>{
+  if(!e.altKey||e.ctrlKey||e.metaKey||(e.key!=='ArrowDown'&&e.key!=='ArrowUp'))return;
+  if(zipQ.length<2||!document.getElementById('viewCompare').classList.contains('active')||/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;
+  e.preventDefault();zipQStep(e.key==='ArrowDown'?1:-1);
+});
 document.getElementById('zipQueue').addEventListener('click',e=>{
   if(e.target.closest('.zq-check')){zipQCheckAll();return;}
   const b=e.target.closest('.zq-item');if(b&&!zipQBusy)zipQOpen(zipQ[+b.dataset.i]);

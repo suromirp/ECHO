@@ -176,3 +176,64 @@ test('package details handed over with the file are shown; a foreign link is dro
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
   await expect(page.locator('#importSum .pkg-link')).toHaveCount(0);
 });
+
+// Three ways to work through a longer list: step with the keyboard, search
+// every package for a value, and (tucked away) put two messages from one
+// supplier side by side to see what each is built from.
+test('package list: keyboard steps, search across packages, build-up of two messages', async ({ page }) => {
+  const dir = path.join(__dirname, '..', 'fixtures', 'zip');
+  await openApp(page);
+  await page.locator('#zipInput').setInputFiles([path.join(dir, 'Message_ID_100000001.zip'), path.join(dir, 'utf16-pair.zip'), path.join(dir, 'order-pair.zip')]);
+  const items = page.locator('#zipQueue .zq-item');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toHaveClass(/active/);
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+
+  // Alt+Down opens the next package, Alt+Up goes back.
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect(items.nth(1)).toHaveClass(/active/);
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect(items.nth(0)).toHaveClass(/active/);
+  // With a row selected, the plain arrows do the same.
+  await items.nth(0).click();
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toHaveClass(/active/);
+
+  // Search: a value from the first package leaves only that package, and
+  // the field keeps the cursor while the list is redrawn.
+  const sscc = await page.evaluate(() => (/\d{18}/.exec(zipQ[0].hay) || [''])[0]);
+  expect(sscc).toHaveLength(18);
+  const find = page.locator('#zqFind');
+  await find.click();
+  await page.keyboard.type(sscc.slice(0, 12));
+  await expect(find).toBeFocused();
+  await expect(find).toHaveValue(sscc.slice(0, 12));
+  await expect(items).toHaveCount(await page.evaluate(v => zipQ.filter(q => q.hay.includes(v)).length, sscc.slice(0, 12)));
+  await expect(items.first()).toContainText('Message_ID_100000001');
+  await find.fill('zzzz-not-there');
+  await expect(items).toHaveCount(0);
+  await expect(page.locator('#zipQueue .zq-none')).toContainText('No package contains');
+  await find.fill('');
+  await expect(items).toHaveCount(3);
+
+  // Build-up: closed by default; different formats are said so, not diffed.
+  const pair = page.locator('#zqPair');
+  await expect(pair).toBeVisible();
+  await expect(page.locator('#zqPairBtn')).toBeHidden();
+  await pair.locator('summary').click();
+  await page.locator('#zqPairBtn').click();
+  const kinds = await page.evaluate(() => [msgShape(zipQ[0].supText).kind, msgShape(zipQ[1].supText).kind]);
+  await expect(page.locator('#zqPairOut')).toContainText(kinds[0] === kinds[1] ? 'Values are not compared' : 'different formats');
+
+  // The comparison itself: presence of segment + qualifier, never values.
+  const d = await page.evaluate(() => {
+    const a = "UNH+1+DESADV:D:96A:UN'BGM+351+A1+9'DTM+137:20260101:102'DTM+132:20260105:102'RFF+ON:111'CPS+1'LIN+1++1111111111116:SRV'QTY+12:5'UNT+8+1'";
+    const b = "UNH+1+DESADV:D:96A:UN'BGM+351+B2+9'DTM+137:20260201:102'RFF+ON:222'CPS+1'PAC+1'LIN+1++2222222222222:SRV'QTY+12:9'LIN+2++3333333333338:SRV'QTY+12:1'UNT+10+1'";
+    return msgShapeDiff(msgShape(a), msgShape(b));
+  });
+  expect(d.onlyA).toEqual(['DTM+132']);
+  expect(d.onlyB).toEqual(['PAC']);
+  expect(d.both).toBe(6);
+});

@@ -409,6 +409,20 @@ part of the work, so the ZIP drop zone takes more than one package.
   the Transus portal. "Get the order from Transus" is only visible when
   such a helper announced itself (`data-pkg-bridge` on `<html>`) and the
   message on screen has an order number and no order added yet.
+- **Working through a longer list**: Alt+↑ / Alt+↓ open the previous and
+  next package (plain ↑ / ↓ when a row is selected; the plain keys are
+  left alone elsewhere because they scroll the page). With more than one
+  package the list header has a search field: three characters or more
+  leave only the packages whose raw text contains them, so an EAN, SSCC
+  or number is found across the whole list.
+- **Two messages from one supplier** (closed line under the list): takes
+  the supplier's own file from two packages and lists the building blocks
+  one has and the other doesn't: segment + qualifier for EDIFACT, element
+  path for XML. This is deliberately not a transformation check and not a
+  finding: values are never compared, nothing is counted in a verdict,
+  and the wording stays "only in the first / second message". It answers
+  "what did this supplier start or stop sending", nothing more. Two
+  different formats are said to be different, not diffed.
 - **Marks in the list**: a package that has been compared carries the
   level of its verdict card (✓, !, ⚠), read from that card so the two
   can't disagree. A pair that gave no comparison shows `·`, a ZIP with
