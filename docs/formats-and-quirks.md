@@ -619,6 +619,16 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
 - **UNB test indicator** (`UNB` element 11 = 1, seen on a real invoice):
   Good to know in all three types, Quick check and the supplier side in
   Compare (`checkTestFlag`, key `unb-test`).
+- **Header field in the supplier message, not in bol's output** (ORDRSP,
+  DESADV): the header table showed only a "·" and Compare said "all
+  compared values match" with a packing reference, an arrival date or a
+  GLN gone. Now one grouped Transformation difference (`lostHeaderFields`,
+  key `header-lost`) for packing reference, document number and date,
+  despatch date, expected delivery and the SU/BY/DP GLNs. The order number
+  keeps its own finding; "Sent by" (UNB) is left out. Swept over the real
+  ORDRSP/DESADV pairs at hand: no hits, so Transus carries these normally.
+  INVOIC needs nothing new: its header rows already count a one-sided
+  value as a difference, except the ones UBL has no place for.
 - **Empty envelope references** (same test ORDRSP): `UNB` without an
   interchange reference, `UNH++…`, `UNT+47'` and `UNZ+1'`. Message check on
   EDIFACT messages (`checkEnvelopeRefs`, key `envelope-ref`); in Compare the

@@ -1516,3 +1516,25 @@ test('an arrival far after the message date is a Message check; the UNB test ind
   await expect(page.locator('#quickOverview')).not.toContainText('days after the message date');
   await expect(page.locator('#quickOverview')).not.toContainText('Marked as a test message');
 });
+
+// Header values the supplier sends and bol's output lacks: one grouped
+// Transformation difference, and no "all compared values match".
+test('header fields missing from bol\'s output are one Transformation difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'header-fields-lost.sup.edi'), path.join(FIX, 'header-fields-lost.bol.edi'));
+  const buckets = await findingsByCategory(page);
+  const hit = buckets.diff.filter(t => t.includes("In the supplier message, not in bol's output"));
+  expect(hit).toHaveLength(1);
+  expect(hit[0]).toContain('(3 header fields)');
+  expect(hit[0]).toContain('Packing reference: PACK7303');
+  expect(hit[0]).toContain('Expected delivery: 23-11-2026');
+  expect(hit[0]).toContain('Delivery address GLN: 8700000000002');
+  expect(buckets.diff.some(t => t.includes('All compared values match'))).toBe(false);
+
+  // Same file on both sides: nothing lost.
+  await openApp(page);
+  const f = path.join(FIX, 'header-fields-lost.sup.edi');
+  await runCompareFixtures(page, f, f);
+  const same = await findingsByCategory(page);
+  expect(same.diff.some(t => t.includes('not in bol'))).toBe(false);
+});

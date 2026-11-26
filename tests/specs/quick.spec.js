@@ -61,6 +61,8 @@ test('Quick check status line points down to the overview', async ({ page }) => 
 test('one-line XML is pretty-printed for display, and jump-to-source lands on the value', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'desadv', 'transusxml-messages.sup.xml'));
+  // Wait for the rendered source before counting: count() doesn't wait.
+  await expect(page.locator('#quickOutput .edi-row').nth(20)).toBeAttached();
   expect(await page.locator('#quickOutput .edi-row').count()).toBeGreaterThan(20);
   await page.locator('#quickOverview .pallet-det .clickable-val', { hasText: '387000000000000019' }).first().click();
   const hl = page.locator('#quickOutput .src-hl');

@@ -434,6 +434,10 @@ actual test fixtures, don't just keep this list as prose:
 - **DESADV**: `arrival-far-ahead-test-flag.edi`: arrival 115 days after
   the message date is one Message check; the UNB test indicator is Good to
   know; a normal DESADV shows neither.
+- **DESADV**: `header-fields-lost.*`: packing reference, expected
+  delivery and delivery GLN missing from bol's output are one grouped
+  Transformation difference, without "all compared values match"; the same
+  file on both sides stays quiet.
 - **All types**: a party GLN that isn't a number
   (`tests/fixtures/ordrsp/gln-not-numeric.edi`, `NAD+DP+UNKNOWN`) is one
   Message check in both modes; a normal message stays quiet.

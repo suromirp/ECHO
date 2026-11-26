@@ -3227,6 +3227,29 @@ function valueTagsHtml(values,jumpCall,what){
   const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
   return values.length>20?`<details><summary>Show ${values.length} ${what}</summary>${ul}</details>`:ul;
 }
+/* Header fields the supplier message carries and bol's output doesn't. The
+   header table only shows a "·" for those, and Compare said "all compared
+   values match" with a packing reference, an arrival date and two GLNs
+   gone from bol's output. The order number has its own finding
+   (compareOrderLoss); "Sent by" (UNB) is rewritten by the transformation.
+   Only when bol's output is EDIFACT, where each of these has a segment. */
+function lostHeaderFields(sup,bol,type){
+  if(!sup||!bol||bol.format!=='EDIFACT')return [];
+  const isD=type==='DESADV';
+  const gln=r=>f=>f.parties&&f.parties[r]&&f.parties[r].gln;
+  const rows=[
+    isD&&['Packing reference',f=>f.billOfLadingRef||(f.deliveryNoteRefs&&f.deliveryNoteRefs[0])||null],
+    ['Document number',f=>f.docNumber],
+    ['Document date',f=>f.docDate,true],
+    isD&&['Despatch date',f=>f.despatchDate,true],
+    isD&&['Expected delivery',f=>f.arrivalDate,true],
+    ['Supplier GLN',gln('SU')],['Buyer GLN',gln('BY')],['Delivery address GLN',gln('DP')]
+  ].filter(Boolean);
+  return rows.map(([label,get,isDate])=>{
+    const sv=get(sup),bv=get(bol);
+    return sv&&!bv?`${label}: ${isDate?showDate(sv):sv}`:null;
+  }).filter(Boolean);
+}
 function headerFieldsHtml(sup,bol,type){
   const isD=type==='DESADV';
   const arrSeg=f=>f.headerDtm&&f.headerDtm['132']?'DTM+132':(f.headerDtm&&f.headerDtm['17']?'DTM+17':'DTM+2');
@@ -4369,6 +4392,10 @@ function compare(bol,sup){
   // Worst level among err/warn findings of any cat (an err Message check
   // never hides behind "!"); the wording comes from verdictModel().
   const verdict=findings.some(f=>f.level==='err')?'err':(findings.some(f=>f.level==='warn')?'warn':'ok');
+  {
+    const lost=lostHeaderFields(sup,bol,type);
+    if(lost.length)add('warn',fkey('header-lost')+`<strong>In the supplier message, not in bol's output</strong> <span class="dim">(${lost.length} header field${lost.length===1?'':'s'})</span>`+valueTagsHtml(lost,null,'fields')+moreInfo(`The supplier message carries ${lost.length===1?'this value':'these values'} in its header, and bol's output has nothing in that place. Worth asking Transus whether the field is mapped.`),'diff');
+  }
   if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+(supHasAnyOrder&&bolHasAnyOrder?', order numbers':'')+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
