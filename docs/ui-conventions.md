@@ -82,17 +82,56 @@ headline and playful line stay calm for Message checks (rule 7).
 
 ## Result layout
 
-Desktop first. Compare (ORDRSP/DESADV): verdict → "Got an error
-message?" → Findings (Message
-checks, Transformation differences, Good to know, then a small **Worth
-checking** group, Copy buttons) → stats strip → Header fields (collapsed)
-→ action overview (ORDRSP) → search box → Amendment details → Line
-comparison → Pallet / SSCC overview → original messages. INVOIC: verdict →
-Findings → stats strip → Invoice details (collapsed) → Line comparison →
-Charges & allowances → Totals → overviews → original messages (the error
-picklist sits under the verdict there too). Quick check follows the same
-idea ("Got an error message?" above the Overview, then summary line,
-Findings, fields, search, tables).
+Desktop first. Compare (ORDRSP/DESADV): verdict → stats strip (the
+tiles: which message is this) → "Got an error message?" → Findings
+(Message checks, Transformation differences, Good to know, then a small
+**Worth checking** group, Copy buttons, the collapsed EAN list) → Header
+fields (collapsed) → action overview (ORDRSP) → search box → Amendment
+details → Line comparison → Pallet / SSCC overview → original messages.
+INVOIC: verdict → stats strip → Findings → Invoice details (collapsed) →
+Line comparison → Charges & allowances → Totals → overviews → original
+messages (the error picklist sits under the verdict there too). Quick
+check follows the same idea ("Got an error message?" above the Overview,
+then summary line, Findings, fields, search, tables).
+
+**Import block folds.** While a result is on screen the import panel is
+one line: the two file names, "Change files", the order button, Compare
+and Reset. The package list stays above it. "Change files" or Reset opens
+it again. A ZIP dropped anywhere on the page is still taken, so folding
+never costs a step.
+
+**Quick check opens like Compare**: a drop zone first, "or paste the
+text" second. The "Original message" block only appears once there is a
+message.
+
+**Help.** The intro text and the status legend sit behind one "Help"
+button top right, so a daily user does not scroll past them.
+
+## Visual style
+
+One "Visual layer" block at the end of the stylesheet holds the look;
+component rules above it hold structure. Keep it that way.
+
+- **Colours carry one meaning each**: green = nothing stood out, orange =
+  worth a look, red = look at this first, blue = info and bol; the
+  supplier side is the orange role label.
+- **Findings** are rows with a coloured left edge, not filled blocks.
+  ✓ rows are smaller and dimmer than the rest. "More info" sits on the
+  same line when the finding is a single line.
+- **Buttons**: primary (filled blue) = the next step, one per block;
+  plain = an action on what is shown; ghost = a way out or a side road;
+  dashed = picks a file.
+- **Icons** are the line icons from the SVG sprite at the top of
+  `<body>` (`<svg class="ic"><use href="#i-…"/></svg>`). No emoji for
+  new interface icons.
+- **Motion** is short and one-off: results rise in top to bottom, the
+  verdict icon pops, drop zones react to hover and drag. Everything is
+  off under `prefers-reduced-motion`. Entrance animations use
+  `animation-fill-mode: backwards`, never `forwards`: a lasting
+  transform would break the enlarged raw view.
+- A class that toggles `.hidden` must not get `display` from a rule more
+  specific than one class; `.hidden` is repeated last in the layer for
+  that reason.
 
 Quick check opens with a one-line summary above its Findings ("Nothing
 unusual found. ECHO ran its checks on this DESADV (12 lines)" or "3 things
@@ -102,8 +141,8 @@ Invoice lines tables show the first 20 rows behind "Show all N lines" (a
 search match still shows). The status line under the input says the
 overview is *below*. XML on one long line is indented for display only
 (Quick check and Compare's original messages), so jump-to-source lands on
-the line with the value; Copy keeps the original text. "Import file" is
-styled as a button.
+the line with the value; Copy keeps the original text. A file comes in through
+the drop zone (click to browse).
 
 Worth checking items use the documented **!** icon (warn colour), not an
 eye; they never count towards the verdict.
@@ -338,9 +377,11 @@ part of the work, so the ZIP drop zone takes more than one package.
 - **One ZIP** behaves as before: it opens, no list appears. A second,
   different ZIP arriving later starts the list with the first one kept
   in it, so packages that come in one at a time are not lost.
-- **Several ZIPs** (dropped or selected together) land in a row of
-  buttons under the drop zone. The first opens; a click opens another.
-  The open one is highlighted, ones already seen are dimmed.
+- **Several ZIPs** (dropped or selected together) land in a list under
+  the drop zone, one row per package: mark, kind, name, and what the
+  mark means in words. The first opens; a click opens another. The open
+  one has an accent edge, ones already seen are dimmed. "Check all" sits
+  in the list header, apart from the rows.
 - **Kind in the list**: once a package has been read, its button shows
   the message kind in words (Order response, Despatch advice, Invoice,
   Order) in front of the file name, because a row of message IDs says

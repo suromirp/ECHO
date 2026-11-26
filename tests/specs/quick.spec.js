@@ -71,11 +71,17 @@ test('one-line XML is pretty-printed for display, and jump-to-source lands on th
   expect(await page.evaluate(() => quickPlain.trim().split('\n').length)).toBe(1);
 });
 
-test('"Import file" looks like a button', async ({ page }) => {
+// Quick check opens like Compare: a drop zone first, pasting second, and
+// no empty "Original message" block until there is a message.
+test('Quick check starts with a drop zone; the original message shows once there is one', async ({ page }) => {
   await openApp(page);
   await page.locator('#tabQuickBtn').click();
-  const imp = page.locator('.filebtn', { hasText: 'Import file' });
-  const style = await imp.evaluate(e => { const c = getComputedStyle(e); return { b: c.borderTopWidth, p: c.paddingLeft }; });
-  expect(style.b).toBe('1px');
-  expect(parseFloat(style.p)).toBeGreaterThan(8);
+  await expect(page.locator('#quickDrop')).toBeVisible();
+  expect(await page.evaluate(() => !!(document.getElementById('quickDrop').compareDocumentPosition(document.getElementById('quickInput')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await expect(page.locator('#quickOrigPanel')).toBeHidden();
+  await page.locator('#quickFileInput').setInputFiles(path.join(FIX, 'desadv', 'date-shift.sup.edi'));
+  await expect(page.locator('#quickOrigPanel')).toBeVisible();
+  await expect(page.locator('#quickOutput .edi-row').first()).toBeVisible();
+  await page.locator('#quickClearBtn').click();
+  await expect(page.locator('#quickOrigPanel')).toBeHidden();
 });

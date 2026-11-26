@@ -21,17 +21,41 @@ function expectAscending(order) {
 }
 
 // docs/ui-conventions.md "Verdict" and "Result layout": verdict + "Where to
-// look" → Findings (Worth checking inside) → stats strip → Header fields
+// look" → stats strip → Findings (Worth checking inside) → Header fields
 // (collapsed) → search box → tables → raw messages.
-test('Compare results follow the findings-first layout, Worth checking sits inside Findings', async ({ page }) => {
+test('Compare results: verdict, tiles, then Findings with Worth checking inside', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'desadv', 'date-shift.sup.edi'), path.join(FIX, 'desadv', 'date-shift.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
-  expectAscending(await domOrder(page, ['#verdict', '#findingsPanel', '#strip', '#hdrFields', '#searchPanel', '#lineTable', '#rawDetails']));
+  expectAscending(await domOrder(page, ['#verdict', '#strip', '#findingsPanel', '#hdrFields', '#searchPanel', '#lineTable', '#rawDetails']));
   expect(await page.locator('#findingsPanel #wcPanel').count()).toBe(1);
   expect(await page.locator('#hdrFields details.hdr-fields').evaluate(e => e.open)).toBe(false);
   // The search box is directly above the tables it filters.
   expectAscending(await domOrder(page, ['#searchPanel', '#backorderPanel', '#lineTable', '#ssccPanel']));
+});
+
+// Once a result is on screen the import block folds to one line, so the
+// answer starts at the top; "Change files" opens it again, Reset too.
+test('the import block folds to one line while a result is shown', async ({ page }) => {
+  await openApp(page);
+  const panel = page.locator('#importPanel');
+  await expect(panel).not.toHaveClass(/collapsed/);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'date-shift.sup.edi'), path.join(FIX, 'desadv', 'date-shift.bol.edi'));
+  await expect(panel).toHaveClass(/collapsed/);
+  await expect(page.locator('#dropSup')).toBeHidden();
+  await expect(page.locator('#zipDrop')).toBeHidden();
+  await expect(page.locator('#importSumText')).toContainText('date-shift.sup.edi');
+  await expect(page.locator('#importSumText')).toContainText('date-shift.bol.edi');
+  await expect(page.locator('#compareBtn')).toBeVisible();
+  await expect(page.locator('#orderOptCompare .filebtn')).toBeVisible();
+  await page.locator('#importChangeBtn').click();
+  await expect(panel).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#dropSup')).toBeVisible();
+  await page.locator('#compareBtn').click();
+  await expect(panel).toHaveClass(/collapsed/);
+  await page.locator('#resetBtn').click();
+  await expect(panel).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#zipDrop')).toBeVisible();
 });
 
 test('a clean comparison says there is nothing to act on', async ({ page }) => {
@@ -57,14 +81,14 @@ test('the "Where to look" link points at the findings section it names', async (
   await expect(page.locator('#cfc-diff')).toHaveText('Transformation differences');
 });
 
-test('INVOIC results: verdict with "Where to look", Findings before the stats, Invoice details collapsed', async ({ page }) => {
+test('INVOIC results: verdict with "Where to look", tiles before Findings, Invoice details collapsed', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'invoic', 'zero-ean-bol-output.sup.edi'), path.join(FIX, 'invoic', 'zero-ean-bol-output.bol.ubl.xml'));
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const verdict = page.locator('#invVerdict');
   await expect(verdict.locator('.vtitle')).toHaveText("Bol's invoice differs from the supplier invoice");
   await expect(verdict.locator('.vwhere')).toContainText('Transformation differences (1)');
-  expectAscending(await domOrder(page, ['#invVerdict', '#invoiceResults ul.findings', '#invoiceResults .strip', '#invHdrDetails', '#invRawDetails']));
+  expectAscending(await domOrder(page, ['#invVerdict', '#invoiceResults .strip', '#invoiceResults ul.findings', '#invHdrDetails', '#invRawDetails']));
   expect(await page.locator('#invHdrDetails').evaluate(e => e.open)).toBe(false);
   await expect(page.locator('#invHdrDetails > summary')).toContainText('Invoice details');
 });

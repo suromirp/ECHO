@@ -371,15 +371,17 @@ actual test fixtures, don't just keep this list as prose:
   headline, the playful line as subtitle and a "Where to look" line derived
   from the findings' `cat`; its icon is the worst err/warn level of any cat
   (an err Message check shows ⚠ with the calm "mapping looks right"
-  headline). Layout is findings-first: verdict → Findings (Worth checking
-  inside, "!" icon) → stats → Header fields / Invoice details (collapsed,
+  headline). Layout: verdict → stats tiles → Findings (Worth checking
+  inside, "!" icon) → Header fields / Invoice details (collapsed,
   "N differ") → search → tables → raw messages.
 - **UI (Quick check)**: a summary line above the Findings says "Nothing
   unusual found" or "N things to look at" (ORDRSP/DESADV/ORDERS and INVOIC);
   long order lists and Lines tables collapse past 20 with "Show all N
   lines", a search match still shows; the status line says the overview is
   below; one-line XML is pretty-printed for display and jump-to-source lands
-  on the value; "Import file" is a button.
+  on the value; Quick check starts with a drop zone and shows the
+  original message only once there is one. The import block folds to one
+  line while a Compare result is shown.
 - **ORDRSP/DESADV/INVOIC**: one finding per cause — a per-side Message
   check carried unchanged by bol's output is reported once as "Supplier
   (passed on unchanged to bol)"; an SSCC without PAC is one finding whose

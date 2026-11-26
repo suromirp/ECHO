@@ -174,15 +174,22 @@
   .zip-more>summary:hover{color:var(--text-dim);}
   .zip-more .zip-tools{margin:8px 0 2px;}
   .watch-auto{display:inline-flex;align-items:center;gap:5px;color:var(--text-dim);cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;margin-bottom:0;}
-  .zip-queue{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;max-height:132px;overflow:auto;}
-  .zq-item{font-family:var(--mono);font-size:12px;border:1px solid var(--border-strong);border-radius:6px;background:var(--panel-2);color:var(--text);padding:4px 9px;cursor:pointer;}
-  .zq-item:hover{border-color:var(--accent);}
+  .zip-queue{border:1px solid var(--border);border-radius:10px;background:var(--panel-2);margin:0 0 14px;}
+  .zq-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 8px 6px 13px;min-height:38px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:700;border-bottom:1px solid var(--border);}
+  .zq-head .btn{padding:4px 11px;font-size:12px;}
+  .zq-list{max-height:204px;overflow:auto;padding:4px;display:flex;flex-direction:column;gap:1px;}
+  .zq-item{display:grid;grid-template-columns:18px 124px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;text-align:left;font-size:12.5px;border:0;border-left:3px solid transparent;border-radius:6px;background:none;color:var(--text);padding:6px 10px;cursor:pointer;transition:background .12s,border-color .12s;}
+  .zq-item:hover{background:var(--panel-3);}
   .zq-item.opened{color:var(--text-dim);}
-  .zq-item.active{border-color:var(--accent);background:var(--panel-3);color:var(--text);}
-  .zq-item .zq-new{color:var(--accent);margin-right:4px;}
-  .zq-item .zq-kind{font-family:var(--sans,inherit);font-weight:600;margin-right:6px;}
-  .zq-item .zq-lv{margin-right:5px;font-weight:700;color:var(--text-dim);}
-  .zq-item .zq-lv.ok{color:var(--ok);}.zq-item .zq-lv.warn{color:var(--warn);}.zq-item .zq-lv.err{color:var(--err);}
+  .zq-item.active{background:var(--panel-3);border-left-color:var(--accent);color:var(--text);}
+  .zq-mark{text-align:center;font-weight:700;}
+  .zq-new{color:var(--accent);}
+  .zq-kind{font-weight:600;white-space:nowrap;}
+  .zq-name{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .zq-note{font-size:11.5px;color:var(--text-faint);white-space:nowrap;}
+  .zq-lv{color:var(--text-dim);}
+  .zq-lv.ok{color:var(--ok);}.zq-lv.warn{color:var(--warn);}.zq-lv.err{color:var(--err);}
+  @media(max-width:620px){.zq-item{grid-template-columns:18px minmax(0,1fr);}.zq-kind,.zq-note{display:none;}}
   .zip-drop.over{border-color:var(--accent);background:var(--panel-3);}
   .zip-drop .t{font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:4px;}
   .zip-drop .h{font-size:12px;color:var(--text-dim);line-height:1.5;}
@@ -433,9 +440,176 @@
   td.cmp-cell .s{color:var(--elem);}td.cmp-cell .b{color:var(--tag);}
   .note-inline{font-size:12px;color:var(--text-dim);line-height:1.5;margin:2px 0 10px;}
   .panel-intro{font-size:12px;color:var(--text-dim);line-height:1.5;margin:2px 0 12px;}
+
+  /* ============================================================
+     Visual layer. One place for the look that sits on top of the
+     component rules above: radius and shadow scale, line icons,
+     buttons, the segmented tabs, drop zones, the folded import
+     block, calmer findings and the entrance animations.
+     Colours keep their meaning everywhere: green = nothing stood
+     out, orange = worth a look, red = look at this first, blue =
+     info and bol, orange role label = supplier.
+     ============================================================ */
+  :root{
+    --r-s:8px; --r-m:11px; --r-l:15px;
+    --ease:cubic-bezier(.2,.7,.2,1);
+    --lift:0 1px 0 rgba(255,255,255,.035) inset,0 10px 28px -16px rgba(0,0,0,.7);
+    --glow:0 0 0 3px rgba(103,151,229,.22);
+  }
+  body{background:radial-gradient(1100px 460px at 50% -160px,rgba(47,91,255,.17),transparent 70%) no-repeat,var(--bg);}
+  ::selection{background:rgba(103,151,229,.35);}
+
+  .ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;}
+
+  /* header: brand on the left, version and Help on the right */
+  .site-header{position:relative;margin-bottom:18px;}
+  .brand-row{margin-bottom:0;min-height:34px;}
+  .version-tag{margin-right:86px;}
+  #legendDetails{margin:0;}
+  #legendDetails>summary{position:absolute;top:2px;right:0;display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;font-size:12px;transition:color .15s,border-color .15s,background .15s;}
+  #legendDetails>summary::before{content:none;}
+  #legendDetails>summary:hover,#legendDetails[open]>summary{color:var(--text);border-color:var(--accent);background:var(--panel-3);}
+  .help-body{margin-top:14px;padding:16px 18px 14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-l);box-shadow:var(--lift);animation:riseIn .22s var(--ease) backwards;}
+  .help-body .sub{margin-bottom:6px;}
+  .help-body .legend-grid{padding:10px 0 0;}
+  @media(max-width:600px){#legendDetails>summary{position:static;margin-top:10px;}}
+
+  /* tabs: one segmented control */
+  .tabs{display:inline-flex;gap:4px;padding:4px;margin-bottom:16px;background:var(--panel);border:1px solid var(--border);border-radius:13px;}
+  .tab{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;margin:0;border:0;border-radius:9px;transition:color .15s,background .2s var(--ease),box-shadow .2s;}
+  .tab .ic{opacity:.75;}
+  .tab-sub{font-weight:400;font-size:12px;color:var(--text-faint);}
+  .tab.active{background:var(--panel-3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong),0 4px 12px -6px rgba(0,0,0,.6);}
+  .tab.active .ic{color:var(--accent);opacity:1;}
+  @media(max-width:560px){.tab-sub{display:none;}}
+  .panel-view.active{animation:fadeIn .22s ease-out backwards;}
+
+  /* surfaces */
+  .panel{border-radius:var(--r-l);padding:18px 20px;box-shadow:var(--lift);}
+  .panel h2{letter-spacing:.07em;font-size:11.5px;}
+  .err-pick{border-radius:var(--r-m);}
+  details>summary{border-radius:var(--r-m);transition:color .15s,border-color .15s,background .15s;}
+  details>summary:hover{color:var(--text);border-color:var(--border-strong);}
+
+  /* buttons: one height, one radius; primary = the next step, plain =
+     an action on what is shown, ghost = a way out or a side road */
+  .btn{border-radius:9px;padding:8px 14px;min-height:36px;line-height:1.2;transition:background .15s,border-color .15s,color .15s,box-shadow .2s,transform .12s var(--ease);}
+  .btn:hover{transform:translateY(-1px);}
+  .btn:active{transform:translateY(0) scale(.98);}
+  .btn.primary{background:#2f5bff linear-gradient(180deg,#4d74ff,#2f5bff);border-color:#7f9bff;box-shadow:0 8px 18px -8px rgba(47,91,255,.9),0 1px 0 rgba(255,255,255,.18) inset;padding-left:20px;padding-right:20px;}
+  .btn.primary:hover{background:#3a64ff linear-gradient(180deg,#5c80ff,#3a64ff);border-color:#a9bbff;}
+  .btn.ghost{border-color:transparent;color:var(--text-dim);}
+  .btn.ghost:hover{color:var(--text);background:var(--panel-2);border-color:var(--border);}
+  button.btn:disabled,button.btn.primary:disabled{transform:none;box-shadow:none;}
+  .filebtn{border-style:dashed;border-color:var(--border-strong);}
+  .filebtn:hover{border-color:var(--accent);}
+  .dep-copy,.err-pick .btn,.err-choices .btn,.zq-head .btn{min-height:0;}
+  select,.mini-input,textarea{border-radius:9px;transition:border-color .15s,box-shadow .15s;}
+  select:hover,.mini-input:hover,textarea:hover{border-color:var(--border-strong);}
+  textarea:focus,select:focus,.mini-input:focus{outline:none;border-color:var(--accent);box-shadow:var(--glow);}
+  #quickInput{min-height:92px;}
+  .badge{background:var(--panel-2);}
+  .lang-switch{vertical-align:middle;}
+
+  /* drop zones */
+  .zip-drop{padding:20px 16px 18px;border-radius:var(--r-m);background:linear-gradient(180deg,rgba(103,151,229,.07),rgba(103,151,229,0) 70%),var(--panel-2);transition:border-color .15s,background .15s,transform .2s var(--ease);}
+  .zip-drop .t{font-family:var(--sans);font-size:14.5px;font-weight:600;margin-bottom:3px;}
+  .drop-ic{display:block;width:28px;height:28px;margin:0 auto 8px;color:var(--accent);stroke-width:1.5;transition:transform .25s var(--ease);}
+  .zip-drop:hover,.drop:hover{border-color:var(--accent);}
+  .zip-drop:hover .drop-ic{transform:translateY(-3px);}
+  .zip-drop.over{transform:scale(1.006);box-shadow:var(--glow);}
+  .zip-drop.over .drop-ic{transform:translateY(-4px) scale(1.08);}
+  .drop{border-radius:var(--r-m);padding:13px 15px;}
+  .drop.over{box-shadow:var(--glow);}
+  .drop.loaded{background:var(--panel-3);}
+  .drop .role{margin-bottom:4px;}
+
+  /* import block folded to one line while a result is on screen */
+  .import-sum{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;flex:1 1 320px;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text);}
+  .import-sum #importSumText{min-width:0;overflow-wrap:anywhere;}
+  .import-sum .role{font-family:var(--sans);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tag);margin:0 2px 0 8px;}
+  .import-sum .role:first-child{margin-left:0;}
+  .import-sum .role.sup{color:var(--elem);}
+  #importPanel.collapsed{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:11px 16px;animation:fadeIn .25s ease-out backwards;}
+  #importPanel.collapsed>h2,#importPanel.collapsed>.zip-drop,#importPanel.collapsed>.sep-or,#importPanel.collapsed>.drops,#importPanel.collapsed #orderHintCompare{display:none;}
+  #importPanel.collapsed>.zip-queue{flex:1 1 100%;margin:0;}
+  #importPanel.collapsed>.order-opt,#importPanel.collapsed>.actions{margin:0;}
+  #importPanel.collapsed>.status{flex:1 1 100%;margin:0;min-height:0;font-size:12px;}
+  #importPanel.collapsed .btn{padding:6px 12px;min-height:32px;font-size:12.5px;}
+
+  /* verdict and tiles */
+  .verdict{border-radius:var(--r-l);padding:16px 20px;box-shadow:var(--lift);}
+  .verdict .icon{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;font-size:17px;margin-top:0;background:rgba(255,255,255,.06);animation:popIn .45s var(--ease) .1s backwards;}
+  .verdict.ok .icon{color:var(--ok);}.verdict.warn .icon{color:var(--warn);}.verdict.err .icon{color:var(--err);}
+  .quick-summary .icon{width:28px;height:28px;font-size:14px;}
+  .strip{gap:10px;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));}
+  .stat{border-radius:var(--r-m);background:var(--panel);box-shadow:var(--lift);transition:border-color .15s,transform .15s var(--ease);}
+  .stat:hover{border-color:var(--border-strong);transform:translateY(-1px);}
+  .stat.match{border-color:rgba(71,174,135,.4);}
+  .stat.diff{border-color:rgba(229,103,94,.55);background:linear-gradient(180deg,var(--err-bg),transparent),var(--panel);}
+
+  /* findings: a coloured edge instead of a filled block, so a list of
+     them reads as a list; the "all good" rows step back */
+  .findings li{background:var(--panel-2);border:1px solid var(--border);border-left:3px solid var(--border-strong);border-radius:var(--r-s);padding:8px 12px;margin-bottom:6px;transition:border-color .15s;}
+  .findings li.f-err{background:linear-gradient(90deg,var(--err-bg),rgba(229,103,94,0) 55%),var(--panel-2);border-color:var(--border);border-left-color:var(--err);}
+  .findings li.f-warn{background:linear-gradient(90deg,var(--warn-bg),rgba(255,167,88,0) 55%),var(--panel-2);border-color:var(--border);border-left-color:var(--warn);}
+  .findings li.f-info{background:linear-gradient(90deg,rgba(103,151,229,.12),rgba(103,151,229,0) 55%),var(--panel-2);border-color:var(--border);border-left-color:var(--info);}
+  .findings li.f-ok{background:none;border-color:transparent;border-left-color:var(--ok);border-radius:0;padding:3px 12px;margin-bottom:3px;font-size:12.5px;color:var(--text-dim);}
+  .findings li.f-err .fi{color:var(--err);}.findings li.f-warn .fi{color:var(--warn);}.findings li.f-ok .fi{color:var(--ok);}
+  .findings li.findings-cat{border:none;border-radius:0;background:none;}
+  details.f-more{display:inline-block;margin:0 0 0 6px;vertical-align:baseline;}
+  details.f-more[open]{display:block;margin:6px 0 0;}
+  details.f-more[open]>div{animation:riseIn .2s var(--ease) backwards;}
+  ul+details.f-more,details+details.f-more,div+details.f-more{display:block;margin:5px 0 0;}
+  .code-preview-panel{margin-top:14px;}
+
+  /* tables */
+  tbody tr{transition:background .12s;}
+  tbody tr:hover td{background:rgba(255,255,255,.022);}
+  .pill{font-weight:600;}
+  .pill.ok{background:var(--ok-bg);}.pill.err{background:var(--err-bg);}.pill.warn{background:var(--warn-bg);}.pill.info{background:rgba(103,151,229,.12);}
+
+  /* settings line at the bottom */
+  .zip-more>summary{display:inline-flex;align-items:center;gap:6px;background:none;border-color:transparent;padding:6px 10px;font-weight:500;}
+  .zip-more>summary::before{content:none;}
+  .zip-more>summary .ic{transition:transform .4s var(--ease);}
+  .zip-more>summary:hover .ic,.zip-more[open]>summary .ic{transform:rotate(60deg);}
+  .zip-more[open]>.zip-tools{animation:riseIn .2s var(--ease) backwards;}
+  .zip-more .zip-tools{padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-m);}
+  footer{border-top:1px solid var(--border);padding-top:14px;margin-top:18px;}
+
+  /* entrance: results come in top to bottom, once, quickly */
+  @keyframes riseIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes popIn{0%{opacity:0;transform:scale(.6);}60%{transform:scale(1.12);}100%{opacity:1;transform:none;}}
+  #results:not(.hidden)>*,#invoiceResults:not(.hidden)>*,#quickOverview>*,#quickOrigPanel:not(.hidden){animation:riseIn .34s var(--ease) backwards;}
+  #results>:nth-child(2),#invoiceResults>:nth-child(2){animation-delay:.04s;}
+  #results>:nth-child(3),#invoiceResults>:nth-child(3){animation-delay:.08s;}
+  #results>:nth-child(4),#invoiceResults>:nth-child(4){animation-delay:.12s;}
+  #results>:nth-child(n+5),#invoiceResults>:nth-child(n+5){animation-delay:.16s;}
+  .strip .stat{animation:riseIn .3s var(--ease) backwards;}
+  .strip .stat:nth-child(2){animation-delay:.03s;}.strip .stat:nth-child(3){animation-delay:.06s;}
+  .strip .stat:nth-child(4){animation-delay:.09s;}.strip .stat:nth-child(5){animation-delay:.12s;}
+  .strip .stat:nth-child(n+6){animation-delay:.15s;}
+  .zq-item{animation:fadeIn .2s ease-out backwards;}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important;}
+  }
+  /* keep last: the rules above set display on elements that toggle .hidden */
+  .hidden{display:none;}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8.2 12 3 3 8.2v7.6L12 21l9-5.2z"/><path d="M3.3 8.4 12 13.3l8.7-4.9M12 13.3V21M7.5 5.6l9 5.2"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5M9 10h6M9 14h6"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.6 2.3c-.8.4-1.2 1-1.2 1.9M12 17h.01"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 7.5l3 3"/></symbol>
+</defs></svg>
 <div class="app">
   <header class="site-header">
     <div class="brand-row">
@@ -461,9 +635,10 @@
       <span class="brand-tag">EDI message inspector</span>
       <span class="version-tag">v1.0 · July 2026</span>
     </div>
-    <p class="sub">ECHO helps you quickly inspect and compare EDI messages. It highlights key information such as EANs, quantities, SSCCs and delivery references, and lets you trace results back to the original message.</p>
     <details id="legendDetails">
-      <summary>What do the statuses mean?</summary>
+      <summary title="What ECHO does and what the statuses mean"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg>Help</summary>
+      <div class="help-body">
+      <p class="sub">ECHO helps you quickly inspect and compare EDI messages. It highlights key information such as EANs, quantities, SSCCs and delivery references, and lets you trace results back to the original message.</p>
       <div class="legend-grid">
         <div><span class="pill ok">Match</span><span>The compared values are the same.</span></div>
         <div><span class="pill err">Difference</span><span>The compared values differ — worth checking.</span></div>
@@ -480,20 +655,26 @@
         <div><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim)">Worth checking</span><span>Findings group for a pattern that stands out from the rest of one message's lines, marked <span style="color:var(--warn);font-weight:700">!</span>. Not necessarily wrong; not counted in the verdict.</span></div>
         <div><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
+      </div>
     </details>
   </header>
 
   <div class="tabs" role="tablist">
-    <button class="tab active" id="tabCompareBtn" role="tab">⇄ Compare (bol ↔ supplier)</button>
-    <button class="tab" id="tabQuickBtn" role="tab">📄 Quick check</button>
+    <button class="tab active" id="tabCompareBtn" role="tab"><svg class="ic" aria-hidden="true"><use href="#i-swap"/></svg>Compare <span class="tab-sub">supplier ↔ bol</span></button>
+    <button class="tab" id="tabQuickBtn" role="tab"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Quick check <span class="tab-sub">one message</span></button>
   </div>
 
   <!-- ============ TAB: QUICK VIEW (Quick check) ============ -->
   <section class="panel-view" id="viewQuick">
     <div class="panel">
-      <h2>View message</h2>
-      <label for="quickInput">Paste an EDIFACT or XML message, or import a file</label>
-      <textarea id="quickInput" placeholder="Paste the message here — EDIFACT (UNB+UNOC:3+...'UNH+1+INVOIC...') or Transus/UBL XML. ORDRSP, DESADV and INVOIC are recognized."></textarea>
+      <h2>Import one message</h2>
+      <div class="zip-drop" id="quickDrop">
+        <svg class="ic drop-ic" aria-hidden="true"><use href="#i-doc"/></svg><div class="t">Drop a message here</div>
+        <div class="h">One EDIFACT or XML file. Click to browse.</div>
+        <input type="file" id="quickFileInput" accept=".txt,.edi,.dat,.edifact,.xml" class="hidden">
+      </div>
+      <div class="sep-or">or paste the text</div>
+      <textarea id="quickInput" aria-label="Paste an EDIFACT or XML message" placeholder="UNB+UNOC:3+... or &lt;?xml ..."></textarea>
       <div class="row" style="margin-top:12px;">
         <div class="control-group" style="max-width:230px;">
           <label for="quickMode">Delimiters</label>
@@ -506,14 +687,11 @@
       </div>
       <div class="actions">
         <button class="btn primary" id="quickFormatBtn">Analyze &amp; show</button>
-        <span class="btn filebtn" title="Open a message file from your computer">📂 Import file…
-          <input type="file" id="quickFileInput" accept=".txt,.edi,.dat,.edifact,.xml">
-        </span>
         <button class="btn ghost" id="quickClearBtn">Clear</button>
         <span class="badge hidden" id="quickBadge"></span>
       </div>
       <div class="order-opt" id="orderOptQuick">
-          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameQuick"></span>
           <button class="btn ghost hidden" id="orderClearQuick" type="button">Remove order</button>
           <span class="dim" id="orderHintQuick">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV you can add the order response instead.</span>
@@ -524,7 +702,7 @@
     <div id="quickErrPick"></div>
     <div id="quickOverview"></div>
 
-    <div class="panel">
+    <div class="panel hidden" id="quickOrigPanel">
       <h2>Original message</h2>
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:0;">
         <div class="legend" id="quickLegend"></div>
@@ -541,33 +719,34 @@
 
   <!-- ============ TAB: COMPARE — default active ============ -->
   <section class="panel-view active" id="viewCompare">
-    <div class="panel">
-      <h2>1 · Import both messages</h2>
+    <div class="panel" id="importPanel">
+      <h2>Import both messages</h2>
       <div class="zip-drop" id="zipDrop">
-        <div class="t">Drop the package here 📦</div>
-        <div class="h">ECHO will sort out supplier and bol. Two folders: one with <code>bol</code>/<code>bolcom</code> in the name and one for the supplier — matched automatically.</div>
+        <svg class="ic drop-ic" aria-hidden="true"><use href="#i-box"/></svg><div class="t">Drop the package here</div>
+        <div class="h" title="The package holds two folders: one with bol or bolcom in the name and one for the supplier. ECHO matches them automatically.">A Transus ZIP with both messages, or several at once. ECHO sorts out supplier and bol.</div>
         <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
       <div class="zip-queue hidden" id="zipQueue"></div>
+      <div class="import-sum hidden" id="importSum"><span id="importSumText"></span><button class="btn ghost" id="importChangeBtn" type="button" title="Show the import block again to load other files"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg>Change files</button></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
         <div class="drop" id="dropSup" data-side="sup">
           <div class="role sup">SUPPLIER — original</div>
-          <div class="hint">Original message from the supplier — EDIFACT or Transus XML (.dat/.txt/.edi/.xml). For INVOIC this may be an interchange containing multiple invoices.</div>
+          <div class="hint" title="Original message from the supplier (.dat/.txt/.edi/.xml). For INVOIC this may be an interchange containing multiple invoices.">EDIFACT or Transus XML</div>
           <div class="fname hidden" id="fnameSup"></div>
           <button class="clear hidden" id="clearSup">clear</button>
           <input type="file" id="inputSup" class="hidden">
         </div>
         <div class="drop" id="dropBol" data-side="bol">
           <div class="role">BOL — output</div>
-          <div class="hint">The bol output: Transus EDIFACT for ORDRSP/DESADV, or UBL XML for INVOIC (.txt/.edi/.dat/.xml).</div>
+          <div class="hint" title="The bol output: Transus EDIFACT for ORDRSP/DESADV, or UBL XML for INVOIC (.txt/.edi/.dat/.xml).">EDIFACT, or UBL XML for invoices</div>
           <div class="fname hidden" id="fnameBol"></div>
           <button class="clear hidden" id="clearBol">clear</button>
           <input type="file" id="inputBol" class="hidden">
         </div>
       </div>
       <div class="order-opt" id="orderOptCompare">
-          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
+          <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameCompare"></span>
           <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
           <span class="dim" id="orderHintCompare">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV you can add the order response instead.</span>
@@ -584,6 +763,7 @@
     <div id="results" class="hidden">
       <div id="factsBanners"></div>
       <div id="verdict"></div>
+      <div class="strip" id="strip"></div>
       <div id="errPickFacts"></div>
       <div class="panel hidden" id="factsNotesPanel"><div class="note-inline" id="factsNotes"></div></div>
 
@@ -605,7 +785,6 @@
         <div id="eanBlockArea"></div>
       </div>
 
-      <div class="strip" id="strip"></div>
       <div id="hdrFields"></div>
 
       <div class="panel" id="togglePanel">
@@ -671,9 +850,9 @@
     <div id="invoiceResults" class="hidden"></div>
   </section>
 
-  <details class="zip-more hidden" id="zipMore"><summary>⚙ Settings</summary>
+  <details class="zip-more hidden" id="zipMore"><summary><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>Settings</summary>
   <div class="zip-tools">
-    <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer.">📂 Watch a download folder…</button>
+    <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer."><svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg>Watch a download folder…</button>
     <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
     <span class="dim hidden" id="watchState"></span>
     <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
@@ -1010,7 +1189,8 @@ function quickShowFactsDoc(i){
 }
 function quickFormat(){
   const raw=document.getElementById('quickInput').value;
-  if(!raw.trim()){quickSetStatus('Paste a message first, or import a file.',true);return;}
+  if(!raw.trim()){quickSetStatus('Drop a message first, or paste its text.',true);return;}
+  document.getElementById('quickOrigPanel').classList.remove('hidden');
   const ovBox=document.getElementById('quickOverview');
   const lg=document.getElementById('quickLegend');
   const msgType=detectMsgType(raw);
@@ -1106,22 +1286,31 @@ function quickSetStatus(m,e){const el=document.getElementById('quickStatus');el.
 
 document.getElementById('quickFormatBtn').addEventListener('click',quickFormat);
 document.getElementById('quickInput').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')quickFormat();});
-document.getElementById('quickFileInput').addEventListener('change',e=>{
-  const f=e.target.files[0];if(!f)return;
+/* One way in for a Quick check file, whether it was dropped on the zone
+   or picked through the file dialog behind it. */
+function quickTakeFile(f){
+  if(!f)return;
   readFileText(f).then(t=>{
     document.getElementById('quickInput').value=t;
     quickFormat();
     // Keep quickFormat's own error status (e.g. unreadable XML) visible.
     if(!document.getElementById('quickStatus').classList.contains('error'))quickSetStatus('File loaded: '+f.name+' — overview and findings below; the original message is at the bottom.');
   });
-  e.target.value='';
-});
+}
+const quickDrop=document.getElementById('quickDrop'),quickFileInput=document.getElementById('quickFileInput');
+quickFileInput.addEventListener('change',e=>{quickTakeFile(e.target.files[0]);e.target.value='';});
+quickFileInput.addEventListener('click',e=>e.stopPropagation());
+quickDrop.addEventListener('click',()=>quickFileInput.click());
+quickDrop.addEventListener('dragover',e=>{e.preventDefault();quickDrop.classList.add('over');});
+quickDrop.addEventListener('dragleave',()=>quickDrop.classList.remove('over'));
+quickDrop.addEventListener('drop',e=>{e.preventDefault();quickDrop.classList.remove('over');quickTakeFile(e.dataTransfer.files[0]);});
 document.getElementById('quickClearBtn').addEventListener('click',()=>{
   document.getElementById('quickInput').value='';
   document.getElementById('quickOverview').innerHTML='';
   errPickMount('quick',document.getElementById('quickErrPick'),null);
   document.getElementById('quickOutput').innerHTML=`<div class="empty-state">${pickQuickIntro()}</div>`;
   document.getElementById('quickLegend').innerHTML='';quickPlain='';quickSetStatus('');
+  document.getElementById('quickOrigPanel').classList.add('hidden');
 });
 document.getElementById('quickCopyBtn').addEventListener('click',async()=>{
   if(!quickPlain){quickSetStatus('Nothing to copy yet.',true);return;}
@@ -7770,7 +7959,9 @@ function renderActionMatrix(){
 }
 
 function render(result,bol,sup,notes){
+  importOpen=false;
   document.getElementById('results').classList.remove('hidden');
+  importSync();
   document.getElementById('factsBanners').innerHTML=xmlFileBannersHtml(sup,'The supplier file')+xmlFileBannersHtml(bol,"Bol's file");
   const notesPanel=document.getElementById('factsNotesPanel');
   if(notes&&notes.length){notesPanel.classList.remove('hidden');document.getElementById('factsNotes').innerHTML=notes.map(esc).join('<br>');}
@@ -8385,11 +8576,8 @@ function buildEanListText(gtins){
 }
 function eanBlockHtml(eanText){
   return `<div class="code-preview-panel">
-    <div class="toggle-bar">
-      <h2>EAN overview (${eanText?eanText.split('\n').length:0})</h2>
-    </div>
     <details class="code-details">
-      <summary>Show preview</summary>
+      <summary>EAN list (${eanText?eanText.split('\n').length:0}) <span class="dim">· every EAN in this message, ready to copy</span></summary>
       <div class="code-box">
         <div class="code-box-bar"><button type="button" class="icon-copy-btn" title="Copy" ${eanText?'':'disabled'} onclick="copyIconClick(${jsQuote(eanText)},this)">📋 Copy</button></div>
         <pre>${esc(eanText||'No EANs found in this message.')}</pre>
@@ -8627,7 +8815,9 @@ function jumpToQuickSource(text){
 function renderInvoiceCompare(res,notes){
   document.getElementById('results').classList.add('hidden');
   const box=document.getElementById('invoiceResults');
+  importOpen=false;
   box.classList.remove('hidden');
+  importSync();
   const cur=res.stats.currency;
 
   /* "Worth checking" — computed here (rather than further below) so both the
@@ -8655,14 +8845,8 @@ function renderInvoiceCompare(res,notes){
   h+=`<div class="verdict ${vm.level}" id="invVerdict">${verdictInnerHtml(vm,hasWC)}</div><div id="errPickInv"></div>`;
   if(notes&&notes.length)h+=`<div class="panel"><div class="note-inline">${notes.map(esc).join('<br>')}</div></div>`;
 
-  /* findings first (same three sections as ORDRSP/DESADV), Worth checking
-     as its own small group inside the same panel */
-  const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
-    +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
-  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${findingsListHtml(res.findings,'ifc')}</ul>${worthCheckingGroupHtml(wcHtml,'ifc-wc')}`;
-  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
-
-  /* statistics */
+  /* statistics: the tiles sit right under the verdict, so the first
+     thing after "how did it go" is "which message is this" */
   const st=res.stats;
   const totOk=res.totRows.filter(r=>r.status==='ok').length,totDiff=res.totRows.filter(r=>r.status==='diff').length;
   const lineDiff=res.rows.filter(r=>r.status==='diff').length;
@@ -8673,6 +8857,13 @@ function renderInvoiceCompare(res,notes){
     <div class="stat"><div class="l">Supplier / bol lines</div><div class="v">${st.linesSup}/${st.linesBol}</div></div>
     <div class="stat ${totDiff?'diff':'match'}"><div class="l">Totals</div><div class="v">${totDiff?'Difference':'Match'}</div></div>
   </div>`;
+
+  /* then the findings (same three sections as ORDRSP/DESADV), Worth checking
+     as its own small group inside the same panel */
+  const wcHtml=worthCheckingHtml('Supplier',wcSup,v=>`jumpToInvSource('sup',${jsQuote(v)})`)
+    +worthCheckingHtml('Bol',wcBol,v=>`jumpToInvSource('bol',${jsQuote(v)})`);
+  h+=`<div class="panel"><h2>Findings</h2><ul class="findings">${findingsListHtml(res.findings,'ifc')}</ul>${worthCheckingGroupHtml(wcHtml,'ifc-wc')}`;
+  h+=`<div class="actions"><button class="btn" id="invCopyReport">Copy report</button><button class="btn" id="invCopyTransus" title="A short, non-technical summary of the mapping differences — ready to paste into the Transus portal">Copy for Transus</button><span class="lang-switch" role="group" aria-label="Report language"><button type="button" class="lang-btn" data-lang="en" onclick="setTransusLang('en')">EN</button><button type="button" class="lang-btn" data-lang="nl" onclick="setTransusLang('nl')">NL</button></span></div><div id="invEanBlockArea">${eanBlockHtml(eanText)}</div></div>`;
 
   /* header: collapsed by default, the summary says how many fields differ */
   const hdrDiffer=res.hdr.filter(r=>r.status==='diff').length;
@@ -8880,6 +9071,34 @@ async function handleZip(file,quiet){
     runCompare();
   }catch(err){cSetStatus('Couldn\u2019t read the ZIP: '+err.message,true);}
 }
+/* ---- import block: one line while a result is on screen ----
+   Once a comparison is shown, the drop zones have done their job and only
+   push the answer down the page. The block folds to a line with the two
+   file names; "Change files" opens it again. The package list, the order
+   button and Compare/Reset stay in view, and a ZIP dropped anywhere on
+   the page is still taken, so folding never costs a step. */
+let importOpen=false;
+function importSync(){
+  const shown=['results','invoiceResults'].some(id=>!document.getElementById(id).classList.contains('hidden'));
+  if(!shown)importOpen=false;
+  const fold=shown&&!importOpen;
+  document.getElementById('importPanel').classList.toggle('collapsed',fold);
+  document.getElementById('importSum').classList.toggle('hidden',!fold);
+  if(fold){
+    const n=id=>esc(document.getElementById(id).textContent||'\u2014');
+    document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`;
+  }
+}
+document.getElementById('importChangeBtn').addEventListener('click',()=>{importOpen=true;importSync();});
+['results','invoiceResults'].forEach(id=>new MutationObserver(importSync).observe(document.getElementById(id),{attributes:true,attributeFilter:['class']}));
+// A package dropped outside the (possibly folded) drop zone still lands.
+document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault();});
+document.addEventListener('drop',e=>{
+  if(e.defaultPrevented||!e.dataTransfer)return;
+  const zips=[...e.dataTransfer.files].filter(f=>/\.zip$/i.test(f.name));
+  e.preventDefault();
+  if(zips.length&&document.getElementById('viewCompare').classList.contains('active'))zipTake(zips);
+});
 const zipDrop=document.getElementById('zipDrop'),zipInput=document.getElementById('zipInput');
 zipDrop.addEventListener('click',()=>zipInput.click());
 zipDrop.addEventListener('dragover',e=>{e.preventDefault();zipDrop.classList.add('over');});
@@ -8901,11 +9120,11 @@ const ZQ_KIND={ORDRSP:'Order response',DESADV:'Despatch advice',INVOIC:'Invoice'
 function zipQRender(){
   const box=document.getElementById('zipQueue');
   box.classList.toggle('hidden',!zipQ.length);
-  box.innerHTML=zipQ.map((q,i)=>{
+  const check=zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'';
+  box.innerHTML=`<div class="zq-head"><span>Packages (${zipQ.length})</span>${check}</div><div class="zq-list">`+zipQ.map((q,i)=>{
     const lv=ZQ_LEVEL[q.level];
-    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:''}${q.kind?`<span class="zq-kind">${esc(q.kind)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</button>`;
-  }).join('')
-    +(zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'');
+    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">\u25cf</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
+  }).join('')+'</div>';
 }
 /* What a package came out as, read from the result that is on screen
    right after it was compared: the same level as the verdict card, so the
