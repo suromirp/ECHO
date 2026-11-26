@@ -732,7 +732,7 @@
           <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameQuick"></span>
           <button class="btn ghost hidden" id="orderClearQuick" type="button">Remove order</button>
-          <span class="dim" id="orderHintQuick">Checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV the order response works too.</span>
+          <span class="dim" id="orderHintQuick" title="Checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV the order response works too.">Checks against what was ordered.</span>
         </div>
       <div class="actions">
         <button class="btn primary" id="quickFormatBtn">Analyze &amp; show</button>
@@ -800,7 +800,7 @@
           <button class="btn ghost hidden" id="orderFetchBtn" type="button" data-order="" title="Looks up the order of this message in Transus and adds it here">Get the order from Transus</button>
           <span class="fname hidden" id="orderNameCompare"></span>
           <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
-          <span class="dim" id="orderHintCompare">Checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV the order response works too.</span>
+          <span class="dim" id="orderHintCompare" title="Checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV the order response works too.">Checks against what was ordered.</span>
         </div>
       <div class="actions">
         <button class="btn primary" id="compareBtn" disabled>Compare</button>
