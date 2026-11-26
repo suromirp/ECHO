@@ -51,12 +51,38 @@ test('several ZIPs at once give a clickable package list', async ({ page }) => {
   const items = page.locator('#zipQueue .zq-item');
   await expect(items).toHaveCount(2);
   await expect(items.nth(0)).toHaveClass(/active/);
-  await expect(items.nth(0)).toHaveText('Message_ID_100000001');
+  await expect(items.nth(0)).toContainText('Message_ID_100000001');
+  // The opened package carries the level of its verdict card; the other
+  // one has no mark yet, so "Check all" is offered.
+  const cardLevel = (await page.locator('#verdict').getAttribute('class')).replace('verdict ', '');
+  await expect(items.nth(0).locator('.zq-lv')).toHaveClass(new RegExp(cardLevel));
+  await expect(items.nth(1).locator('.zq-lv')).toHaveCount(0);
+  await expect(page.locator('#zipQueue .zq-check')).toBeVisible();
 
   await items.nth(1).click();
   await expect(items.nth(1)).toHaveClass(/active/);
   await expect(items.nth(0)).toHaveClass(/opened/);
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+});
+
+// "Check all" runs every unmarked package once, so the list shows which
+// ones are worth opening. A pair ECHO doesn't compare and a single message
+// get their own neutral mark instead of a level, and the single message
+// does not pull the view over to Quick check during the run.
+test('Check all marks every package in the list', async ({ page }) => {
+  const dir = path.join(__dirname, '..', 'fixtures', 'zip');
+  await openApp(page);
+  await page.locator('#zipInput').setInputFiles(['Message_ID_100000001.zip', 'order-pair.zip', 'single-file.zip', 'utf16-pair.zip'].map(f => path.join(dir, f)));
+  const items = page.locator('#zipQueue .zq-item');
+  await expect(items).toHaveCount(4);
+  await page.locator('#zipQueue .zq-check').click();
+  await expect(page.locator('#zipQueue .zq-lv')).toHaveCount(4);
+  await expect(page.locator('#zipQueue .zq-check')).toHaveCount(0);
+  await expect(items.nth(1).locator('.zq-lv')).toHaveClass(/\bna\b/);
+  await expect(items.nth(2).locator('.zq-lv')).toHaveClass(/single/);
+  await expect(items.nth(0).locator('.zq-lv')).toHaveClass(/\b(ok|warn|err)\b/);
+  await expect(page.locator('#viewCompare')).toHaveClass(/active/);
+  await expect(page.locator('#zipQueue .zq-item.active')).toHaveCount(1);
 });
 
 // The folder picker itself can't be driven headless, so the directory
@@ -74,6 +100,9 @@ test('a watched download folder lists its packages and picks up a new one', asyn
   }, { a: b64('Message_ID_100000001.zip'), b: b64('utf16-pair.zip') });
   await openApp(page);
 
+  // The folder controls sit behind a collapsed Settings line.
+  await expect(page.locator('#watchBtn')).toBeHidden();
+  await page.locator('#zipMore > summary').click();
   await page.locator('#watchBtn').click();
   const items = page.locator('#zipQueue .zq-item');
   await expect(items).toHaveCount(2);
@@ -83,7 +112,7 @@ test('a watched download folder lists its packages and picks up a new one', asyn
 
   await page.evaluate(() => window.__dir.push(window.__late));
   await expect(items).toHaveCount(3, { timeout: 8000 });
-  await expect(items.nth(0)).toHaveText('arrived-later');
+  await expect(items.nth(0)).toContainText('arrived-later');
   await expect(items.nth(0)).toHaveClass(/active/);
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready', { timeout: 5000 });
 

@@ -339,8 +339,16 @@ part of the work, so the ZIP drop zone takes more than one package.
 - **Several ZIPs** (dropped or selected together) land in a row of
   buttons under the drop zone. The first opens; a click opens another.
   The open one is highlighted, ones already seen are dimmed.
-- **Watch a download folder** (Chrome and Edge only, the button stays
-  hidden elsewhere): pick the folder once, ECHO lists the newest 40
+- **Marks in the list**: a package that has been compared carries the
+  level of its verdict card (✓, !, ⚠), read from that card so the two
+  can't disagree. A pair that gave no comparison shows `·`, a ZIP with
+  one message shows `1`. **Check all** runs every unmarked package once
+  and then opens the first one with a ⚠, else a !. During that run a
+  single-message ZIP is only marked, it does not switch to Quick check.
+- **Watch a download folder** sits behind a small collapsed "⚙ Settings"
+  line under the drop zone, so it is not in view all the time; it opens
+  by itself while a folder is being watched. (Chrome and Edge only, the
+  line stays hidden elsewhere): pick the folder once, ECHO lists the newest 40
   packages, newest first, and checks every few seconds for new ones. A
   new package gets a dot and, with the checkbox on, opens by itself.
   The folder is only read. Chrome and Edge refuse the Downloads folder

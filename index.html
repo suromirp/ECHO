@@ -169,6 +169,10 @@
   .zip-drop{border:1.5px dashed var(--border-strong);border-radius:8px;background:var(--panel-2);padding:15px;text-align:center;cursor:pointer;margin-bottom:14px;transition:border-color .15s,background .15s;}
   .zip-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 12px;font-size:12px;}
   .zip-tools:empty{display:none;}
+  .zip-more{margin:-6px 0 10px;font-size:12px;}
+  .zip-more>summary{cursor:pointer;color:var(--text-faint);width:max-content;}
+  .zip-more>summary:hover{color:var(--text-dim);}
+  .zip-more .zip-tools{margin:8px 0 2px;}
   .watch-auto{display:inline-flex;align-items:center;gap:5px;color:var(--text-dim);cursor:pointer;}
   .zip-queue{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;max-height:132px;overflow:auto;}
   .zq-item{font-family:var(--mono);font-size:12px;border:1px solid var(--border-strong);border-radius:6px;background:var(--panel-2);color:var(--text);padding:4px 9px;cursor:pointer;}
@@ -176,6 +180,8 @@
   .zq-item.opened{color:var(--text-dim);}
   .zq-item.active{border-color:var(--accent);background:var(--panel-3);color:var(--text);}
   .zq-item .zq-new{color:var(--accent);margin-right:4px;}
+  .zq-item .zq-lv{margin-right:5px;font-weight:700;color:var(--text-dim);}
+  .zq-item .zq-lv.ok{color:var(--ok);}.zq-item .zq-lv.warn{color:var(--warn);}.zq-item .zq-lv.err{color:var(--err);}
   .zip-drop.over{border-color:var(--accent);background:var(--panel-3);}
   .zip-drop .t{font-family:var(--mono);font-size:13px;color:var(--text);margin-bottom:4px;}
   .zip-drop .h{font-size:12px;color:var(--text-dim);line-height:1.5;}
@@ -541,6 +547,7 @@
         <div class="h">ECHO will sort out supplier and bol. Two folders: one with <code>bol</code>/<code>bolcom</code> in the name and one for the supplier — matched automatically.</div>
         <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
+      <details class="zip-more hidden" id="zipMore"><summary>⚙ Settings</summary>
       <div class="zip-tools">
         <button class="btn ghost hidden" id="watchBtn" type="button" title="Pick the folder your Transus downloads land in. The browser refuses the Downloads folder itself, so use a subfolder of it. ECHO lists the packages in it and picks up new ones. Nothing leaves this computer.">📂 Watch a download folder…</button>
         <button class="btn ghost hidden" id="watchResumeBtn" type="button"></button>
@@ -548,6 +555,7 @@
         <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
         <button class="btn ghost hidden" id="watchStopBtn" type="button">Stop watching</button>
       </div>
+      </details>
       <div class="zip-queue hidden" id="zipQueue"></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
@@ -8822,7 +8830,7 @@ document.getElementById('clearBol').addEventListener('click',()=>cClearSide('bol
 document.getElementById('clearSup').addEventListener('click',()=>cClearSide('sup'));
 
 const ZIP_LOADING_LINES=['Unpacking ZIP…','Untangling EDI spaghetti…','Reading the messages…','Looking for the important bits…','Making sense of the alphabet soup…'];
-async function handleZip(file){
+async function handleZip(file,quiet){
   if(typeof JSZip==='undefined'){
     cSetStatus('ZIP import isn\u2019t available right now (the ZIP library couldn\u2019t be loaded). Drop the two files separately below instead — that works fully offline.',true);
     return;
@@ -8840,6 +8848,7 @@ async function handleZip(file){
     // read it, then switches — and repeats the explanation as a
     // hard-to-miss banner in Quick check itself, not just status text.
     if(entries.length===1){
+      if(quiet)return 'single';
       const only=entries[0];
       const text=decodeFileBytes(await only.entry.async('uint8array'));
       const name=only.path.split('/').pop();
@@ -8855,7 +8864,7 @@ async function handleZip(file){
       const ov=document.getElementById('quickOverview');
       ov.insertBefore(banner,ov.firstChild);
       quickSetStatus('');
-      return;
+      return 'single';
     }
     let bolE=null,supE=null;
     for(const it of entries){const top=it.path.toLowerCase().split('/')[0];if(/bol/.test(top))bolE=it;else supE=it;}
@@ -8886,7 +8895,33 @@ const zipQ=[];let zipQActive=null;
 function zipQRender(){
   const box=document.getElementById('zipQueue');
   box.classList.toggle('hidden',!zipQ.length);
-  box.innerHTML=zipQ.map((q,i)=>`<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${esc(q.name.replace(/\.zip$/i,''))}</button>`).join('');
+  box.innerHTML=zipQ.map((q,i)=>{
+    const lv=ZQ_LEVEL[q.level];
+    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}">${q.fresh&&!q.opened?'<span class="zq-new">●</span>':''}${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</button>`;
+  }).join('')
+    +(zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'');
+}
+/* What a package came out as, read from the result that is on screen
+   right after it was compared: the same level as the verdict card, so the
+   list and the card can't disagree. 'na' = no comparison came out of it
+   (an ORDERS pair, an unreadable file); 'single' = one message, no pair. */
+const ZQ_LEVEL={ok:['\u2713','nothing stood out'],warn:['!','worth a look'],err:['\u26a0','look at this first'],
+  na:['\u00b7','not compared'],single:['1','one message, no pair to compare']};
+let zipQBusy=false;
+function zipQLevel(){
+  if(document.getElementById('compareStatus').classList.contains('error'))return 'na';
+  const inv=document.getElementById('invoiceResults'),res=document.getElementById('results');
+  const el=!inv.classList.contains('hidden')?document.getElementById('invVerdict'):(!res.classList.contains('hidden')?document.getElementById('verdict'):null);
+  const m=el&&/\b(ok|warn|err)\b/.exec(el.className);
+  return m?m[1]:'na';
+}
+async function zipQCheckAll(){
+  if(zipQBusy)return;
+  zipQBusy=true;const was=zipQActive;
+  try{for(const q of zipQ.filter(q=>!q.level))await zipQOpen(q,true);}
+  finally{zipQBusy=false;}
+  const pick=zipQ.find(q=>q.level==='err')||zipQ.find(q=>q.level==='warn')||zipQ.find(q=>q.key===was)||zipQ[0];
+  if(pick)await zipQOpen(pick);else zipQRender();
 }
 function zipQAdd(items,front){
   const have=new Set(zipQ.map(q=>q.key));
@@ -8894,15 +8929,21 @@ function zipQAdd(items,front){
   if(front)zipQ.unshift(...add);else zipQ.push(...add);
   zipQRender();return add;
 }
-async function zipQOpen(q){
+async function zipQOpen(q,quiet){
   try{
     const file=q.file||await q.handle.getFile();
-    q.opened=true;zipQActive=q.key;zipQRender();
+    if(!quiet)q.opened=true;
+    zipQActive=q.key;zipQRender();
     showTab('compare');
-    await handleZip(file);
+    const r=await handleZip(file,quiet);
+    q.level=r==='single'?'single':zipQLevel();
+    zipQRender();
   }catch(err){cSetStatus(`Couldn\u2019t open "${q.name}": ${err.message}`,true);}
 }
-document.getElementById('zipQueue').addEventListener('click',e=>{const b=e.target.closest('.zq-item');if(b)zipQOpen(zipQ[+b.dataset.i]);});
+document.getElementById('zipQueue').addEventListener('click',e=>{
+  if(e.target.closest('.zq-check')){zipQCheckAll();return;}
+  const b=e.target.closest('.zq-item');if(b&&!zipQBusy)zipQOpen(zipQ[+b.dataset.i]);
+});
 function zipTake(files){
   const zips=files.filter(f=>/\.zip$/i.test(f.name));
   if(files.length===1&&!zipQ.length){handleZip(files[0]);return;}
@@ -8941,6 +8982,7 @@ async function watchScan(first){
 }
 function watchUi(on){
   const show=(id,v)=>document.getElementById(id).classList.toggle('hidden',!v);
+  if(on)document.getElementById('zipMore').open=true;
   show('watchBtn',!on);show('watchState',on);show('watchAutoWrap',on);show('watchStopBtn',on);
   if(on)show('watchResumeBtn',false);
 }
@@ -8955,6 +8997,7 @@ function watchStop(){
   watch.timer=null;watch.dir=null;watchUi(false);
 }
 if(typeof window.showDirectoryPicker==='function'){
+  document.getElementById('zipMore').classList.remove('hidden');
   document.getElementById('watchBtn').classList.remove('hidden');
   document.getElementById('watchBtn').addEventListener('click',async()=>{
     let dir=null;

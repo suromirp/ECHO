@@ -537,4 +537,7 @@ the actual test suite in the same commit as the fix.
   no list. The watched folder is tested with a stubbed directory handle
   (the real picker can't be driven headless): packages listed newest
   first, non-ZIP files ignored, a package that appears later is picked
-  up and opened.
+  up and opened. An opened package carries the level of its verdict
+  card; "Check all" marks all four fixture ZIPs (a level for the pairs,
+  `·` for the ORDERS pair, `1` for the single message) and leaves the
+  view on Compare.
