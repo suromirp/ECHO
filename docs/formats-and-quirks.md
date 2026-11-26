@@ -600,6 +600,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
 - **Supplier GLN equal to the buyer** (real test ORDRSP): `NAD+SU` carried
   bol's GLN, while UNB carried the supplier's own. Message check in ORDRSP,
   DESADV and INVOIC, both modes (`checkSupplierIsBuyer`, key `su-is-buyer`).
+- **GLN that isn't a number**: a party GLN holding text (a placeholder such
+  as `UNKNOWN`). Message check in ORDRSP, DESADV and INVOIC, both modes
+  (`checkGlnNotNumeric`, key `gln-not-numeric`). Only a value with a
+  non-digit counts; a number of another length is left alone (rule 7).
 - **Empty envelope references** (same test ORDRSP): `UNB` without an
   interchange reference, `UNH++…`, `UNT+47'` and `UNZ+1'`. Message check on
   EDIFACT messages (`checkEnvelopeRefs`, key `envelope-ref`); in Compare the
@@ -772,13 +776,21 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   - The per-item amount is only shown when the description names a pack
     size (`12x250ml`). When it equals the Dutch deposit (0.15 or 0.25) the
     block says so; any other amount is shown without comment.
+  - A packaging levy (`ALC+C AEO`, or a description naming it) is a
+    different charge. The card names it in its own note with its own total
+    and keeps it out of the deposit total (`isPackagingLevy`). When it sits
+    in the line amount together with the deposit, the "included in the
+    line amount" note still holds.
 - **Empty amount field in bol's output**: a real bol UBL had
   `<cbc:TaxableAmount currencyID="EUR"></cbc:TaxableAmount>` on every
   invoice line and bol's invoice process answered "Couldn't parse XML
-  content"; reprocessing gave the same output and the same error. Transus
-  fills that field from the `MOA+125` under the line's `TAX`, which this
-  supplier didn't send (another supplier that does send it had the field
-  filled). Every amount, VAT figure and line matched, so ECHO said "all
+  content"; reprocessing gave the same output and the same error. Checked
+  against four real invoices: the field is empty exactly on lines with a
+  second `TAX` segment (the VAT of a line charge, here the deposit); lines
+  with one `TAX` get the line amount (`MOA+203`), also when the charge has
+  no `TAX` of its own. A missing line `MOA+125` is **not** the cause: none
+  of those invoices sends it and most lines are filled. An older invoice
+  of the same supplier already had it on the same three lines. Every amount, VAT figure and line matched, so ECHO said "all
   compared values match". Now a Transformation difference in Compare and a
   Message check in Quick check (`emptyAmountText`, key `empty-amount`, also
   linked from the "Couldn't parse XML content" error card). An empty header

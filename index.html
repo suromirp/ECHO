@@ -2975,6 +2975,18 @@ function checkSupplierIsBuyer(m,label,add){
   if(!su||su!==by)return;
   add('warn',fkey('su-is-buyer')+`${label?label+' — ':''}<strong>Supplier GLN is the buyer's GLN</strong> <span class="seg">(NAD+SU = NAD+BY)</span>: ${esc(su)}.`+moreInfo(`NAD+SU is the supplier's own GLN, the one it is registered with at bol. Here it is the same GLN as the buyer in NAD+BY. bol's intake can answer that with "Supplier GLN … unknown" or "PO does not match supplier".`),'message');
 }
+/* A party GLN that isn't a number (a placeholder like "UNKNOWN", or text
+   typed into the GLN field). Generous (rule 7): only a value with a
+   non-digit in it counts; a number of another length is left alone here.
+   facts and invoices alike. */
+function checkGlnNotNumeric(m,label,add,jumpCall){
+  const p=m&&m.parties;if(!p)return;
+  const hits=Object.entries(p).map(([role,q])=>[role,String((q&&q.gln)||'').trim()]).filter(([,g])=>g&&/\D/.test(g));
+  if(!hits.length)return;
+  const v=g=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(g)}">${esc(g)}</span>`:`<code>${esc(g)}</code>`;
+  const list=hits.map(([role,g])=>`${esc(NAD_ROLE[role]||role)} ${v(g)}`).join(', ');
+  add('warn',fkey('gln-not-numeric')+`${label?label+' — ':''}<strong>GLN is not a number</strong>: ${list}.`+moreInfo(`A GLN is a 13-digit number that identifies a party or location. Here the field holds something else, often a placeholder left in the sender's system. bol looks a party up by its GLN, so the party can't be recognised from this value. Worth asking the sender which GLN belongs here.`),'message');
+}
 /* Envelope control references left empty: UNB/UNZ carry the interchange
    reference, UNH/UNT the message reference. A real test ORDRSP had all
    four empty ("UNH++…", "UNT+47'", "UNZ+1'"). EDIFACT only; for Compare
@@ -4211,6 +4223,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkOrderNotNumeric,factsJump);
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,factsJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,factsJump);
+    perSideOnce(add,sup,bol,checkGlnNotNumeric,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
@@ -5113,8 +5126,8 @@ function parseInvoicBolXml(raw){
     }
     finalizeInvoiceRefs(inv);
     /* Amount fields present but empty (<cbc:TaxableAmount currencyID="EUR"/>).
-       A real bol output had one on every invoice line (the supplier sent no
-       line-level MOA+125) and bol's invoice process rejected it with
+       A real bol output had one on every invoice line that carries a second
+       TAX (the VAT of a line charge) and bol's invoice process rejected it with
        "Couldn't parse XML content". An empty header TaxInclusiveAmount is
        in nearly every bol output, also processed ones: left out. */
     {
@@ -5515,6 +5528,14 @@ const ZERO_VAT_CATS=['E','Z','AE','K','G','O'];
 // Dutch deposit amounts per item: cans and plastic bottles up to 1 litre,
 // plastic bottles over 1 litre. Only used to say "matches", never to judge.
 const NL_DEPOSIT_RATES=[0.15,0.25];
+// Packaging levy (AEO = packaging/recycling levy): often on the same lines
+// as a deposit, but a different thing. Named apart in the deposit card so
+// the two aren't read as one amount.
+const LEVY_CODES=['AEO'];
+const LEVY_DESC=/verpakkingsbelasting|packaging (tax|levy)|afvalbeheer|recycling/i;
+function isPackagingLevy(c){
+  return !!c&&c.kind==='charge'&&!isDepositCharge(c)&&(LEVY_CODES.includes(String(c.code||'').toUpperCase())||LEVY_DESC.test(c.desc||''));
+}
 function isDepositCharge(c){
   return !!c&&c.kind==='charge'&&(DEPOSIT_CODES.includes(String(c.code||'').toUpperCase())||DEPOSIT_DESC.test(c.desc||''));
 }
@@ -5536,7 +5557,10 @@ function depositSummary(inv){
     let inLine=null;
     if(amount!=null&&l.lineAmount!=null&&l.qty!=null&&l.netPrice!=null){
       const base=l.qty*l.netPrice;
-      if(near(l.lineAmount,base+amount))inLine=true;else if(near(l.lineAmount,base))inLine=false;
+      // Other line charges (a packaging levy) may sit in the line amount too.
+      const other=(l.charges||[]).filter(c=>c.kind==='charge'&&!isDepositCharge(c)&&c.amount!=null).reduce((s,c)=>s+c.amount,0);
+      if(near(l.lineAmount,base+amount)||(other&&near(l.lineAmount,base+amount+other)))inLine=true;
+      else if(near(l.lineAmount,base)||(other&&near(l.lineAmount,base+other)))inLine=false;
     }
     const m=/(\d{1,3})\s*[x×]\s*\d/i.exec(l.desc||'');
     const pack=m&&+m[1]>1?+m[1]:null;
@@ -5552,7 +5576,9 @@ function depositSummary(inv){
   const groups=(inv.extras&&inv.extras.vatGroups)||[];
   const zg=groups.filter(g=>g.pct===0||(g.pct==null&&ZERO_VAT_CATS.includes(String(g.cat||'').toUpperCase())));
   const zt=zg.filter(g=>g.taxable!=null);
-  return {rows,hdr,total,vats,vatKnown:inv.source==='EDIFACT'||vats.some(v=>v!==null),
+  const levyC=[...(inv.charges||[]),...(inv.lines||[]).flatMap(l=>l.charges||[])].filter(c=>isPackagingLevy(c)&&c.amount!=null);
+  const levy=levyC.length?{n:levyC.length,total:r2(levyC.reduce((s,c)=>s+c.amount,0)),codes:[...new Set(levyC.map(c=>c.code||c.desc||'').filter(Boolean))]}:null;
+  return {rows,hdr,total,levy,vats,vatKnown:inv.source==='EDIFACT'||vats.some(v=>v!==null),
     hasGroups:groups.length>0,zeroGroup:zg.length>0,zeroTaxable:zt.length?r2(zt.reduce((s,g)=>s+g.taxable,0)):null,
     number:inv.number||null,cur:inv.currency||'EUR'};
 }
@@ -5589,6 +5615,7 @@ function depositNotes(d,carried){
     return v!=null?NL_DEPOSIT_RATES.find(x=>Math.abs(x-v)<0.0051):undefined;
   }).filter(v=>v!==undefined))];
   if(rates.length)out.push({level:'ok',en:`Per item that is ${rates.map(x=>a(x)).join(' / ')}, the Dutch deposit for cans and plastic bottles.`,nl:`Per stuk is dat ${rates.map(x=>nlA(x)).join(' / ')}, het Nederlandse statiegeld voor blik en plastic flessen.`});
+  if(d.levy)out.push({level:'ok',en:`Packaging levy (${d.levy.codes.join(', ')}): ${d.levy.n}×, total ${a(d.levy.total)}. A separate charge, not part of the deposit total.`,nl:`Verpakkingsheffing (${d.levy.codes.join(', ')}): ${d.levy.n}×, totaal ${nlA(d.levy.total)}. Een aparte toeslag, telt niet mee in het statiegeld.`});
   if(carried){
     if(carried.n===carried.of)out.push({level:'ok',en:carried.of===1?`In bol's output with the same amount.`:`In bol's output: on all ${carried.of} lines, same amount.`,nl:carried.of===1?`In bol's output met hetzelfde bedrag.`:`In bol's output: op alle ${carried.of} regels, zelfde bedrag.`});
     else out.push({level:'warn',en:`In bol's output: on ${carried.n} of ${carried.of} lines with the same amount.`,nl:`In bol's output: op ${carried.n} van de ${carried.of} regels met hetzelfde bedrag.`});
@@ -5667,7 +5694,7 @@ function emptyAmountText(inv,label){
   if(!e.length)return null;
   const tags=e.map(x=>`${x.el} (${x.n}× ${x.scope==='line'?'on invoice lines':'in the header'})`);
   const lineTaxable=e.some(x=>x.scope==='line'&&x.el==='TaxableAmount');
-  return fkey('empty-amount')+`${label?label+' — ':''}<strong>Empty amount field in bol's output</strong>`+valueTagsHtml(tags,null,'fields')+moreInfo(`These amount elements are present but have no value. bol's invoice process reads every amount as a number, so an empty one is a likely cause of "Couldn't parse XML content".${lineTaxable?' An empty TaxableAmount on the invoice lines comes from a supplier invoice without a taxable amount (<span class="seg">MOA+125</span>) under the line\'s <span class="seg">TAX</span> segment.':''} Worth raising with Transus: leave the element out, or fill it. (An empty header TaxInclusiveAmount is in almost every bol output and isn't listed.)`);
+  return fkey('empty-amount')+`${label?label+' — ':''}<strong>Empty amount field in bol's output</strong>`+valueTagsHtml(tags,null,'fields')+moreInfo(`These amount elements are present but have no value. bol's invoice process reads every amount as a number, so an empty one is a likely cause of "Couldn't parse XML content".${lineTaxable?' In the invoices seen so far, the line TaxableAmount is empty exactly on lines where the supplier sends a second <span class="seg">TAX</span> segment (the VAT of a line charge such as deposit). Lines with one <span class="seg">TAX</span> get the line amount.':''} Worth raising with Transus: leave the element out, or fill it. (An empty header TaxInclusiveAmount is in almost every bol output and isn't listed.)`);
 }
 function invoiceChargeTotalIssue(inv){
   if(!inv||inv.source!=='EDIFACT')return null;
@@ -6056,6 +6083,7 @@ function compareInvoice(sup,bol){
     checkLineAllowances(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,invJump);
+    perSideOnce(add,sup,bol,checkGlnNotNumeric,invJump);
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
     // Deposit: the supplier's own block, with whether bol's output carries it.
     // Without a supplier deposit, bol's own (parity with Quick check).
@@ -7039,6 +7067,7 @@ function invoiceOverviewHtml(inv,opts={}){
   checkUnbSender(inv,'',qcAdd,jumpCall);
   checkEnvelopeRefs(inv,'',qcAdd);
   checkSupplierIsBuyer(inv,'',qcAdd);
+  checkGlnNotNumeric(inv,'',qcAdd);
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -7196,6 +7225,7 @@ function factsOverviewHtml(facts){
   checkUnbSender(facts,'',qcAdd,jumpCall);
   checkEnvelopeRefs(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkSupplierIsBuyer(facts,'',qcAdd);
+  if(type==='ORDRSP'||type==='DESADV')checkGlnNotNumeric(facts,'',qcAdd);
   if(type==='ORDRSP')checkConfirmedDateBeforeDocDate(facts,'',qcAdd,jumpCall);
   if(orderState.quick)checkAgainstOrder(facts,orderState.quick,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}

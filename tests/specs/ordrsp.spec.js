@@ -864,3 +864,23 @@ test('action 3 carried as action 6 is Good to know, not an action difference', a
   await expect(ov).toContainText('Action code 3 (changed)');
   await expect(ov).not.toContainText("isn't one bol/Transus maps");
 });
+
+// A GLN field holding text (a placeholder like UNKNOWN): a Message check in
+// both modes, once when both sides carry it.
+test('a GLN that is not a number is a Message check in both modes', async ({ page }) => {
+  const f = path.join(FIX, 'gln-not-numeric.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  await expect(page.locator('#quickOverview')).toContainText('GLN is not a number');
+  await expect(page.locator('#quickOverview')).toContainText('Delivery address UNKNOWN');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('GLN is not a number'))).toHaveLength(1);
+  expect(buckets.diff.some(t => t.includes('GLN is not a number'))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('GLN is not a number');
+});

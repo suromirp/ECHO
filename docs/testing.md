@@ -421,6 +421,12 @@ actual test fixtures, don't just keep this list as prose:
   is a Transformation difference, an empty header `TaxInclusiveAmount` is
   not; VAT on a deposit is noted in neutral words
   (`deposit-vat.sup.edi` / `.bol.ubl.xml`, `deposit-taxed.sup.edi`).
+- **INVOIC**: a packaging levy (`ALC+C AEO`) next to a deposit
+  (`deposit-levy.sup.edi`) gets its own note in the deposit card and stays
+  out of the deposit total; the card still says "Adds up".
+- **All types**: a party GLN that isn't a number
+  (`tests/fixtures/ordrsp/gln-not-numeric.edi`, `NAD+DP+UNKNOWN`) is one
+  Message check in both modes; a normal message stays quiet.
 - **INVOIC**: EDIFACT as segment-per-element XML is read like EDIFACT;
   `MOA+176` per summary TAX group, an exempt summary TAX without rate (bol
   0%) and `MOA+131:0.00` with only line charges give no difference

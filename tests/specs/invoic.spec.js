@@ -1101,8 +1101,8 @@ test('an INVOIC in segment-per-element XML is read and compared like EDIFACT', a
 
 // Deposit (statiegeld): one block that says what it is, how much, how it's
 // taxed and whether the totals account for it, in both modes. A real bol
-// output had an empty <cbc:TaxableAmount> on every line (no line-level
-// MOA+125 from the supplier) and was rejected with "Couldn't parse XML
+// output had an empty <cbc:TaxableAmount> on every line with a second
+// TAX (the deposit's own) and was rejected with "Couldn't parse XML
 // content": an empty amount field is a Transformation difference.
 test('a deposit gets its own block in both modes; an empty amount field in bol\'s output is a difference', async ({ page }) => {
   const sup = path.join(FIX, 'deposit-vat.sup.edi');
@@ -1153,4 +1153,17 @@ test('a deposit with VAT on it is noted as worth a look, in neutral words', asyn
   await expect(ov.locator('.dep-card .pill.warn')).toHaveText('1 point worth a look');
   await expect(ov).toContainText('VAT on the deposit: 9%. A deposit is usually outside VAT (0%)');
   await expect(ov).not.toContainText('invalid');
+});
+
+// A packaging levy (ALC+C AEO) next to the deposit: named apart in the
+// card, not added to the deposit total.
+test('a packaging levy next to a deposit is named apart and stays out of the deposit total', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'deposit-levy.sup.edi'));
+  const card = page.locator('#quickOverview .dep-card');
+  await expect(card.locator('.pill.ok')).toHaveText('Adds up');
+  await expect(card.locator('.dep-total')).toContainText('25.50');
+  await expect(card).toContainText('Packaging levy (AEO): 1×, total');
+  await expect(card).toContainText('not part of the deposit total');
+  await expect(card).toContainText('The deposit is included in the line amount');
 });
