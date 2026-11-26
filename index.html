@@ -469,7 +469,7 @@
   #legendDetails>summary{position:absolute;top:2px;right:0;display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;font-size:12px;transition:color .15s,border-color .15s,background .15s;}
   #legendDetails>summary::before{content:none;}
   #legendDetails>summary:hover,#legendDetails[open]>summary{color:var(--text);border-color:var(--accent);background:var(--panel-3);}
-  .help-body{margin-top:14px;padding:16px 18px 14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-l);box-shadow:var(--lift);animation:riseIn .22s var(--ease) backwards;}
+  .help-body{margin-top:14px;padding:14px 18px 14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-l);box-shadow:var(--lift);animation:riseIn .22s var(--ease) backwards;}
   .help-body .sub{margin-bottom:6px;}
   .help-body .legend-grid{padding:10px 0 0;}
   @media(max-width:600px){#legendDetails>summary{position:static;margin-top:10px;}}
@@ -596,21 +596,20 @@
     *,*::before,*::after{animation:none!important;transition:none!important;}
   }
   /* Help: steps that follow the screen, legend that lights what is on it */
-  .help-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);margin:14px 0 8px;}
+  .help-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);margin:14px 0 6px;}
   .help-hint{font-weight:500;text-transform:none;letter-spacing:0;color:var(--accent);}
-  .help-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
-  @media(max-width:820px){.help-steps{grid-template-columns:1fr;}}
-  .help-steps li{display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border:1px solid var(--border);border-radius:var(--r-m);background:var(--panel-2);font-size:13px;line-height:1.45;transition:border-color .2s,background .2s;}
-  .help-steps .n{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1px solid var(--border-strong);font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text-dim);}
-  .help-steps .d{color:var(--text-dim);font-size:12.5px;margin-top:2px;}
-  .help-steps li.now{border-color:var(--accent);background:var(--panel-3);box-shadow:var(--glow);}
+  .help-steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px;}
+  .help-steps li{display:inline-flex;gap:8px;align-items:center;padding:6px 14px 6px 7px;border:1px solid var(--border);border-radius:999px;background:var(--panel-2);font-size:13px;color:var(--text-dim);transition:border-color .2s,background .2s,color .2s;}
+  .help-steps .n{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--border-strong);font-family:var(--mono);font-size:11.5px;font-weight:700;}
+  .help-steps li.now{border-color:var(--accent);background:var(--panel-3);color:var(--text);}
   .help-steps li.now .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
   .help-steps li.done .n{border-color:var(--ok);color:var(--ok);}
-  .help-steps li.done{opacity:.75;}
+  .help-all{background:none;border:0;padding:0;margin-left:8px;font:inherit;font-weight:500;text-transform:none;letter-spacing:0;color:var(--text-faint);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  .help-all:hover{color:var(--text);}
+  .legend-grid.has-here:not(.all)>div:not(.here){display:none;}
   .help-body .legend-grid{padding:0;}
-  .legend-grid>div{padding:3px 6px;border-radius:6px;transition:opacity .2s,background .2s;}
-  .legend-grid.has-here>div:not(.here){opacity:.42;}
-  .legend-grid>div.here{order:-1;background:rgba(103,151,229,.09);}
+  .legend-grid.has-here>div:not(.here){opacity:.5;}
+  .legend-grid>div.here{order:-1;}
   .delim-pick{display:inline-flex;align-items:center;gap:8px;margin:0 0 0 auto;}
   .delim-pick select{padding:6px 8px;font-size:12px;}
   #importPanel.collapsed>.status:not(.error){display:none;}
@@ -657,24 +656,22 @@
     <details id="legendDetails">
       <summary title="What ECHO does and what the statuses mean"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg>Help</summary>
       <div class="help-body">
-      <p class="sub">ECHO reads EDI messages and shows what matters in them: order numbers, EANs, quantities, dates and SSCCs. Nothing leaves this computer.</p>
-      <div class="help-h">How it works</div>
       <ol class="help-steps" id="helpSteps"></ol>
-      <div class="help-h">What the marks mean <span class="help-hint" id="helpHint"></span></div>
+      <div class="help-h">What the marks mean <span class="help-hint" id="helpHint"></span><button type="button" class="help-all hidden" id="helpAll"></button></div>
       <div class="legend-grid" id="legendGrid">
         <div><span class="pill ok">Match</span><span>The compared values are the same.</span></div>
-        <div><span class="pill err">Difference</span><span>The compared values differ — worth checking.</span></div>
-        <div><span class="pill warn">Minor difference</span><span>A minor difference — the important values still match.</span></div>
-        <div><span class="pill neutral">Not applicable</span><span>This field isn't sent on either side, so it can't be compared.</span></div>
-        <div><span class="pill neutral">One side only</span><span>Sent on one side only, so it can't be compared — not counted as a difference.</span></div>
-        <div><span class="pill info">Info</span><span>An expected, soft difference — not counted as a mismatch.</span></div>
-        <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC, so it can't be matched.</span></div>
-        <div><span class="pill warn">No match on other side</span><span>This SSCC wasn't found on the other side.</span></div>
-        <div><span class="pill ok">OK</span><span>No structural issue found in this message.</span></div>
+        <div><span class="pill err">Difference</span><span>The compared values differ.</span></div>
+        <div><span class="pill warn">Minor difference</span><span>The important values still match.</span></div>
+        <div><span class="pill neutral">Not applicable</span><span>Sent on neither side.</span></div>
+        <div><span class="pill neutral">One side only</span><span>Sent on one side only; not a difference.</span></div>
+        <div><span class="pill info">Info</span><span>Expected; not a difference.</span></div>
+        <div><span class="pill warn">No SSCC — can't match</span><span>This pallet has no SSCC.</span></div>
+        <div><span class="pill warn">No match on other side</span><span>SSCC not found on the other side.</span></div>
+        <div><span class="pill ok">OK</span><span>Nothing stood out here.</span></div>
         <div data-k="err"><span class="fi" style="color:var(--err)">⚠</span><span>Look at this first.</span></div>
-        <div data-k="warn"><span class="fi" style="color:var(--warn)">!</span><span>Worth a closer look — not necessarily an error.</span></div>
-        <div data-k="info"><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, non-problematic behaviour.</span></div>
-        <div data-k="wc"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim)">Worth checking</span><span>Findings group for a pattern that stands out from the rest of one message's lines, marked <span style="color:var(--warn);font-weight:700">!</span>. Not necessarily wrong; not counted in the verdict.</span></div>
+        <div data-k="warn"><span class="fi" style="color:var(--warn)">!</span><span>Worth a look; not necessarily an error.</span></div>
+        <div data-k="info"><span class="fi" style="color:var(--info)">ⓘ</span><span>Expected, no action needed.</span></div>
+        <div data-k="wc"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim)">Worth checking</span><span>A pattern that stands out within one message. Not counted in the verdict.</span></div>
         <div data-k="val"><span class="clickable-val">Value</span><a href="#" class="ext-link" onclick="return false" title="Open in Summa">↗</a><span>Click to jump to the source; ↗ opens Summa or Purple.</span></div>
       </div>
       </div>
@@ -9114,7 +9111,7 @@ function helpHasResult(view){
 function helpRender(){
   const view=helpView(),at=helpHasResult(view)?1:0;
   document.getElementById('helpSteps').innerHTML=HELP_STEPS[view].map((st,i)=>
-    `<li class="${i<at?'done':i===at?'now':''}"><span class="n">${i<at?'\u2713':i+1}</span><div><strong>${st[0]}</strong><div class="d">${esc(st[1])}</div></div></li>`).join('');
+    `<li class="${i<at?'done':i===at?'now':''}" title="${esc(st[1])}"><span class="n">${i<at?'\u2713':i+1}</span><strong>${st[0]}</strong></li>`).join('');
   const scope=document.getElementById(view==='quick'?'viewQuick':'viewCompare');
   const pills=new Set([...scope.querySelectorAll('.pill')].filter(e=>e.offsetParent).map(e=>e.textContent.trim()));
   const has={err:'.findings li.f-err',warn:'.findings li.f-warn,.wc-item',info:'.findings li.f-info',wc:'.wc-item',val:'.clickable-val'};
@@ -9125,9 +9122,13 @@ function helpRender(){
     d.classList.toggle('here',here);if(here)n++;
   });
   document.getElementById('legendGrid').classList.toggle('has-here',n>0);
-  document.getElementById('helpHint').textContent=n?`\u00b7 lit = on your screen right now (${n})`:'';
+  document.getElementById('helpHint').textContent=n?'\u00b7 on your screen right now':'';
+  const all=document.getElementById('helpAll'),grid=document.getElementById('legendGrid');
+  all.classList.toggle('hidden',!n);
+  all.textContent=grid.classList.contains('all')?'Show less':`Show all ${grid.children.length}`;
 }
 document.getElementById('legendDetails').addEventListener('toggle',e=>{if(e.target.open)helpRender();});
+document.getElementById('helpAll').addEventListener('click',()=>{document.getElementById('legendGrid').classList.toggle('all');helpRender();});
 ['tabQuickBtn','tabCompareBtn'].forEach(id=>document.getElementById(id).addEventListener('click',()=>{if(document.getElementById('legendDetails').open)helpRender();}));
 // A pill explains itself on hover, with the legend's own sentence.
 const HELP_PILL={};
