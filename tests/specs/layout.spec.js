@@ -46,10 +46,12 @@ test('the import block folds to one line while a result is shown', async ({ page
   await expect(page.locator('#zipDrop')).toBeHidden();
   await expect(page.locator('#importSumText')).toContainText('date-shift.sup.edi');
   await expect(page.locator('#importSumText')).toContainText('date-shift.bol.edi');
-  await expect(page.locator('#compareBtn')).toBeVisible();
+  // Folded, Compare and Reset are off the line; Change files brings them back.
+  await expect(page.locator('#compareBtn')).toBeHidden();
   await expect(page.locator('#orderOptCompare .filebtn')).toBeVisible();
   await page.locator('#importChangeBtn').click();
   await expect(panel).not.toHaveClass(/collapsed/);
+  await expect(page.locator('#compareBtn')).toBeVisible();
   await expect(page.locator('#dropSup')).toBeVisible();
   await page.locator('#compareBtn').click();
   await expect(panel).toHaveClass(/collapsed/);

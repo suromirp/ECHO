@@ -192,7 +192,7 @@
   .zq-find{flex:1 1 180px;max-width:340px;margin-left:auto;padding:4px 10px;font:inherit;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:999px;}
   .zq-find:focus{outline:none;border-color:var(--accent);}
   .zq-none{padding:10px 12px;font-size:12.5px;color:var(--text-dim);}
-  .zq-pair{margin-top:8px;font-size:12.5px;color:var(--text-dim);}
+  .zq-pair{margin-top:10px;padding:10px 12px;font-size:12.5px;color:var(--text-dim);background:var(--panel);border:1px solid var(--border);border-radius:var(--r-m);}
   .zq-pair>summary{cursor:pointer;width:max-content;color:var(--text-faint);font-size:12px;font-weight:400;padding:2px 4px;border:0;background:none;box-shadow:none;}
   .zq-pair-tags .seg{padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--panel-2);}
   .zq-pair>summary:hover,.zq-pair[open]>summary{color:var(--text);}
@@ -548,7 +548,10 @@
   .import-sum .role.sup{color:var(--elem);}
   #importPanel.collapsed{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:11px 16px;animation:fadeIn .25s ease-out backwards;}
   #importPanel.collapsed>h2,#importPanel.collapsed>.zip-drop,#importPanel.collapsed>.sep-or,#importPanel.collapsed>.drops,#importPanel.collapsed #orderHintCompare{display:none;}
-  #importPanel.collapsed>.zip-queue,#importPanel.collapsed>.zq-pair{flex:1 1 100%;margin:0;}
+  #importPanel.collapsed>.zip-queue{flex:1 1 100%;margin:0;}
+  /* Folded, the block is the list and one line: no Compare, Reset or type
+     badge (the result is already there; Change files brings them back). */
+  #importPanel.collapsed>.actions{display:none;}
   #importPanel.collapsed>.order-opt,#importPanel.collapsed>.actions{margin:0;}
   #importPanel.collapsed>.status{flex:1 1 100%;margin:0;min-height:0;font-size:12px;}
   #importPanel.collapsed .btn{padding:6px 12px;min-height:32px;font-size:12.5px;}
@@ -759,11 +762,6 @@
         <input type="file" id="zipInput" accept=".zip" class="hidden" multiple>
       </div>
       <div class="zip-queue hidden" id="zipQueue"></div>
-      <details class="zq-pair hidden" id="zqPair"><summary>Two messages from one supplier</summary>
-        <div class="zq-pair-row"><select id="zqPairA" aria-label="First message"></select><span class="dim">against</span><select id="zqPairB" aria-label="Second message"></select><button class="btn ghost" id="zqPairBtn" type="button">Show what differs in build-up</button></div>
-        <div class="dim zq-pair-hint">Puts the supplier's own files from two packages side by side: which building blocks (segment and qualifier, or XML element) one has and the other doesn't. Values are not compared.</div>
-        <div id="zqPairOut"></div>
-      </details>
       <div class="import-sum hidden" id="importSum"><span id="importSumText"></span><button class="btn ghost" id="importChangeBtn" type="button" title="Show the import block again to load other files"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg>Change files</button></div>
       <div class="sep-or">or two separate files</div>
       <div class="drops">
@@ -896,6 +894,11 @@
     <label class="watch-auto hidden" id="watchAutoWrap"><input type="checkbox" id="watchAuto" checked> Open new packages automatically</label>
     <button class="btn ghost hidden" id="watchStopBtn" type="button">Stop watching</button>
   </div>
+  <details class="zq-pair hidden" id="zqPair"><summary>Two messages from one supplier</summary>
+    <div class="zq-pair-row"><select id="zqPairA" aria-label="First message"></select><span class="dim">against</span><select id="zqPairB" aria-label="Second message"></select><button class="btn ghost" id="zqPairBtn" type="button">Show what differs in build-up</button></div>
+    <div class="dim zq-pair-hint">Puts the supplier's own files from two packages side by side: which building blocks (segment and qualifier, or XML element) one has and the other doesn't. Values are not compared.</div>
+    <div id="zqPairOut"></div>
+  </details>
   </details>
   <footer>
     ECHO supports <strong>ORDRSP</strong>, <strong>DESADV</strong> and <strong>INVOIC</strong>. Messages are processed locally in your browser and are not sent to a server.<br>
@@ -9303,6 +9306,7 @@ function zqPairLabel(q){return [q.kind,(pkgMeta[q.name]||{}).supplier,q.name.rep
 function zqPairSync(){
   const box=document.getElementById('zqPair');
   box.classList.toggle('hidden',zipQ.length<2);
+  if(zipQ.length>1)document.getElementById('zipMore').classList.remove('hidden');
   const sig=zipQ.map(zqPairLabel).join('|');
   if(box.dataset.sig===sig)return;
   box.dataset.sig=sig;

@@ -95,9 +95,10 @@ check follows the same idea ("Got an error message?" above the Overview,
 then summary line, Findings, fields, search, tables).
 
 **Import block folds.** While a result is on screen the import panel is
-one line: the two file names, "Change files", the order button, Compare
-and Reset. The package list stays above it. "Change files" or Reset opens
-it again. A ZIP dropped anywhere on the page is still taken, so folding
+one line: the two file names, "Change files" and the order button. The
+package list stays above it. Compare, Reset and the type badge are not on
+that line: the result is already there, and "Change files" brings them
+back. Keep it to that; every extra control here pushes the answer down. A ZIP dropped anywhere on the page is still taken, so folding
 never costs a step.
 
 **Quick check opens like Compare**: a drop zone first, "or paste the
@@ -415,7 +416,8 @@ part of the work, so the ZIP drop zone takes more than one package.
   package the list header has a search field: three characters or more
   leave only the packages whose raw text contains them, so an EAN, SSCC
   or number is found across the whole list.
-- **Two messages from one supplier** (closed line under the list): takes
+- **Two messages from one supplier** (a closed line behind Settings,
+  there once the list holds two packages): takes
   the supplier's own file from two packages and lists the building blocks
   one has and the other doesn't: segment + qualifier for EDIFACT, element
   path for XML. This is deliberately not a transformation check and not a

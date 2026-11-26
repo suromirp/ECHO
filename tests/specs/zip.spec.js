@@ -218,8 +218,11 @@ test('package list: keyboard steps, search across packages, build-up of two mess
   await find.fill('');
   await expect(items).toHaveCount(3);
 
-  // Build-up: closed by default; different formats are said so, not diffed.
+  // Build-up: different formats are said so, not diffed.
+  // It lives behind Settings, so it is not on screen until asked for.
   const pair = page.locator('#zqPair');
+  await expect(pair).toBeHidden();
+  await page.locator('#zipMore > summary').click();
   await expect(pair).toBeVisible();
   await expect(page.locator('#zqPairBtn')).toBeHidden();
   await pair.locator('summary').click();
