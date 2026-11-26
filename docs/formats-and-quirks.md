@@ -756,7 +756,10 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   a table per line (quantity, deposit, per unit, VAT) and what's observed:
   VAT on the deposit, whether the 0% summary VAT group equals the deposit
   total, whether the line amount includes it, and in Compare whether bol's
-  output carries each one. Info when everything reconciles, a warning icon
+  output carries each one. A green check under Good to know with the
+  headline "Deposit (statiegeld) adds up" when everything reconciles (a
+  first version showed it as info under Message checks, which read as a
+  problem), a warning under Message checks ("N points worth a look")
   when something is worth a look (VAT above 0%, no amount, a 0% group lower
   than the deposit). "Copy deposit summary" gives a short EN/NL text to
   pass on. Traps:
