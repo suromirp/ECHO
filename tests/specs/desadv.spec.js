@@ -1493,3 +1493,26 @@ test('expected arrival on the despatch day is an info Message check, in both mod
   await expect(page.locator('#quickOverview .ov-type')).toBeVisible();
   await expect(page.locator('#quickOverview')).not.toContainText('Expected arrival is the despatch day');
 });
+
+// Real DESADV: expected arrival four months after the message date; and a
+// real message with the UNB test indicator set.
+test('an arrival far after the message date is a Message check; the UNB test indicator is Good to know', async ({ page }) => {
+  const f = path.join(FIX, 'arrival-far-ahead-test-flag.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Expected arrival is 115 days after the message date');
+  await expect(ov).toContainText('Marked as a test message');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('days after the message date'))).toHaveLength(1);
+  expect(buckets.info.filter(t => t.includes('Marked as a test message'))).toHaveLength(1);
+  expect(buckets.diff.some(t => /days after the message date|test message/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'arrival-despatch-same-day.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('days after the message date');
+  await expect(page.locator('#quickOverview')).not.toContainText('Marked as a test message');
+});

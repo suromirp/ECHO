@@ -604,6 +604,21 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   as `UNKNOWN`). Message check in ORDRSP, DESADV and INVOIC, both modes
   (`checkGlnNotNumeric`, key `gln-not-numeric`). Only a value with a
   non-digit counts; a number of another length is left alone (rule 7).
+- **No action code in LIN** (real ORDRSP, `LIN+1++<EAN>` on every line):
+  Transus wrote 5 (accepted) on every line of bol's output. The line rule
+  now reads "No action code on the line" with that explanation, in place
+  of "Action code (none) isn't one bol/Transus maps".
+- **Same item twice, once with quantity 0** (same ORDRSP): every EAN came
+  back on a second line with `QTY+12:0`. One grouped Message check, both
+  modes (`checkRepeatedItemZero`, key `item-repeated-zero`). Only when one
+  line of the item confirms more than 0 and another says exactly 0.
+- **Expected arrival far after the message date** (real DESADV, `DTM+132`
+  four months ahead; bol's output carried another date): Message check,
+  both modes (`checkArrivalFarAhead`, key `arrival-far-ahead`). Generous:
+  more than 90 days.
+- **UNB test indicator** (`UNB` element 11 = 1, seen on a real invoice):
+  Good to know in all three types, Quick check and the supplier side in
+  Compare (`checkTestFlag`, key `unb-test`).
 - **Empty envelope references** (same test ORDRSP): `UNB` without an
   interchange reference, `UNH++…`, `UNT+47'` and `UNZ+1'`. Message check on
   EDIFACT messages (`checkEnvelopeRefs`, key `envelope-ref`); in Compare the

@@ -427,6 +427,13 @@ actual test fixtures, don't just keep this list as prose:
 - **INVOIC**: a packaging levy (`ALC+C AEO`) next to a deposit
   (`deposit-levy.sup.edi`) gets its own note in the deposit card and stays
   out of the deposit total; the card still says "Adds up".
+- **ORDRSP**: `repeated-item-zero-no-action.edi`: lines without an action
+  code read "No action code on the line"; two items repeated with quantity
+  0 give one grouped Message check in both modes; a normal ORDRSP stays
+  quiet.
+- **DESADV**: `arrival-far-ahead-test-flag.edi`: arrival 115 days after
+  the message date is one Message check; the UNB test indicator is Good to
+  know; a normal DESADV shows neither.
 - **All types**: a party GLN that isn't a number
   (`tests/fixtures/ordrsp/gln-not-numeric.edi`, `NAD+DP+UNKNOWN`) is one
   Message check in both modes; a normal message stays quiet.

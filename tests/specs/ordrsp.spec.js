@@ -884,3 +884,27 @@ test('a GLN that is not a number is a Message check in both modes', async ({ pag
   await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('GLN is not a number');
 });
+
+// Real ORDRSP: no action code on any LIN, and every EAN repeated on a
+// second line with quantity 0.
+test('lines without an action code and an item repeated with quantity 0 are Message checks in both modes', async ({ page }) => {
+  const f = path.join(FIX, 'repeated-item-zero-no-action.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('No action code on the line');
+  await expect(ov).not.toContainText("(none) isn't one");
+  await expect(ov).toContainText('Same item on more than one line, once with quantity 0');
+  await expect(ov).toContainText('(2 items)');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('Same item on more than one line'))).toHaveLength(1);
+  expect(buckets.diff.some(t => t.includes('Same item on more than one line'))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('Same item on more than one line');
+  await expect(page.locator('#quickOverview')).not.toContainText('No action code');
+});

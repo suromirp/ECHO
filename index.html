@@ -708,7 +708,7 @@ function splitEsc(str,delim,rel){
 function parseUnbElements(el,delims){
   const s=splitEsc(el[2]||'',delims.comp,delims.rel),r=splitEsc(el[3]||'',delims.comp,delims.rel);
   const v=x=>(x||'').trim()||null;
-  return {sender:v(s[0]),senderQual:v(s[1]),recipient:v(r[0]),recipientQual:v(r[1]),controlRef:v(el[5])};
+  return {sender:v(s[0]),senderQual:v(s[1]),recipient:v(r[0]),recipientQual:v(r[1]),controlRef:v(el[5]),test:v(el[11])==='1'};
 }
 function interchangeUnb(raw){
   const {segs,delims}=splitSegments(raw);
@@ -2091,6 +2091,9 @@ const ACTION6_DATE_ONLY_KEYS=new Set(['action6-no-backorder-has-confirmed','acti
 function actionRule(key){
   if(key.startsWith('action-unknown:')){
     const code=key.slice('action-unknown:'.length);
+    // No action code at all (LIN+1++<EAN>): a real ORDRSP had none on any
+    // line and Transus wrote 5 (accepted) on every line of bol's output.
+    if(code==='(none)')return {level:'warn',h:'No action code on the line',more:"The line doesn't say whether it is accepted (5), changed (6) or cancelled (2). In a real case Transus wrote 5 (accepted) on such lines in bol's output. Worth confirming that this is what the sender means, certainly on a line with quantity 0."};
     return {level:'warn',h:`Action code ${esc(code)} isn't one bol/Transus maps`,more:'bol/Transus map action codes 2, 5 and 6. Worth confirming how this one was handled downstream.'};
   }
   return ACTION_RULE_EXPLAIN[key]||{level:'warn',h:esc(key),more:''};
@@ -3003,6 +3006,43 @@ function envelopeRefGaps(m){
 function checkEnvelopeRefs(m,label,add){
   const gaps=envelopeRefGaps(m);if(!gaps.length)return;
   add('warn',fkey('envelope-ref')+`${label?label+' — ':''}<strong>Reference number empty in the envelope</strong> <span class="seg">(${gaps.join(', ')})</span>`+moreInfo(`UNB and UNZ carry the interchange reference, UNH and UNT the message reference; EDIFACT expects each to be filled, and UNB/UNZ and UNH/UNT to match. Here ${gaps.length===1?'it is':'they are'} empty in ${gaps.join(', ')}. A strict receiver may refuse the message.`),'message');
+}
+/* Test indicator in the interchange header (UNB element 11 = 1). A real
+   invoice carried it while being handled as a live one. Good to know. */
+function checkTestFlag(m,label,add){
+  if(!m||!m.unb||!m.unb.test)return;
+  add('info',fkey('unb-test')+`${label?label+' — ':''}<strong>Marked as a test message</strong> <span class="seg">(UNB test indicator = 1)</span>`+moreInfo(`The interchange header has its test indicator set. Fine for a test; on a live message it is worth asking the sender to switch it off, since a receiving system may treat the file as a test.`),'info');
+}
+/* Expected arrival far after the message date (DESADV): a despatch advice
+   says the goods are on their way, so an arrival months later is unusual.
+   A real DESADV had DTM+132 four months ahead and bol's output carried a
+   different date. Generous (rule 7): more than 90 days. */
+const ARRIVAL_FAR_DAYS=90;
+function checkArrivalFarAhead(facts,label,add){
+  if(!facts||!facts.arrivalDate||!facts.docDate)return;
+  const a=facts.arrivalDate,d=facts.docDate;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(a)||!/^\d{4}-\d{2}-\d{2}$/.test(d))return;
+  const days=Math.round((Date.parse(a)-Date.parse(d))/864e5);
+  if(!(days>ARRIVAL_FAR_DAYS))return;
+  const seg=facts.headerDtm&&facts.headerDtm['132']?'DTM+132':(facts.headerDtm&&facts.headerDtm['17']?'DTM+17':'DTM+2');
+  add('warn',fkey('arrival-far-ahead')+`${label?label+' — ':''}<strong>Expected arrival is ${days} days after the message date</strong> <span class="seg">(${seg})</span>: ${esc(showDate(a))}, message created ${esc(showDate(d))}.`+moreInfo(`${seg} is the expected arrival at the bol warehouse. A despatch advice is usually sent when the goods leave, so an arrival more than ${ARRIVAL_FAR_DAYS} days later stands out. It can be right (a long transit), or a date typed with the wrong year. Worth checking which arrival date is meant.`),'message');
+}
+/* ORDRSP: the same item on more than one line, where one line confirms a
+   quantity and another says 0. A real ORDRSP repeated every EAN on a
+   second line with quantity 0. One grouped finding, items as tags. */
+function checkRepeatedItemZero(facts,label,add,jumpCall){
+  if(!facts||facts.msgType!=='ORDRSP')return;
+  const by=new Map();
+  (facts.lines||[]).forEach(l=>{
+    const k=normalizeGtin(l.gtin)||l.art;if(!k)return;
+    const n=parseFloat(l.qty&&l.qty['12']);if(isNaN(n))return;
+    if(!by.has(k))by.set(k,{item:l.gtin||l.art,pos:0,zero:0});
+    const g=by.get(k);if(n>0)g.pos++;else if(n===0)g.zero++;
+  });
+  const hits=[...by.values()].filter(g=>g.pos&&g.zero).map(g=>g.item);
+  if(!hits.length)return;
+  const n=hits.length;
+  add('warn',fkey('item-repeated-zero')+`${label?label+' — ':''}<strong>Same item on more than one line, once with quantity 0</strong> <span class="dim">(${n} item${n===1?'':'s'})</span>`+valueTagsHtml(hits,jumpCall,'items')+moreInfo(`${n===1?'This item is':'These items are'} confirmed on one line and listed again on another line with a confirmed quantity of 0. It isn't clear from the message which line is the answer for the item. Worth checking how the order shows it, and asking the sender to send each item once.`),'message');
 }
 /* ORDRSP: confirmed delivery date (DTM+67) before the message date
    (DTM+137). A real test ORDRSP confirmed 28-10 in a message created 09-11.
@@ -4140,6 +4180,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkConsignmentPalletCount,factsJump);
     perSideOnce(add,sup,bol,checkNoExpectedDelivery,factsJump);
     perSideOnce(add,sup,bol,checkArrivalBeforeDocDate,factsJump);
+    perSideOnce(add,sup,bol,checkArrivalFarAhead,factsJump);
     perSideOnce(add,sup,bol,checkArrivalIsDespatchDay,factsJump);
     compareDesadvDates(sup,bol,add);
     perSideOnce(add,sup,bol,checkPackingRefNearMatch,factsJump);
@@ -4208,6 +4249,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,(f,label,a,j)=>checkSomeLinesWithoutPrice(f,label,a,j,f===sup?supSkip:bolSkip),factsJump);
     perSideOnce(add,sup,bol,checkNetPriceIsLineTotal,factsJump);
     perSideOnce(add,sup,bol,checkConfirmedDateBeforeDocDate,factsJump);
+    perSideOnce(add,sup,bol,checkRepeatedItemZero,factsJump);
   }
 
   // DTM qualifier repeated with different values within one LIN group —
@@ -4219,6 +4261,7 @@ function compare(bol,sup){
     // supplier's message.
     checkUnbSender(sup,'Supplier',add,factsJump('sup'));
     checkEnvelopeRefs(sup,'Supplier',add);
+    checkTestFlag(sup,'Supplier',add);
     perSideOnce(add,sup,bol,checkOrderNearMiss,factsJump);
     perSideOnce(add,sup,bol,checkOrderNotNumeric,factsJump);
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,factsJump);
@@ -6041,6 +6084,7 @@ function compareInvoice(sup,bol){
   // UNB sender vs NAD+SU: the supplier side only (bol's UBL has no UNB).
   checkUnbSender(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
   if(sup.format==='EDIFACT')checkEnvelopeRefs(sup,'Supplier',add);
+  checkTestFlag(sup,'Supplier',add);
   // Blank LIN segments and no order number anywhere: single-message checks
   // ORDRSP/DESADV already run (parity rule), per side here.
   perSideOnce(add,sup,bol,(f,label,a)=>{if(f.blankLinCount)a('warn',`${label} — `+invoiceBlankLinText(f.blankLinCount),'message');},invJump);
@@ -7072,6 +7116,7 @@ function invoiceOverviewHtml(inv,opts={}){
   if(creditNoteWithoutInvoiceRef(inv))qcAdd('info',creditNoteRefText(creditNoteRefSeg(inv)));
   checkUnbSender(inv,'',qcAdd,jumpCall);
   checkEnvelopeRefs(inv,'',qcAdd);
+  checkTestFlag(inv,'',qcAdd);
   checkSupplierIsBuyer(inv,'',qcAdd);
   checkGlnNotNumeric(inv,'',qcAdd);
   // qty × net price vs. line amount — a message-own arithmetic check, run
@@ -7193,6 +7238,7 @@ function factsOverviewHtml(facts){
     checkConsignmentPalletCount(facts,'',qcAdd,jumpCall);
     checkNoExpectedDelivery(facts,'',qcAdd);
     checkArrivalBeforeDocDate(facts,'',qcAdd);
+    checkArrivalFarAhead(facts,'',qcAdd);
     checkArrivalIsDespatchDay(facts,'',qcAdd);
     checkPackingRefNearMatch(facts,'',qcAdd,jumpCall);
     checkRepeatedDeliveryItem(facts,'',qcAdd,jumpCall);
@@ -7230,9 +7276,11 @@ function factsOverviewHtml(facts){
   if(type==='ORDRSP'||type==='DESADV')checkDeliveryPartyIsBuyer(facts,'',qcAdd);
   checkUnbSender(facts,'',qcAdd,jumpCall);
   checkEnvelopeRefs(facts,'',qcAdd);
+  checkTestFlag(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkSupplierIsBuyer(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkGlnNotNumeric(facts,'',qcAdd);
   if(type==='ORDRSP')checkConfirmedDateBeforeDocDate(facts,'',qcAdd,jumpCall);
+  if(type==='ORDRSP')checkRepeatedItemZero(facts,'',qcAdd,jumpCall);
   if(orderState.quick)checkAgainstOrder(facts,orderState.quick,'',qcAdd,jumpCall);
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).
