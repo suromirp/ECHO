@@ -187,6 +187,9 @@
   .zq-kind{font-weight:600;white-space:nowrap;}
   .zq-name{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .zq-note{font-size:11.5px;color:var(--text-faint);white-space:nowrap;}
+  .zq-partner{font-family:var(--sans);font-size:12.5px;color:var(--text);margin-right:10px;}
+  .pkg-status{font-family:var(--sans);color:var(--text-dim);margin-left:8px;}
+  .pkg-link{font-family:var(--sans);color:var(--accent);margin-left:8px;white-space:nowrap;}
   .zq-lv{color:var(--text-dim);}
   .zq-lv.ok{color:var(--ok);}.zq-lv.warn{color:var(--warn);}.zq-lv.err{color:var(--err);}
   @media(max-width:620px){.zq-item{grid-template-columns:18px minmax(0,1fr);}.zq-kind,.zq-note{display:none;}}
@@ -763,6 +766,7 @@
       </div>
       <div class="order-opt" id="orderOptCompare">
           <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
+          <button class="btn ghost hidden" id="orderFetchBtn" type="button" data-order="" title="Looks up the order of this message in Transus and adds it here">Get the order from Transus</button>
           <span class="fname hidden" id="orderNameCompare"></span>
           <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
           <span class="dim" id="orderHintCompare">Checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV the order response works too.</span>
@@ -9154,8 +9158,12 @@ function importSync(){
   if(document.getElementById('legendDetails').open)helpRender();
   if(fold){
     const n=id=>esc(document.getElementById(id).textContent||'\u2014');
-    document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`;
+    const pm=pkgMeta[(cstate.source||{}).zip]||{};
+    document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`
+      +(pm.status?` <span class="pkg-status" title="Status of this message in Transus">Transus: ${esc(pm.status)}</span>`:'')
+      +(pm.url?` <a class="pkg-link" href="${esc(pm.url)}" target="_blank" rel="noopener noreferrer" title="Opens this message in the Transus portal">Open in Transus \u2197</a>`:'');
   }
+  pkgOrderSync();
 }
 document.getElementById('importChangeBtn').addEventListener('click',()=>{importOpen=true;importSync();});
 ['results','invoiceResults'].forEach(id=>new MutationObserver(importSync).observe(document.getElementById(id),{attributes:true,attributeFilter:['class']}));
@@ -9172,7 +9180,38 @@ zipDrop.addEventListener('click',()=>zipInput.click());
 zipDrop.addEventListener('dragover',e=>{e.preventDefault();zipDrop.classList.add('over');});
 zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
 zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');zipTake([...e.dataTransfer.files]);});
-zipInput.addEventListener('change',e=>{zipTake([...e.target.files]);e.target.value='';});
+zipInput.addEventListener('change',e=>{pkgMetaTake();zipTake([...e.target.files]);e.target.value='';});
+/* What the place a package came from knows about it: trading partner,
+   status, a link back. A helper in the browser may hand this over as JSON
+   on the file input (data-pkg-meta, keyed by file name) together with the
+   file. It is only shown, never used in a check, and a link is only kept
+   when it points at the Transus portal. */
+const pkgMeta={};
+const PKG_LINK=/^https:\/\/online\.transus\.com\//;
+function pkgMetaTake(){
+  let m=null;
+  try{m=JSON.parse(zipInput.dataset.pkgMeta||'null');}catch(err){m=null;}
+  delete zipInput.dataset.pkgMeta;
+  if(!m||typeof m!=='object')return;
+  Object.keys(m).slice(0,200).forEach(name=>{
+    const v=m[name]||{},o={};
+    ['partner','status'].forEach(k=>{if(typeof v[k]==='string'&&v[k].trim())o[k]=v[k].trim().slice(0,120);});
+    if(typeof v.url==='string'&&PKG_LINK.test(v.url)&&v.url.length<600)o.url=v.url;
+    if(Object.keys(o).length)pkgMeta[name]=Object.assign(pkgMeta[name]||{},o);
+  });
+}
+// The order number of the message on screen, for a helper that can fetch
+// the matching order: kept on the button, shown only when a helper said
+// it is there (data-pkg-bridge on <html>).
+function pkgOrderSync(){
+  const btn=document.getElementById('orderFetchBtn');
+  let no='';
+  if(cstate.sup&&!orderState.compare&&!document.getElementById('results').classList.contains('hidden')){
+    try{const f=parseFactsList(cstate.sup.text)[0];if(f&&(f.msgType==='ORDRSP'||f.msgType==='DESADV'))no=headerOrders(f)[0]||'';}catch(err){no='';}
+  }
+  btn.dataset.order=no;
+  btn.classList.toggle('hidden',!no||document.documentElement.dataset.pkgBridge!=='1');
+}
 
 /* ---- Package list: several ZIPs at once, and a watched download folder ----
    Downloading each message package from Transus and importing it by hand
@@ -9191,7 +9230,7 @@ function zipQRender(){
   const check=zipQ.length>1&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking\u2026':'Check all'}</button>`:'';
   box.innerHTML=`<div class="zq-head"><span>Packages (${zipQ.length})</span>${check}</div><div class="zq-list">`+zipQ.map((q,i)=>{
     const lv=ZQ_LEVEL[q.level];
-    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">\u25cf</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
+    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' \u00b7 '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">\u25cf</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${(pkgMeta[q.name]||{}).partner?`<span class="zq-partner">${esc(pkgMeta[q.name].partner)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
   }).join('')+'</div>';
 }
 /* What a package came out as, read from the result that is on screen
@@ -9439,6 +9478,7 @@ function orderSetUi(mode){
   nm.classList.toggle('hidden',!st);
   document.getElementById('orderClear'+M).classList.toggle('hidden',!st);
   document.getElementById('orderHint'+M).classList.toggle('hidden',!!st);
+  if(mode==='compare'&&typeof pkgOrderSync==='function')pkgOrderSync();
 }
 function orderRerun(mode){
   if(mode==='compare'){if(cstate.bol&&cstate.sup&&!document.getElementById('results').classList.contains('hidden'))runCompare();}

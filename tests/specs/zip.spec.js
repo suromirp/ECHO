@@ -144,3 +144,35 @@ test('a watched download folder lists its packages and picks up a new one', asyn
   await page.locator('#watchStopBtn').click();
   await expect(page.locator('#watchBtn')).toBeVisible();
 });
+
+// A helper in the browser may hand over what the portal knows about a
+// package together with the file. It is shown, a link is only kept when it
+// points at the portal, and the order button only appears when a helper
+// announced itself.
+test('package details handed over with the file are shown; a foreign link is dropped', async ({ page }) => {
+  const dir = path.join(__dirname, '..', 'fixtures', 'zip');
+  await openApp(page);
+  await expect(page.locator('#orderFetchBtn')).toBeHidden();
+  await page.evaluate(() => {
+    document.documentElement.dataset.pkgBridge = '1';
+    document.getElementById('zipInput').dataset.pkgMeta = JSON.stringify({
+      'Message_ID_100000001.zip': { partner: 'Supplier Alfa', status: 'Delivered', url: 'https://online.transus.com/Messages/MessageDetails.aspx?mid=1' },
+      'utf16-pair.zip': { partner: 'Supplier <b>Bravo</b>', url: 'https://example.com/x' },
+    });
+  });
+  await page.locator('#zipInput').setInputFiles([path.join(dir, 'Message_ID_100000001.zip'), path.join(dir, 'utf16-pair.zip')]);
+  const items = page.locator('#zipQueue .zq-item');
+  await expect(items.nth(0).locator('.zq-partner')).toHaveText('Supplier Alfa');
+  await expect(items.nth(1).locator('.zq-partner')).toHaveText('Supplier <b>Bravo</b>');
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+  await expect(page.locator('#importSum .pkg-status')).toHaveText('Transus: Delivered');
+  await expect(page.locator('#importSum .pkg-link')).toHaveAttribute('href', /^https:\/\/online\.transus\.com\//);
+  const btn = page.locator('#orderFetchBtn');
+  await expect(btn).toBeVisible();
+  expect(await btn.getAttribute('data-order')).toMatch(/\d/);
+
+  await items.nth(1).click();
+  await expect(items.nth(1)).toHaveClass(/active/);
+  await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
+  await expect(page.locator('#importSum .pkg-link')).toHaveCount(0);
+});

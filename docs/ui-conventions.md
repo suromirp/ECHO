@@ -400,6 +400,15 @@ part of the work, so the ZIP drop zone takes more than one package.
   the message kind in words (Order response, Despatch advice, Invoice,
   Order) in front of the file name, because a row of message IDs says
   nothing about what is in them.
+- **Details from where the package came from**: a helper in the browser
+  may hand over the trading partner, the portal's status and a link back
+  together with the file (`data-pkg-meta` on the ZIP input, keyed by file
+  name). The partner goes in front of the name in the list; status and
+  "Open in Transus" go on the folded import line. They are shown as they
+  came, never used in a check, and a link is only kept when it points at
+  the Transus portal. "Get the order from Transus" is only visible when
+  such a helper announced itself (`data-pkg-bridge` on `<html>`) and the
+  message on screen has an order number and no order added yet.
 - **Marks in the list**: a package that has been compared carries the
   level of its verdict card (✓, !, ⚠), read from that card so the two
   can't disagree. A pair that gave no comparison shows `·`, a ZIP with
