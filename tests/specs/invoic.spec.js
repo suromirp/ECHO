@@ -183,7 +183,7 @@ test('a line-level charge matches across sides despite a GTIN-12/13 leading-zero
   await expect(page.locator('#invoiceResults')).toBeVisible();
 
   const buckets = await invoiceFindingsByCategory(page);
-  expect([...buckets.diff, ...buckets.message].some(t => /RAD/i.test(t))).toBe(false);
+  expect([...buckets.diff, ...buckets.message].filter(t => !t.includes('Deposit (statiegeld)')).some(t => /RAD/i.test(t))).toBe(false);
 
   const chargeRows = page.locator('#invoiceResults table.inv tr', { hasText: 'RAD' });
   await expect(chargeRows).toHaveCount(1);
@@ -1027,7 +1027,9 @@ test('a deposit (RAD, MOA+8, outside the VAT) is read as a line charge without f
   await runCompareFixtures(page, path.join(FIX, 'deposit-rad.sup.edi'), path.join(FIX, 'deposit-rad.bol.ubl.xml'));
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const b = await invoiceFindingsByCategory(page);
-  expect(b.message).toEqual([]);
+  expect(b.message).toHaveLength(1);
+  expect(b.message[0]).toContain('Deposit (statiegeld)');
+  expect(b.message[0]).toContain("In bol's output with the same amount");
   expect(b.diff).toHaveLength(1);
   expect(b.diff[0]).toContain('All compared values match');
 });
@@ -1094,4 +1096,54 @@ test('an INVOIC in segment-per-element XML is read and compared like EDIFACT', a
   await runQuickFixture(page, sup);
   await expect(page.locator('#quickOverview')).toContainText('INV9801');
   await expect(page.locator('#quickOverview')).toContainText('8712345678906');
+});
+
+// Deposit (statiegeld): one block that says what it is, how much, how it's
+// taxed and whether the totals account for it, in both modes. A real bol
+// output had an empty <cbc:TaxableAmount> on every line (no line-level
+// MOA+125 from the supplier) and was rejected with "Couldn't parse XML
+// content": an empty amount field is a Transformation difference.
+test('a deposit gets its own block in both modes; an empty amount field in bol\'s output is a difference', async ({ page }) => {
+  const sup = path.join(FIX, 'deposit-vat.sup.edi');
+  const bol = path.join(FIX, 'deposit-vat.bol.ubl.xml');
+  await openApp(page);
+  await runQuickFixture(page, sup);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Deposit (statiegeld)');
+  await expect(ov).toContainText('2 lines, total 25.50 EUR');
+  await expect(ov).toContainText('VAT on the deposit: 0%');
+  await expect(ov).toContainText('The 0% VAT group (25.50 EUR) is exactly the deposit');
+  await expect(ov).toContainText('The deposit is included in the line amount');
+  await expect(ov).toContainText('0.15 EUR / 0.25 EUR');
+  await expect(ov).toContainText('Copy deposit summary');
+  await expect(ov).not.toContainText('Empty amount field');
+  const copy = await page.evaluate(() => Object.values(depositCopyTexts).pop());
+  expect(copy.nl).toContain('Statiegeld op factuur INV9811');
+  expect(copy.nl).toContain('10 × 1,80 EUR = 18,00 EUR (0,15 EUR per stuk bij 12 per verpakking)');
+  expect(copy.en).toContain('Deposit on invoice INV9811');
+
+  await openApp(page);
+  await runQuickFixture(page, bol);
+  await expect(ov).toContainText('Deposit (statiegeld)');
+  await expect(ov).toContainText('Empty amount field in bol\'s output');
+  await expect(ov).toContainText('TaxableAmount (2× on invoice lines)');
+  await expect(ov).not.toContainText('TaxInclusiveAmount (');
+
+  await openApp(page);
+  await runCompareFixtures(page, sup, bol);
+  await expect(page.locator('#invoiceResults')).toBeVisible();
+  const b = await invoiceFindingsByCategory(page);
+  const dep = b.message.filter(t => t.includes('Deposit (statiegeld)'));
+  expect(dep).toHaveLength(1);
+  expect(dep[0]).toContain('Supplier');
+  expect(dep[0]).toContain("In bol's output: on all 2 lines, same amount");
+  expect(b.diff.filter(t => t.includes('Empty amount field'))).toHaveLength(1);
+});
+
+test('a deposit with VAT on it is noted as worth a look, in neutral words', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'deposit-taxed.sup.edi'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('VAT on the deposit: 9%. A deposit is usually outside VAT (0%)');
+  await expect(ov).not.toContainText('invalid');
 });

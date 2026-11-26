@@ -4668,6 +4668,11 @@ function parseInvoicEdifact(raw){
           break;
         }
         /* header / summary */
+        if(inSummary&&cur.extras.vatGroups&&cur.extras.vatGroups.length){
+          const g=cur.extras.vatGroups[cur.extras.vatGroups.length-1];
+          if(q==='125'&&g.taxable===null)g.taxable=v;
+          else if((q==='124'||q==='176')&&g.tax===null)g.tax=v;
+        }
         if(q==='125')cur.totals.taxable=(cur.totals.taxable===null?v:cur.totals.taxable);
         // MOA+176 can also sit inside each summary TAX group (real invoice:
         // a message-level 248.49, then 248.49 under the 9% group and 0.00
@@ -4725,6 +4730,10 @@ function parseInvoicEdifact(raw){
         // even though it changes nothing about the comparison itself.
         const taxType=(el[2]||'').trim();
         const category=(comp(6)[0]||'').trim();
+        if(curAlc)curAlc.vatCat=category||null;
+        // Summary VAT groups (TAX followed by its MOA+125/124), per rate:
+        // the deposit check compares the 0% group with the deposit total.
+        if(inSummary&&!curAlc)(cur.extras.vatGroups=cur.extras.vatGroups||[]).push({pct,cat:category||null,taxable:null,tax:null});
         if(pct===null&&taxType&&category){
           const alcRef=curAlc?`${curAlc.kind}${curAlc.code?' '+curAlc.code:''}`:'';
           const ref=curLine?`line ${curLine.lineNo||'?'}${alcRef?` (${alcRef})`:''}`:(alcRef?`message-level ${alcRef}`:'the invoice summary');
@@ -5007,6 +5016,7 @@ function parseInvoicBolXml(raw){
         if(ta!==null)inv.totals.taxable=Math.round(((inv.totals.taxable||0)+ta)*100)/100;
         if(p!==null)uniqPush(inv.taxRates,p);
         if(inv.totals.tax===null){const t=num(valOf(sub,['TaxAmount']));if(t!==null)inv.totals.tax=t;}
+        (inv.extras.vatGroups=inv.extras.vatGroups||[]).push({pct:p,cat:valOf(sub,['TaxCategory','ID']),taxable:ta,tax:num(valOf(sub,['TaxAmount']))});
       });
     }
     const lmt=childByName(root,'LegalMonetaryTotal');
@@ -5091,6 +5101,24 @@ function parseInvoicBolXml(raw){
       if(id)uniqPush(inv.invoiceRefs,id);
     }
     finalizeInvoiceRefs(inv);
+    /* Amount fields present but empty (<cbc:TaxableAmount currencyID="EUR"/>).
+       A real bol output had one on every invoice line (the supplier sent no
+       line-level MOA+125) and bol's invoice process rejected it with
+       "Couldn't parse XML content". An empty header TaxInclusiveAmount is
+       in nearly every bol output, also processed ones: left out. */
+    {
+      const empty={};
+      for(const el of root.getElementsByTagNameNS('*','*')){
+        const nm=localName(el);
+        if(!/Amount$/.test(nm)||el.children.length||el.textContent.trim()!=='')continue;
+        let a=el.parentElement,line=false;
+        while(a&&a!==root){if(localName(a)==='InvoiceLine'||localName(a)==='CreditNoteLine'){line=true;break;}a=a.parentElement;}
+        if(!line&&nm==='TaxInclusiveAmount')continue;
+        const k=(line?'line:':'header:')+nm;
+        empty[k]=(empty[k]||0)+1;
+      }
+      inv.extras.emptyAmounts=Object.entries(empty).map(([k,n])=>{const [scope,el]=k.split(':');return {scope,el,n};});
+    }
     inv.raw={xml:raw};
     return inv;
   });
@@ -5461,6 +5489,164 @@ function checkLineAllowances(inv,label,add,jumpCall){
     return;
   }
   add('warn',fkey('line-allowance')+`${label?label+' — ':''}<strong>Discount sent as a line-level allowance</strong> <span class="seg">(ALC+A)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(items,jumpCall,'items')+moreInfo(`bol's invoice process doesn't carry line-level allowances through; only line-level charges are forwarded. bol then reads <span class="seg">PRI+AAA</span> as the net price per unit. If that is the price before discount, the price and line amounts on bol's side can differ from the order. bol's INVOIC guidance asks for a discount to be included in the net price instead.`),'message');
+}
+/* ---- Deposit (statiegeld) ----
+   A refundable deposit on cans, bottles or crates, sent as a line charge
+   (ALC+C with code RAD in real invoices, the amount in MOA+8, its own TAX
+   at 0%). One block per invoice that says what the deposit is, how much,
+   how it's taxed and whether the totals account for it: the thing the
+   matching & valuation team asks about. One side's own message, so both
+   modes (parity rule). Neutral wording (rules 2 and 7): what's observed,
+   and "worth a look", never "wrong". */
+const DEPOSIT_CODES=['RAD'];
+const DEPOSIT_DESC=/statiegeld|deposit|pfand|leeggoed|emballage|consigne|returnable/i;
+const ZERO_VAT_CATS=['E','Z','AE','K','G','O'];
+// Dutch deposit amounts per item: cans and plastic bottles up to 1 litre,
+// plastic bottles over 1 litre. Only used to say "matches", never to judge.
+const NL_DEPOSIT_RATES=[0.15,0.25];
+function isDepositCharge(c){
+  return !!c&&c.kind==='charge'&&(DEPOSIT_CODES.includes(String(c.code||'').toUpperCase())||DEPOSIT_DESC.test(c.desc||''));
+}
+function depositVatPct(c){
+  if(c.vatPct!=null)return c.vatPct;
+  return ZERO_VAT_CATS.includes(String(c.vatCat||'').toUpperCase())?0:null;
+}
+function depositSummary(inv){
+  if(!inv||inv.docType==='credit')return null;
+  const r2=v=>Math.round(v*100)/100;
+  const near=(a,b)=>Math.abs(Math.abs(a)-Math.abs(b))<0.015;
+  const rows=[];
+  (inv.lines||[]).forEach(l=>{
+    const dep=(l.charges||[]).filter(isDepositCharge);
+    if(!dep.length)return;
+    const withAmt=dep.filter(c=>c.amount!=null&&Math.abs(c.amount)>=0.005);
+    const amount=withAmt.length?r2(withAmt.reduce((s,c)=>s+c.amount,0)):null;
+    const vats=dep.map(depositVatPct);
+    let inLine=null;
+    if(amount!=null&&l.lineAmount!=null&&l.qty!=null&&l.netPrice!=null){
+      const base=l.qty*l.netPrice;
+      if(near(l.lineAmount,base+amount))inLine=true;else if(near(l.lineAmount,base))inLine=false;
+    }
+    const m=/(\d{1,3})\s*[x×]\s*\d/i.exec(l.desc||'');
+    const pack=m&&+m[1]>1?+m[1]:null;
+    const perUnit=amount!=null&&l.qty?amount/l.qty:null;
+    rows.push({item:l.gtin||l.art||('line '+(l.lineNo||'?')),qty:l.qty,amount,vats,
+      code:dep[0].code||dep[0].desc||'',cat:dep[0].vatCat||null,perUnit,pack,perItem:perUnit!=null&&pack?perUnit/pack:null,inLine});
+  });
+  const hdr=(inv.charges||[]).filter(isDepositCharge);
+  if(!rows.length&&!hdr.length)return null;
+  const hdrAmt=hdr.filter(c=>c.amount!=null).reduce((s,c)=>s+c.amount,0);
+  const total=r2(rows.reduce((s,r)=>s+(r.amount||0),0)+hdrAmt);
+  const vats=[...rows.flatMap(r=>r.vats),...hdr.map(depositVatPct)];
+  const groups=(inv.extras&&inv.extras.vatGroups)||[];
+  const zg=groups.filter(g=>g.pct===0||(g.pct==null&&ZERO_VAT_CATS.includes(String(g.cat||'').toUpperCase())));
+  const zt=zg.filter(g=>g.taxable!=null);
+  return {rows,hdr,total,vats,vatKnown:inv.source==='EDIFACT'||vats.some(v=>v!==null),
+    hasGroups:groups.length>0,zeroGroup:zg.length>0,zeroTaxable:zt.length?r2(zt.reduce((s,g)=>s+g.taxable,0)):null,
+    number:inv.number||null,cur:inv.currency||'EUR'};
+}
+/* Observations: {level:'ok'|'warn', en, nl}. */
+function depositNotes(d,carried){
+  const out=[];
+  const a=v=>fmtAmt(v,d.cur);
+  const nlA=v=>a(v).replace(/(\d),(\d{3})/g,'$1#$2').replace(/\.(\d{2})\b/,',$1').replace(/#/g,'.');
+  const noAmt=d.rows.filter(r=>r.amount==null).map(r=>r.item);
+  if(noAmt.length)out.push({level:'warn',en:`No deposit amount on ${noAmt.length} line${noAmt.length===1?'':'s'}: ${noAmt.join(', ')}.`,nl:`Geen statiegeldbedrag op ${noAmt.length} regel${noAmt.length===1?'':'s'}: ${noAmt.join(', ')}.`});
+  if(d.vatKnown){
+    const taxed=[...new Set(d.vats.filter(v=>v!==null&&v>0))];
+    const none=d.vats.filter(v=>v===null).length;
+    if(taxed.length)out.push({level:'warn',en:`VAT on the deposit: ${taxed.join('%, ')}%. A deposit is usually outside VAT (0%); worth checking with the supplier.`,nl:`Btw op het statiegeld: ${taxed.join('%, ')}%. Statiegeld valt meestal buiten de btw (0%); even navragen bij de leverancier.`});
+    // No TAX after the deposit ALC: common, and then the deposit is simply
+    // left out of the VAT groups. Noted, not a warning (rule 7).
+    else if(none)out.push({level:'ok',en:`No VAT rate stated for the deposit${none>1?` (${none}×)`:''}.`,nl:`Geen btw-tarief bij het statiegeld${none>1?` (${none}×)`:''}.`});
+    else out.push({level:'ok',en:'VAT on the deposit: 0%, as usual for a deposit.',nl:'Btw op het statiegeld: 0%, zoals gebruikelijk.'});
+    if(!taxed.length&&!none&&d.hasGroups){
+      if(!d.zeroGroup)out.push({level:'warn',en:'The VAT summary has no 0% group, while the deposit is at 0%.',nl:'De btw-samenvatting heeft geen 0%-groep, terwijl het statiegeld op 0% staat.'});
+      else if(d.zeroTaxable!=null){
+        if(Math.abs(d.zeroTaxable-d.total)<0.015)out.push({level:'ok',en:`The 0% VAT group (${a(d.zeroTaxable)}) is exactly the deposit.`,nl:`De 0%-btwgroep (${nlA(d.zeroTaxable)}) is precies het statiegeld.`});
+        else if(d.zeroTaxable>d.total)out.push({level:'ok',en:`The 0% VAT group (${a(d.zeroTaxable)}) holds the deposit and ${a(d.zeroTaxable-d.total)} of other amounts.`,nl:`De 0%-btwgroep (${nlA(d.zeroTaxable)}) bevat het statiegeld plus ${nlA(d.zeroTaxable-d.total)} aan andere bedragen.`});
+        else out.push({level:'warn',en:`The 0% VAT group (${a(d.zeroTaxable)}) is less than the deposit total (${a(d.total)}).`,nl:`De 0%-btwgroep (${nlA(d.zeroTaxable)}) is lager dan het totale statiegeld (${nlA(d.total)}).`});
+      }
+    }
+  }
+  const inL=d.rows.filter(r=>r.inLine===true).length,outL=d.rows.filter(r=>r.inLine===false).length;
+  if(inL&&!outL)out.push({level:'ok',en:'The deposit is included in the line amount (line amount = quantity × net price + deposit).',nl:'Het statiegeld zit in het regelbedrag (regelbedrag = aantal × nettoprijs + statiegeld).'});
+  else if(outL&&!inL)out.push({level:'ok',en:'The deposit is on top of the line amount (line amount = quantity × net price).',nl:'Het statiegeld komt bovenop het regelbedrag (regelbedrag = aantal × nettoprijs).'});
+  else if(inL&&outL)out.push({level:'warn',en:`The deposit is in the line amount on ${inL} line${inL===1?'':'s'} and on top of it on ${outL}.`,nl:`Het statiegeld zit op ${inL} regel${inL===1?'':'s'} in het regelbedrag en op ${outL} erbovenop.`});
+  const rates=[...new Set(d.rows.map(r=>{
+    const v=r.perItem!=null?r.perItem:r.perUnit;
+    return v!=null?NL_DEPOSIT_RATES.find(x=>Math.abs(x-v)<0.0051):undefined;
+  }).filter(v=>v!==undefined))];
+  if(rates.length)out.push({level:'ok',en:`Per item that is ${rates.map(x=>a(x)).join(' / ')}, the Dutch deposit for cans and plastic bottles.`,nl:`Per stuk is dat ${rates.map(x=>nlA(x)).join(' / ')}, het Nederlandse statiegeld voor blik en plastic flessen.`});
+  if(carried){
+    if(carried.n===carried.of)out.push({level:'ok',en:carried.of===1?`In bol's output with the same amount.`:`In bol's output: on all ${carried.of} lines, same amount.`,nl:carried.of===1?`In bol's output met hetzelfde bedrag.`:`In bol's output: op alle ${carried.of} regels, zelfde bedrag.`});
+    else out.push({level:'warn',en:`In bol's output: on ${carried.n} of ${carried.of} lines with the same amount.`,nl:`In bol's output: op ${carried.n} van de ${carried.of} regels met hetzelfde bedrag.`});
+  }
+  return out;
+}
+/* Supplier deposit rows found again in bol's output (same item, same amount). */
+function depositCarried(sd,bol){
+  const bd=depositSummary(bol);
+  if(!sd)return null;
+  const pool=(bd?bd.rows:[]).map(r=>({k:normalizeGtin(r.item)||r.item,a:r.amount,used:false}));
+  let n=0;
+  sd.rows.forEach(r=>{
+    const k=normalizeGtin(r.item)||r.item;
+    const hit=pool.find(p=>!p.used&&p.k===k&&p.a!=null&&r.amount!=null&&Math.abs(Math.abs(p.a)-Math.abs(r.amount))<0.015);
+    if(hit){hit.used=true;n++;}
+  });
+  return {n,of:sd.rows.length};
+}
+let depositCopyTexts={};
+function depositCopyText(d,notes,lang){
+  const nl=lang==='nl';
+  const a=v=>{const s=fmtAmt(v,d.cur);return nl?s.replace(/(\d),(\d{3})/g,'$1#$2').replace(/\.(\d{2})\b/,',$1').replace(/#/g,'.'):s;};
+  const L=[];
+  L.push(nl?`Statiegeld${d.number?` op factuur ${d.number}`:''}`:`Deposit${d.number?` on invoice ${d.number}`:''}`);
+  L.push(nl?`- ${d.rows.length} regel${d.rows.length===1?'':'s'} met statiegeld, totaal ${a(d.total)}.`:`- ${d.rows.length} line${d.rows.length===1?'':'s'} with a deposit, total ${a(d.total)}.`);
+  d.rows.forEach(r=>{
+    let s=`- ${r.item}: `;
+    if(r.amount==null)s+=nl?'geen bedrag':'no amount';
+    else{
+      s+=r.qty!=null&&r.perUnit!=null?`${r.qty} × ${a(r.perUnit)} = ${a(r.amount)}`:a(r.amount);
+      if(r.perItem!=null)s+=nl?` (${a(r.perItem)} per stuk bij ${r.pack} per verpakking)`:` (${a(r.perItem)} per item, ${r.pack} per pack)`;
+    }
+    L.push(s);
+  });
+  if(d.hdr.length)L.push(nl?`- Statiegeld op berichtniveau: ${d.hdr.length}×.`:`- Message-level deposit: ${d.hdr.length}×.`);
+  notes.forEach(n=>L.push(`- ${n.level==='warn'?(nl?'Let op: ':'Note: '):''}${nl?n.nl:n.en}`));
+  return L.join('\n');
+}
+function copyDepositClick(btn,id){
+  const t=depositCopyTexts[id];
+  if(t)copyTextToClipboard(transusLang==='nl'?t.nl:t.en,btn);
+}
+function checkDeposit(inv,label,add,jumpCall,bolForCarry){
+  const d=depositSummary(inv);
+  if(!d)return;
+  const carried=bolForCarry?depositCarried(d,bolForCarry):null;
+  const notes=depositNotes(d,carried);
+  const warn=notes.some(n=>n.level==='warn');
+  const id='dep'+(Object.keys(depositCopyTexts).length+1);
+  depositCopyTexts[id]={en:depositCopyText(d,notes,'en'),nl:depositCopyText(d,notes,'nl')};
+  const a=v=>v==null?'—':esc(fmtAmt(v,d.cur));
+  const val=(v,txt)=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(v)}">${esc(txt)}</span>`:esc(txt);
+  const rows=d.rows.map(r=>`<tr><td>${val(r.item,r.item)}</td><td class="num">${r.qty==null?'—':esc(r.qty)}</td><td class="num">${a(r.amount)}</td><td class="num">${r.perUnit==null?'—':a(r.perUnit)}${r.perItem!=null?` <span class="dim">(${a(r.perItem)} × ${r.pack})</span>`:''}</td>${d.vatKnown?`<td class="num">${r.vats.every(v=>v!==null)?esc([...new Set(r.vats)].join('/')+'%'):'—'}</td>`:''}</tr>`).join('');
+  const table=d.rows.length?`<table class="dep-table" style="margin-top:7px;"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Deposit</th><th class="num">Per unit</th>${d.vatKnown?'<th class="num">VAT</th>':''}</tr></thead><tbody>${rows}</tbody></table>`:'';
+  // Plain divs, not <li>: list items inside a finding read as findings of
+  // their own elsewhere (report text, tests).
+  const list=`<div class="dep-notes" style="margin-top:7px;">${notes.map(n=>`<div>${n.level==='warn'?'⚠ ':'✓ '}${esc(n.en)}</div>`).join('')}</div>`;
+  const btn=`<div style="margin-top:8px;"><button type="button" class="btn" onclick="copyDepositClick(this,'${id}')" title="A short summary of the deposit, in the report language (EN/NL), to pass on to matching &amp; valuation">Copy deposit summary</button></div>`;
+  const codes=[...new Set(d.rows.map(r=>r.code).concat(d.hdr.map(c=>c.code||c.desc||'')).filter(Boolean))];
+  add(warn?'warn':'info',fkey('deposit')+`${label?label+' — ':''}<strong>Deposit (statiegeld)</strong> <span class="seg">(ALC+C${codes.length?' '+esc(codes.join(', ')):''})</span> <span class="dim">(${d.rows.length} line${d.rows.length===1?'':'s'}, total ${a(d.total)})</span>`+table+list+btn+moreInfo(`Statiegeld is a refundable deposit on cans, bottles or crates. The supplier charges it on the invoice and pays it back when the empties return, so it isn't part of the product price. On an EDIFACT invoice it's a line charge: <span class="seg">ALC+C</span> with a code (often <span class="seg">RAD</span>; some suppliers also use RAD for a packaging levy), the amount in <span class="seg">MOA+8</span> and its own <span class="seg">TAX</span>, usually 0%. The line amount may include it or not; either way the totals should add up. The Dutch deposit is € 0.15 per can or plastic bottle up to 1 litre and € 0.25 above that. "Per unit" is the deposit per invoiced unit; when the description names a pack size (e.g. 12x250ml), the amount per item is shown next to it.`),'message');
+}
+/* Empty amount elements in bol's UBL output (see parseInvoicBolXml). */
+function emptyAmountText(inv,label){
+  const e=(inv&&inv.extras&&inv.extras.emptyAmounts)||[];
+  if(!e.length)return null;
+  const tags=e.map(x=>`${x.el} (${x.n}× ${x.scope==='line'?'on invoice lines':'in the header'})`);
+  const lineTaxable=e.some(x=>x.scope==='line'&&x.el==='TaxableAmount');
+  return fkey('empty-amount')+`${label?label+' — ':''}<strong>Empty amount field in bol's output</strong>`+valueTagsHtml(tags,null,'fields')+moreInfo(`These amount elements are present but have no value. bol's invoice process reads every amount as a number, so an empty one is a likely cause of "Couldn't parse XML content".${lineTaxable?' An empty TaxableAmount on the invoice lines comes from a supplier invoice without a taxable amount (<span class="seg">MOA+125</span>) under the line\'s <span class="seg">TAX</span> segment.':''} Worth raising with Transus: leave the element out, or fill it. (An empty header TaxInclusiveAmount is in almost every bol output and isn't listed.)`);
 }
 function invoiceChargeTotalIssue(inv){
   if(!inv||inv.source!=='EDIFACT')return null;
@@ -5850,6 +6036,12 @@ function compareInvoice(sup,bol){
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,invJump);
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+    // Deposit: the supplier's own block, with whether bol's output carries it.
+    // Without a supplier deposit, bol's own (parity with Quick check).
+    if(depositSummary(sup))checkDeposit(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`,bol);
+    else checkDeposit(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+    // Empty amount fields in bol's UBL: a mapping question for Transus.
+    {const t=emptyAmountText(bol,'');if(t)add('warn',t,'diff');}
   }
 
   /* ---- header ---- */
@@ -6492,9 +6684,9 @@ const ERROR_CATALOGUE=[
   {id:'xml-parse',label:"Couldn't parse XML content",
     match:[/(?:couldnt|could not|cannot|cant|unable to|failed to) (?:be )?pars/,/\bpars(?:e|ing) (?:error|fail)/,/\bxml (?:\S+ ){0,3}(?:invalid|malformed|not well-?formed)/,/not well-?formed/],
     types:null,
-    meaning:"The file couldn't be read as XML, so nothing in it was processed. Known causes: a control character in a text field (item description, name, free text), several XML documents in one file, text before the XML declaration, or a TAX segment without a rate.",
+    meaning:"The file couldn't be read as XML, so nothing in it was processed. Known causes: a control character in a text field (item description, name, free text), several XML documents in one file, text before the XML declaration, a TAX segment without a rate, or an amount field left empty in bol's output.",
     where:'Free-text fields in the original message (<span class="seg">IMD</span>, <span class="seg">NAD</span>, <span class="seg">FTX</span>), the start of the file, and the <span class="seg">TAX</span> segments.',
-    keys:['illegal-char','illegal-char-file','xml-concatenated','xml-unreadable','xml-leading-text','tax-no-rate'],
+    keys:['illegal-char','illegal-char-file','xml-concatenated','xml-unreadable','xml-leading-text','tax-no-rate','empty-amount'],
     elsewhere:'check the exact file that was delivered; the message loaded here may differ from it (for example a resend, or a copy where a hidden character got lost).'},
   {id:'vat-missing',label:'VAT percentage/amount is missing',
     match:[/\b(?:vat|tax|btw)\b (?:\S+ ){0,3}(?:missing|rejected|invalid|unknown|empty|required|not (?:found|valid|known|allowed))/,/(?:missing|invalid|unknown|no) (?:vat|tax|btw)\b/],
@@ -6811,6 +7003,8 @@ function invoiceOverviewHtml(inv,opts={}){
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
     checkLineAllowances(inv,'',note,jumpCall);
+    checkDeposit(inv,'',note,jumpCall);
+    {const t=emptyAmountText(inv,'');if(t)note('warn',t);}
     checkDeliveryPartyIsBuyer(inv,'',note);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
     if(inv.lines.length&&!invoiceHasOrder(inv))note('warn',fkey('order-missing')+'<strong>No order number</strong> anywhere in this message.'+INVOICE_NO_ORDER_INFO);

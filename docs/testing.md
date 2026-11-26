@@ -415,6 +415,12 @@ actual test fixtures, don't just keep this list as prose:
   and on the supplier side in Compare; an empty supplier-only `ALC+C` is
   "No amount, not forwarded" in the table, not a difference
   (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
+- **INVOIC (deposit block)**: a deposit gets one block in Quick check
+  (supplier and bol file) and Compare, with VAT, the 0% group, per-item
+  amount and the EN/NL copy text; an empty `TaxableAmount` on bol's lines
+  is a Transformation difference, an empty header `TaxInclusiveAmount` is
+  not; VAT on a deposit is noted in neutral words
+  (`deposit-vat.sup.edi` / `.bol.ubl.xml`, `deposit-taxed.sup.edi`).
 - **INVOIC**: EDIFACT as segment-per-element XML is read like EDIFACT;
   `MOA+176` per summary TAX group, an exempt summary TAX without rate (bol
   0%) and `MOA+131:0.00` with only line charges give no difference

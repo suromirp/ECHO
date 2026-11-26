@@ -748,6 +748,39 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   reconciles without deducting it, the Message check is info
   (`line-allowance-in-price`): "Discount listed as a line-level allowance,
   already in the net price".
+- **Deposit (statiegeld)**: a refundable deposit on cans, bottles or crates,
+  sent as a line charge (`ALC+C++++RAD'MOA+8`, own `TAX` at 0% E, or no TAX
+  at all). Colleagues and the matching & valuation team kept asking "is the
+  deposit right?", and ECHO only showed it as a row in the charges table.
+  Now one block per invoice in both modes (`checkDeposit`, key `deposit`):
+  a table per line (quantity, deposit, per unit, VAT) and what's observed:
+  VAT on the deposit, whether the 0% summary VAT group equals the deposit
+  total, whether the line amount includes it, and in Compare whether bol's
+  output carries each one. Info when everything reconciles, a warning icon
+  when something is worth a look (VAT above 0%, no amount, a 0% group lower
+  than the deposit). "Copy deposit summary" gives a short EN/NL text to
+  pass on. Traps:
+  - Recognised by code `RAD` or a description naming a deposit. At least one
+    supplier uses `RAD` for a packaging levy too (and `AEO` for it with
+    other customers), so the block describes, it doesn't judge the code.
+  - No `TAX` after the deposit ALC is common: the deposit is then left out
+    of the VAT groups. Noted, never a warning (rule 7).
+  - The per-item amount is only shown when the description names a pack
+    size (`12x250ml`). When it equals the Dutch deposit (0.15 or 0.25) the
+    block says so; any other amount is shown without comment.
+- **Empty amount field in bol's output**: a real bol UBL had
+  `<cbc:TaxableAmount currencyID="EUR"></cbc:TaxableAmount>` on every
+  invoice line and bol's invoice process answered "Couldn't parse XML
+  content"; reprocessing gave the same output and the same error. Transus
+  fills that field from the `MOA+125` under the line's `TAX`, which this
+  supplier didn't send (another supplier that does send it had the field
+  filled). Every amount, VAT figure and line matched, so ECHO said "all
+  compared values match". Now a Transformation difference in Compare and a
+  Message check in Quick check (`emptyAmountText`, key `empty-amount`, also
+  linked from the "Couldn't parse XML content" error card). An empty header
+  `TaxInclusiveAmount` is in almost every bol output, processed ones too,
+  and is not listed. Cause not yet confirmed by bol's invoice team: the
+  wording says "likely".
 - **Empty ALC segment only on the supplier side**: the same invoice sent an
   `ALC+C++++TD'` with no amount after each discount. That showed up as 38
   "charge only present in the supplier message" Transformation differences.
