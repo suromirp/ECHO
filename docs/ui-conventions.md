@@ -104,8 +104,20 @@ never costs a step.
 text" second. The "Original message" block only appears once there is a
 message.
 
-**Help.** The intro text and the status legend sit behind one "Help"
-button top right, so a daily user does not scroll past them.
+**Help follows the screen.** One "Help" button top right, no standing
+intro text. It answers two things for the screen as it is: three steps
+for the open tab with the current one marked ("you are here"), and the
+legend, where the marks that are on screen right now are lit and come
+first while the rest step back. The legend's sentences are also the
+hover text of every pill, so there is one list to maintain: a new status
+gets a legend entry and nothing else.
+
+**Text points the right way.** A status line never says "below" or
+"above" for something that sits elsewhere; check this when blocks move.
+Quick check's form runs in the same order as Compare's: message, the
+optional order, then the buttons. The delimiter choice sits to the right
+of the buttons because auto-detect is right almost always. While the
+import block is folded its status line is hidden unless it is an error.
 
 ## Visual style
 

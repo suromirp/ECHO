@@ -58,6 +58,28 @@ test('the import block folds to one line while a result is shown', async ({ page
   await expect(page.locator('#zipDrop')).toBeVisible();
 });
 
+// Help follows the screen: the step you are at is marked, and the marks
+// that are on screen right now are lit in the legend. A pill explains
+// itself on hover with the legend's own sentence.
+test('Help marks the current step and lights the marks that are on screen', async ({ page }) => {
+  await openApp(page);
+  const help = page.locator('#legendDetails');
+  await help.locator('summary').click();
+  await expect(help.locator('.help-steps li')).toHaveCount(3);
+  await expect(help.locator('.help-steps li.now')).toContainText('Drop the package');
+  await expect(help.locator('#legendGrid > div.here')).toHaveCount(0);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'date-shift.sup.edi'), path.join(FIX, 'desadv', 'date-shift.bol.edi'));
+  await expect(help.locator('.help-steps li.now')).toContainText('Start at the verdict');
+  await expect(help.locator('.help-steps li.done')).toHaveCount(1);
+  await expect(help.locator('#legendGrid > div.here .pill', { hasText: /^Match$/ })).toHaveCount(1);
+  await expect(help.locator('#helpHint')).toContainText('on your screen right now');
+  const pill = page.locator('#lineTable .pill', { hasText: /^Match$/ }).first();
+  await pill.hover();
+  await expect(pill).toHaveAttribute('title', 'The compared values are the same.');
+  await page.locator('#tabQuickBtn').click();
+  await expect(help.locator('.help-steps li.now')).toContainText('Drop one message');
+});
+
 test('a clean comparison says there is nothing to act on', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(
