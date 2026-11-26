@@ -253,6 +253,9 @@ actual test fixtures, don't just keep this list as prose:
   (expected)", not as a difference.
 - **INVOIC**: a UBL line-amount gap that exactly matches a charge is
   treated as a match, not a difference.
+- **INVOIC**: the same for a line-level allowance
+  (`ubl-line-amount-after-allowance.*`): one side's line amount before the
+  discount, the other's after it, reconciling exactly, is a match.
 - **INVOIC**: a VAT-rate position mismatch between line-level and
   summary-level TAX segments is flagged (in both Quick check and Compare),
   and never sent to Transus.

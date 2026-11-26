@@ -1167,3 +1167,18 @@ test('a packaging levy next to a deposit is named apart and stays out of the dep
   await expect(card).toContainText('not part of the deposit total');
   await expect(card).toContainText('The deposit is included in the line amount');
 });
+
+// The same convention gap with a line discount: the supplier's line amount
+// is before the allowance, bol's after it.
+test('a line-amount gap that exactly matches a line-level allowance is a match, not a difference', async ({ page }) => {
+  await openApp(page);
+  await runCompareFixtures(
+    page,
+    path.join(FIX, 'ubl-line-amount-after-allowance.sup.edi'),
+    path.join(FIX, 'ubl-line-amount-after-allowance.bol.ubl.xml'),
+  );
+  const findingTexts = await invoiceFindingTexts(page);
+  expect(findingTexts.some(t => /EAN.*Line amount.*differs/i.test(t))).toBe(false);
+  const lineRow = page.locator('#invoiceResults table.inv tr', { hasText: '7777777777784' });
+  await expect(lineRow.locator('.pill')).toHaveText('Match');
+});

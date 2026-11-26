@@ -96,9 +96,10 @@ items as tags — never a wall of near-identical paragraphs. See
   `<Invoice>`/`<CreditNote>`-wrapped Transus XML parser, with a signal
   specific enough it can't match another dialect's root element by
   accident.
-- The UBL-line-amount-includes-charges reconciliation only accounts for
-  charges, not allowances, on the compared line — extend if a future
-  format bakes allowances in the same way.
+- The line-amount reconciliation (one side before, the other after
+  line-level charges/allowances) covers allowances too, but that part is
+  built from a synthetic case only: no real message has shown it yet.
+  Re-check against the raw data when one does.
 - No confirmed real credit-note example yet in the TRANSUSXML or Exact
   Online dialects — both fall back to sign-of-total with no independent
   type-flag confirmation, unlike EDIFACT's BGM code. Revisit when one

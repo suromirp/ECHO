@@ -6254,9 +6254,15 @@ function compareInvoice(sup,bol){
       if(!ok&&sv!==null&&bv!==null){
         const lineChargeSum=arr=>(arr||[]).flatMap(l=>l.charges||[]).filter(c=>c.kind==='charge'&&c.level==='line'&&c.amount!==null).reduce((s,c)=>s+c.amount,0);
         const supCh=lineChargeSum(S),bolCh=lineChargeSum(B);
-        if(supCh||bolCh){
-          const a=Math.abs(sv),b=Math.abs(bv);
-          ok=amtEq(Math.round((a+supCh)*100)/100,b)||amtEq(a,Math.round((b+bolCh)*100)/100);
+        // Same convention gap for allowances: one side's line amount is
+        // before the line discount, the other's after. Only an exact
+        // reconcile counts, with the charges, the allowances or both.
+        const lineAllowSum=arr=>(arr||[]).flatMap(l=>l.charges||[]).filter(c=>c.kind==='allowance'&&c.level==='line'&&c.amount!==null).reduce((s,c)=>s+Math.abs(c.amount),0);
+        const supAl=lineAllowSum(S),bolAl=lineAllowSum(B);
+        if(supCh||bolCh||supAl||bolAl){
+          const a=Math.abs(sv),b=Math.abs(bv),r=v=>Math.round(v*100)/100;
+          const fits=(ch,al)=>(ch||al)&&(amtEq(r(a+ch-al),b)||amtEq(a,r(b+ch-al)));
+          ok=[[supCh,0],[0,supAl],[supCh,supAl],[bolCh,0],[0,bolAl],[bolCh,bolAl]].some(([ch,al])=>fits(ch,al));
         }
       }
       row.cells.push({label:'Line amount',sup:fmtAmt(sv,cur),bol:fmtAmt(bv,cur),status:ok?'ok':'diff'});
