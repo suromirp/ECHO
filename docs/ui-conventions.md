@@ -106,7 +106,7 @@ message.
 
 **Help follows the screen.** One "Help" button top right, no standing
 intro text. It answers two things for the screen as it is: three steps
-for the open tab with the current one marked ("you are here"), and the
+for the open tab with the current one highlighted, and the
 legend, where the marks that are on screen right now are lit and come
 first while the rest step back. The legend's sentences are also the
 hover text of every pill, so there is one list to maintain: a new status

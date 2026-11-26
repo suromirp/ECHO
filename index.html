@@ -607,7 +607,6 @@
   .help-steps li.now .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
   .help-steps li.done .n{border-color:var(--ok);color:var(--ok);}
   .help-steps li.done{opacity:.75;}
-  .help-steps .you{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-left:4px;white-space:nowrap;}
   .help-body .legend-grid{padding:0;}
   .legend-grid>div{padding:3px 6px;border-radius:6px;transition:opacity .2s,background .2s;}
   .legend-grid.has-here>div:not(.here){opacity:.42;}
@@ -9115,7 +9114,7 @@ function helpHasResult(view){
 function helpRender(){
   const view=helpView(),at=helpHasResult(view)?1:0;
   document.getElementById('helpSteps').innerHTML=HELP_STEPS[view].map((st,i)=>
-    `<li class="${i<at?'done':i===at?'now':''}"><span class="n">${i<at?'\u2713':i+1}</span><div><strong>${st[0]}</strong>${i===at?' <span class="you">you are here</span>':''}<div class="d">${esc(st[1])}</div></div></li>`).join('');
+    `<li class="${i<at?'done':i===at?'now':''}"><span class="n">${i<at?'\u2713':i+1}</span><div><strong>${st[0]}</strong><div class="d">${esc(st[1])}</div></div></li>`).join('');
   const scope=document.getElementById(view==='quick'?'viewQuick':'viewCompare');
   const pills=new Set([...scope.querySelectorAll('.pill')].filter(e=>e.offsetParent).map(e=>e.textContent.trim()));
   const has={err:'.findings li.f-err',warn:'.findings li.f-warn,.wc-item',info:'.findings li.f-info',wc:'.wc-item',val:'.clickable-val'};
