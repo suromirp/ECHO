@@ -752,16 +752,17 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   sent as a line charge (`ALC+C++++RAD'MOA+8`, own `TAX` at 0% E, or no TAX
   at all). Colleagues and the matching & valuation team kept asking "is the
   deposit right?", and ECHO only showed it as a row in the charges table.
-  Now one block per invoice in both modes (`checkDeposit`, key `deposit`):
-  a table per line (quantity, deposit, per unit, VAT) and what's observed:
-  VAT on the deposit, whether the 0% summary VAT group equals the deposit
-  total, whether the line amount includes it, and in Compare whether bol's
-  output carries each one. A green check under Good to know with the
-  headline "Deposit (statiegeld) adds up" when everything reconciles (a
-  first version showed it as info under Message checks, which read as a
-  problem), a warning under Message checks ("N points worth a look")
-  when something is worth a look (VAT above 0%, no amount, a 0% group lower
-  than the deposit). "Copy deposit summary" gives a short EN/NL text to
+  Now a card inside "Charges & allowances" in both modes
+  (`depositCardHtml`): a headline with a verdict pill ("Adds up", or "N
+  points worth a look"), a row per line (quantity, per unit, deposit, VAT)
+  with a total, and what's observed: VAT on the deposit, whether the 0%
+  summary VAT group equals the deposit total, whether the line amount
+  includes it, and in Compare whether bol's output carries each one. It
+  first lived in the Findings, where even a deposit that reconciled read
+  as a problem. Only a point worth a look (VAT above 0%, no amount, a 0%
+  group lower than the deposit) becomes a Message check (`checkDeposit`,
+  key `deposit`), pointing at the card. "Copy deposit summary" gives a
+  short EN/NL text to
   pass on. Traps:
   - Recognised by code `RAD` or a description naming a deposit. At least one
     supplier uses `RAD` for a packaging levy too (and `AEO` for it with

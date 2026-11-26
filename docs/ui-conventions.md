@@ -321,3 +321,11 @@ warmth to an otherwise dry inspection tool. Keep it dry and self-aware,
 never mean, never at the expense of clarity. Findings themselves (the
 actual analysis) stay strictly neutral — the personality lives in the
 chrome around the findings, not in the findings' own wording.
+
+## Deposit card
+
+A deposit (statiegeld) is described in a card at the top of "Charges &
+allowances", not in the Findings: green left border and an "Adds up" pill
+when every observation reconciles, amber and "N points worth a look"
+otherwise. Observations are one line each with a ✓ or a !. Only the points
+worth a look are repeated as one Message check that links to the card.

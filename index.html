@@ -271,6 +271,17 @@
   tr.row-ok td:first-child{border-left:3px solid var(--ok);}
   tr.row-diff td:first-child{border-left:3px solid var(--err);}
   tr.row-warn td:first-child{border-left:3px solid var(--warn);}
+  .dep-card{border:1px solid var(--border);border-left:3px solid var(--ok);border-radius:10px;background:var(--panel-2);padding:13px 15px;margin:4px 0 14px;}
+  .dep-card.warn{border-left-color:var(--warn);}
+  .dep-head{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin-bottom:9px;}
+  .dep-title{font-weight:700;}
+  .dep-copy{margin-left:auto;padding:5px 11px;font-size:12px;}
+  .dep-table{margin-bottom:9px;}
+  .dep-total td{border-top:1px solid var(--border-strong);color:var(--text-dim);}
+  .dep-note{display:flex;gap:8px;align-items:baseline;padding:2px 0;font-size:13px;}
+  .dep-mark{flex:none;width:14px;text-align:center;font-weight:700;color:var(--ok);}
+  .dep-note.warn .dep-mark{color:var(--warn);}
+  .dep-note.warn{color:var(--text);font-weight:600;}
   .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);}
   .pill.ok{color:var(--ok);border-color:var(--ok);}
   .pill.err{color:var(--err);border-color:var(--err);}
@@ -5621,29 +5632,34 @@ function copyDepositClick(btn,id){
   const t=depositCopyTexts[id];
   if(t)copyTextToClipboard(transusLang==='nl'?t.nl:t.en,btn);
 }
-function checkDeposit(inv,label,add,jumpCall,bolForCarry){
+/* The deposit card, shown inside "Charges & allowances" in both modes: a
+   headline with a verdict pill, one row per line, and what's observed. It
+   lives there, next to the charges it describes, and not in the Findings:
+   as a finding it read as a problem even when everything reconciled. */
+function depositCardHtml(inv,jumpCall,bolForCarry){
   const d=depositSummary(inv);
-  if(!d)return;
-  const carried=bolForCarry?depositCarried(d,bolForCarry):null;
-  const notes=depositNotes(d,carried);
-  const warn=notes.some(n=>n.level==='warn');
+  if(!d)return '';
+  const notes=depositNotes(d,bolForCarry?depositCarried(d,bolForCarry):null);
+  const nw=notes.filter(n=>n.level==='warn').length;
   const id='dep'+(Object.keys(depositCopyTexts).length+1);
   depositCopyTexts[id]={en:depositCopyText(d,notes,'en'),nl:depositCopyText(d,notes,'nl')};
   const a=v=>v==null?'—':esc(fmtAmt(v,d.cur));
-  const val=(v,txt)=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(v)}">${esc(txt)}</span>`:esc(txt);
-  const rows=d.rows.map(r=>`<tr><td>${val(r.item,r.item)}</td><td class="num">${r.qty==null?'—':esc(r.qty)}</td><td class="num">${a(r.amount)}</td><td class="num">${r.perUnit==null?'—':a(r.perUnit)}${r.perItem!=null?` <span class="dim">(${a(r.perItem)} × ${r.pack})</span>`:''}</td>${d.vatKnown?`<td class="num">${r.vats.every(v=>v!==null)?esc([...new Set(r.vats)].join('/')+'%'):'—'}</td>`:''}</tr>`).join('');
-  const table=d.rows.length?`<table class="dep-table" style="margin-top:7px;"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Deposit</th><th class="num">Per unit</th>${d.vatKnown?'<th class="num">VAT</th>':''}</tr></thead><tbody>${rows}</tbody></table>`:'';
-  // Plain divs, not <li>: list items inside a finding read as findings of
-  // their own elsewhere (report text, tests).
-  const list=`<div class="dep-notes" style="margin-top:7px;">${notes.map(n=>`<div>${n.level==='warn'?'⚠ ':'✓ '}${esc(n.en)}</div>`).join('')}</div>`;
-  const btn=`<div style="margin-top:8px;"><button type="button" class="btn" onclick="copyDepositClick(this,'${id}')" title="A short summary of the deposit, in the report language (EN/NL), to pass on to matching &amp; valuation">Copy deposit summary</button></div>`;
+  const val=v=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(v)}">${esc(v)}</span>`:esc(v);
+  const rows=d.rows.map(r=>`<tr><td class="mono">${val(r.item)}</td><td class="num">${r.qty==null?'—':esc(r.qty)}</td><td class="num">${r.perUnit==null?'—':a(r.perUnit)}${r.perItem!=null?` <span class="dim">(${r.pack} × ${a(r.perItem)})</span>`:''}</td><td class="num"><strong>${a(r.amount)}</strong></td>${d.vatKnown?`<td class="num">${r.vats.every(v=>v!==null)?esc([...new Set(r.vats)].join('/')+'%'):'—'}</td>`:''}</tr>`).join('');
+  const table=d.rows.length?`<div class="inv-scroll"><table class="inv dep-table"><tr><th>Item</th><th class="num">Qty</th><th class="num">Per unit</th><th class="num">Deposit</th>${d.vatKnown?'<th class="num">VAT</th>':''}</tr>${rows}<tr class="dep-total"><td colspan="3">Total deposit</td><td class="num"><strong>${a(d.total)}</strong></td>${d.vatKnown?'<td></td>':''}</tr></table></div>`:'';
+  const list=`<div class="dep-notes">${notes.map(n=>`<div class="dep-note ${n.level}"><span class="dep-mark">${n.level==='warn'?'!':'✓'}</span><span>${esc(n.en)}</span></div>`).join('')}</div>`;
   const codes=[...new Set(d.rows.map(r=>r.code).concat(d.hdr.map(c=>c.code||c.desc||'')).filter(Boolean))];
-  // A clear verdict in the headline: a green check under Good to know when
-  // every observation reconciles, a warning under Message checks otherwise.
-  // "Adds up" is about the numbers, not a claim that the message is valid.
-  const nw=notes.filter(n=>n.level==='warn').length;
-  const head=warn?`Deposit (statiegeld): ${nw} point${nw===1?'':'s'} worth a look`:'Deposit (statiegeld) adds up';
-  add(warn?'warn':'ok',fkey('deposit')+`${label?label+' — ':''}<strong>${head}</strong> <span class="seg">(ALC+C${codes.length?' '+esc(codes.join(', ')):''})</span> <span class="dim">(${d.rows.length} line${d.rows.length===1?'':'s'}, total ${a(d.total)})</span>`+table+list+btn+moreInfo(`Statiegeld is a refundable deposit on cans, bottles or crates. The supplier charges it on the invoice and pays it back when the empties return, so it isn't part of the product price. On an EDIFACT invoice it's a line charge: <span class="seg">ALC+C</span> with a code (often <span class="seg">RAD</span>; some suppliers also use RAD for a packaging levy), the amount in <span class="seg">MOA+8</span> and its own <span class="seg">TAX</span>, usually 0%. The line amount may include it or not; either way the totals should add up. The Dutch deposit is € 0.15 per can or plastic bottle up to 1 litre and € 0.25 above that. "Per unit" is the deposit per invoiced unit; when the description names a pack size (e.g. 12x250ml), the amount per item is shown next to it.`),warn?'message':'info');
+  const pill=nw?`<span class="pill warn">${nw} point${nw===1?'':'s'} worth a look</span>`:'<span class="pill ok">Adds up</span>';
+  return `<div class="dep-card${nw?' warn':''}" id="depositCard"><div class="dep-head"><span class="dep-title">Deposit (statiegeld)</span>${codes.length?`<span class="seg">ALC+C ${esc(codes.join(', '))}</span>`:''}${pill}<button type="button" class="btn dep-copy" onclick="copyDepositClick(this,'${id}')" title="A short summary of the deposit, in the report language (EN/NL), to pass on to matching &amp; valuation">Copy deposit summary</button></div>${table}${list}`+moreInfo(`Statiegeld is a refundable deposit on cans, bottles or crates. The supplier charges it on the invoice and pays it back when the empties return, so it isn't part of the product price. On an EDIFACT invoice it's a line charge: <span class="seg">ALC+C</span> with a code (often <span class="seg">RAD</span>; some suppliers also use RAD for a packaging levy), the amount in <span class="seg">MOA+8</span> and its own <span class="seg">TAX</span>, usually 0%. The line amount may include it or not; either way the totals should add up. The Dutch deposit is € 0.15 per can or plastic bottle up to 1 litre and € 0.25 above that. "Per unit" is the deposit per invoiced unit; when the description names a pack size (e.g. 12x250ml), the amount per item is shown next to it.`)+`</div>`;
+}
+/* Only something worth a look becomes a finding (Message check), pointing
+   at the card. A deposit that adds up stays out of the Findings. */
+function checkDeposit(inv,label,add,bolForCarry){
+  const d=depositSummary(inv);
+  if(!d)return;
+  const warns=depositNotes(d,bolForCarry?depositCarried(d,bolForCarry):null).filter(n=>n.level==='warn');
+  if(!warns.length)return;
+  add('warn',fkey('deposit')+`${label?label+' — ':''}<strong>Deposit (statiegeld): ${warns.length} point${warns.length===1?'':'s'} worth a look</strong>`+`<div style="margin-top:5px;">${warns.map(n=>`<div>${esc(n.en)}</div>`).join('')}</div><div class="dim" style="margin-top:5px;"><span class="clickable-val" onclick="const c=document.getElementById('depositCard');if(c)c.scrollIntoView({behavior:'smooth',block:'center'});">Details under Charges &amp; allowances</span></div>`,'message');
 }
 /* Empty amount elements in bol's UBL output (see parseInvoicBolXml). */
 function emptyAmountText(inv,label){
@@ -6043,8 +6059,8 @@ function compareInvoice(sup,bol){
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
     // Deposit: the supplier's own block, with whether bol's output carries it.
     // Without a supplier deposit, bol's own (parity with Quick check).
-    if(depositSummary(sup))checkDeposit(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`,bol);
-    else checkDeposit(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+    if(depositSummary(sup))checkDeposit(sup,'Supplier',add,bol);
+    else checkDeposit(bol,'Bol',add);
     // Empty amount fields in bol's UBL: a mapping question for Transus.
     {const t=emptyAmountText(bol,'');if(t)add('warn',t,'diff');}
   }
@@ -6443,7 +6459,8 @@ function compareInvoice(sup,bol){
   if(verdict==='ok')add('ok','All compared values match: invoice details, lines, charges/allowances and totals.');
 
   const matchedLines=rows.filter(r=>!r.missingSup&&!r.missingBol).length;
-  return {type:'INVOIC',verdict,findings,hdr,rows,chargeRows,totRows,
+  const depositHtml=depositSummary(sup)?depositCardHtml(sup,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`,bol):depositCardHtml(bol,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
+  return {type:'INVOIC',verdict,findings,hdr,rows,chargeRows,totRows,depositHtml,
     stats:{linesSup:sup.lines.length,linesBol:bol.lines.length,matched:matchedLines,
       keys:rows.length,currency:cur,srcSup:sup.source,srcBol:bol.source},
     sup,bol};
@@ -7008,7 +7025,7 @@ function invoiceOverviewHtml(inv,opts={}){
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
     checkLineAllowances(inv,'',note,jumpCall);
-    checkDeposit(inv,'',note,jumpCall);
+    checkDeposit(inv,'',note);
     {const t=emptyAmountText(inv,'');if(t)note('warn',t);}
     checkDeliveryPartyIsBuyer(inv,'',note);
     if(inv.blankLinCount)note('warn',invoiceBlankLinText(inv.blankLinCount));
@@ -7079,7 +7096,7 @@ function invoiceOverviewHtml(inv,opts={}){
   const allCharges=[...inv.charges];
   inv.lines.forEach(l=>(l.charges||[]).forEach(c=>allCharges.push(c)));
   if(allCharges.length){
-    h+=`<div class="sec-h">Charges &amp; allowances</div><div>`;
+    h+=`<div class="sec-h">Charges &amp; allowances</div>${opts.side?'':depositCardHtml(inv,jumpCall)}<div>`;
     h+=allCharges.map(c=>{
       const kindLabel=c.kind==='charge'?'Charge':'Allowance';
       const bits=[`<span class="badge-c ${c.kind}">${kindLabel}</span>`];
@@ -8473,8 +8490,8 @@ function renderInvoiceCompare(res,notes){
   h+=`</table></div></div>`;
 
   /* charges */
-  if(res.chargeRows.length){
-    h+=`<div class="panel"><h2>Charges &amp; allowances</h2><div class="inv-scroll"><table class="inv">
+  if(res.chargeRows.length||res.depositHtml){
+    h+=`<div class="panel"><h2>Charges &amp; allowances</h2>${res.depositHtml||''}<div class="inv-scroll"><table class="inv">
       <tr><th>Type</th><th>Code</th><th>Description</th><th>Level</th><th>Supplier</th><th>Bol</th><th>Status</th></tr>`;
     h+=res.chargeRows.map(c=>{
       const pill=c.status==='ok'?pillMatch():c.status==='expected'?'<span class="pill" title="bol\'s invoice process deliberately doesn\'t forward line-level allowances (discounts) — only line-level charges are carried through. Confirmed with Transus: expected, not a mapping gap.">Not forwarded (expected)</span>':c.status==='empty'?'<span class="pill" title="The supplier\'s segment has no amount, so there is nothing to forward.">No amount, not forwarded</span>':pillDiff();

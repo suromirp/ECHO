@@ -183,7 +183,7 @@ test('a line-level charge matches across sides despite a GTIN-12/13 leading-zero
   await expect(page.locator('#invoiceResults')).toBeVisible();
 
   const buckets = await invoiceFindingsByCategory(page);
-  expect([...buckets.diff, ...buckets.message].filter(t => !t.includes('Deposit (statiegeld)')).some(t => /RAD/i.test(t))).toBe(false);
+  expect([...buckets.diff, ...buckets.message].some(t => /RAD/i.test(t))).toBe(false);
 
   const chargeRows = page.locator('#invoiceResults table.inv tr', { hasText: 'RAD' });
   await expect(chargeRows).toHaveCount(1);
@@ -1028,9 +1028,9 @@ test('a deposit (RAD, MOA+8, outside the VAT) is read as a line charge without f
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const b = await invoiceFindingsByCategory(page);
   expect(b.message).toEqual([]);
-  const dep = b.info.filter(t => t.includes('Deposit (statiegeld) adds up'));
-  expect(dep).toHaveLength(1);
-  expect(dep[0]).toContain("In bol's output with the same amount");
+  const card = page.locator('#invoiceResults .dep-card');
+  await expect(card).toContainText('Adds up');
+  await expect(card).toContainText("In bol's output with the same amount");
   expect(b.diff).toHaveLength(1);
   expect(b.diff[0]).toContain('All compared values match');
 });
@@ -1110,8 +1110,11 @@ test('a deposit gets its own block in both modes; an empty amount field in bol\'
   await openApp(page);
   await runQuickFixture(page, sup);
   const ov = page.locator('#quickOverview');
-  await expect(ov).toContainText('Deposit (statiegeld) adds up');
-  await expect(ov).toContainText('2 lines, total 25.50 EUR');
+  // The card sits in Charges & allowances; a deposit that adds up is not a finding.
+  await expect(ov.locator('.dep-card')).toContainText('Deposit (statiegeld)');
+  await expect(ov.locator('.dep-card .pill.ok')).toHaveText('Adds up');
+  await expect(ov.locator('.dep-total')).toContainText('25.50 EUR');
+  await expect(ov).toContainText('Nothing unusual found');
   await expect(ov).toContainText('VAT on the deposit: 0%');
   await expect(ov).toContainText('The 0% VAT group (25.50 EUR) is exactly the deposit');
   await expect(ov).toContainText('The deposit is included in the line amount');
@@ -1134,11 +1137,11 @@ test('a deposit gets its own block in both modes; an empty amount field in bol\'
   await runCompareFixtures(page, sup, bol);
   await expect(page.locator('#invoiceResults')).toBeVisible();
   const b = await invoiceFindingsByCategory(page);
-  expect(b.message.filter(t => t.includes('Deposit'))).toEqual([]);
-  const dep = b.info.filter(t => t.includes('Deposit (statiegeld) adds up'));
-  expect(dep).toHaveLength(1);
-  expect(dep[0]).toContain('Supplier');
-  expect(dep[0]).toContain("In bol's output: on all 2 lines, same amount");
+  expect([...b.message, ...b.info].filter(t => t.includes('Deposit'))).toEqual([]);
+  const card = page.locator('#invoiceResults .dep-card');
+  await expect(card).toHaveCount(1);
+  await expect(card.locator('.pill.ok')).toHaveText('Adds up');
+  await expect(card).toContainText("In bol's output: on all 2 lines, same amount");
   expect(b.diff.filter(t => t.includes('Empty amount field'))).toHaveLength(1);
 });
 
@@ -1146,7 +1149,8 @@ test('a deposit with VAT on it is noted as worth a look, in neutral words', asyn
   await openApp(page);
   await runQuickFixture(page, path.join(FIX, 'deposit-taxed.sup.edi'));
   const ov = page.locator('#quickOverview');
-  await expect(ov).toContainText('Deposit (statiegeld): 1 point worth a look');
+  await expect(ov.locator('ul.findings')).toContainText('Deposit (statiegeld): 1 point worth a look');
+  await expect(ov.locator('.dep-card .pill.warn')).toHaveText('1 point worth a look');
   await expect(ov).toContainText('VAT on the deposit: 9%. A deposit is usually outside VAT (0%)');
   await expect(ov).not.toContainText('invalid');
 });
