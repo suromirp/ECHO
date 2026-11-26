@@ -58,6 +58,8 @@ test('several ZIPs at once give a clickable package list', async ({ page }) => {
   await expect(items.nth(0).locator('.zq-lv')).toHaveClass(new RegExp(cardLevel));
   await expect(items.nth(1).locator('.zq-lv')).toHaveCount(0);
   await expect(page.locator('#zipQueue .zq-check')).toBeVisible();
+  // ...but its message type is already named, before it is opened.
+  await expect(items.nth(1).locator('.zq-kind')).toHaveText('Despatch advice');
 
   await items.nth(1).click();
   await expect(items.nth(1)).toHaveClass(/active/);
@@ -129,7 +131,7 @@ test('a watched download folder lists its packages and picks up a new one', asyn
   await page.locator('#watchBtn').click();
   const items = page.locator('#zipQueue .zq-item');
   await expect(items).toHaveCount(2);
-  await expect(items.nth(0)).toHaveText('newer');
+  await expect(items.nth(0).locator('.zq-name')).toHaveText('newer');
   await expect(page.locator('#watchState')).toContainText('Downloads');
   await expect(page.locator('#watchState')).toContainText('2 packages');
 

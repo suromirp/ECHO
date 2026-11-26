@@ -395,7 +395,8 @@ part of the work, so the ZIP drop zone takes more than one package.
   mark means in words. The first opens; a click opens another. The open
   one has an accent edge, ones already seen are dimmed. "Check all" sits
   in the list header, apart from the rows.
-- **Kind in the list**: once a package has been read, its button shows
+- **Kind in the list**: every package is peeked at as soon as it is
+  listed (only the supplier file, only to name its type), so its button shows
   the message kind in words (Order response, Despatch advice, Invoice,
   Order) in front of the file name, because a row of message IDs says
   nothing about what is in them.

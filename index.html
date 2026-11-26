@@ -9220,7 +9220,23 @@ function zipQAdd(items,front){
   const have=new Set(zipQ.map(q=>q.key));
   const add=items.filter(q=>!have.has(q.key));
   if(front)zipQ.unshift(...add);else zipQ.push(...add);
-  zipQRender();return add;
+  zipQRender();zipQPeek(add);return add;
+}
+// Reads just enough of each new package to name its message type, so the
+// list says "Despatch advice" or "Invoice" before anything is opened.
+async function zipQPeek(items){
+  if(typeof JSZip==='undefined')return;
+  for(const q of items){
+    if(q.kind)continue;
+    try{
+      const zip=await JSZip.loadAsync(q.file||await q.handle.getFile());const es=[];
+      zip.forEach((path,entry)=>{if(!entry.dir&&!path.includes('__MACOSX')&&!path.split('/').pop().startsWith('.'))es.push({path,entry});});
+      const e=es.find(x=>!/bol/.test(x.path.toLowerCase().split('/')[0]))||es[0];
+      if(!e||q.kind)continue;
+      q.kind=ZQ_KIND[detectMsgType(decodeFileBytes(await e.entry.async('uint8array')))]||'';
+      if(q.kind)zipQRender();
+    }catch(err){}
+  }
 }
 async function zipQOpen(q,quiet){
   try{
