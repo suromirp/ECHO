@@ -438,6 +438,15 @@ actual test fixtures, don't just keep this list as prose:
   delivery and delivery GLN missing from bol's output are one grouped
   Transformation difference, without "all compared values match"; the same
   file on both sides stays quiet.
+- **ORDRSP**: `far-date-test-value.edi`: a confirmed date over a year
+  ahead and order number `012345` are each one Message check in both
+  modes; a normal ORDRSP shows neither.
+- **Against the order response** (`specs/against-order.spec.js`,
+  `ordrsp/response-for-desadv.edi` with `desadv/against-response*.edi`):
+  the four DESADV-vs-response findings in Quick check; in Compare on the
+  supplier side, plus the order-number hint on a bol side without one.
+- **ORDRSP**: `order-lost-in-bol.*` gives the grouped difference only, no
+  second "Bol — No order number" Message check.
 - **All types**: a party GLN that isn't a number
   (`tests/fixtures/ordrsp/gln-not-numeric.edi`, `NAD+DP+UNKNOWN`) is one
   Message check in both modes; a normal message stays quiet.

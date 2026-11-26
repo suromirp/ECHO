@@ -500,7 +500,7 @@
           <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputQuick" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameQuick"></span>
           <button class="btn ghost hidden" id="orderClearQuick" type="button">Remove order</button>
-          <span class="dim" id="orderHintQuick">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
+          <span class="dim" id="orderHintQuick">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV you can add the order response instead.</span>
         </div>
       <div class="status" id="quickStatus"></div>
     </div>
@@ -553,7 +553,7 @@
           <span class="btn filebtn" title="Optional: the original bol order (ORDERS) for this message">📋 Add the order (optional)…<input type="file" id="orderInputCompare" accept=".txt,.edi,.dat,.edifact,.xml,.zip"></span>
           <span class="fname hidden" id="orderNameCompare"></span>
           <button class="btn ghost hidden" id="orderClearCompare" type="button">Remove order</button>
-          <span class="dim" id="orderHintCompare">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates.</span>
+          <span class="dim" id="orderHintCompare">Also checks an ORDRSP or DESADV against what was ordered: EANs, quantities and dates. For a DESADV you can add the order response instead.</span>
         </div>
       <div class="actions">
         <button class="btn primary" id="compareBtn" disabled>Compare</button>
@@ -3044,6 +3044,89 @@ function checkRepeatedItemZero(facts,label,add,jumpCall){
   const n=hits.length;
   add('warn',fkey('item-repeated-zero')+`${label?label+' — ':''}<strong>Same item on more than one line, once with quantity 0</strong> <span class="dim">(${n} item${n===1?'':'s'})</span>`+valueTagsHtml(hits,jumpCall,'items')+moreInfo(`${n===1?'This item is':'These items are'} confirmed on one line and listed again on another line with a confirmed quantity of 0. It isn't clear from the message which line is the answer for the item. Worth checking how the order shows it, and asking the sender to send each item once.`),'message');
 }
+/* ORDRSP: confirmed delivery date (DTM+67) far after the message date, the
+   same idea as checkArrivalFarAhead for a DESADV. Generous: more than a
+   year, since a response can confirm a delivery many months out (a
+   pre-order); what this catches is a date typed with the wrong year. */
+const CONFIRMED_FAR_DAYS=365;
+function checkConfirmedDateFarAhead(facts,label,add,jumpCall){
+  if(!facts||facts.msgType!=='ORDRSP'||!facts.docDate||!/^\d{4}-\d{2}-\d{2}$/.test(facts.docDate))return;
+  const hits=[];
+  (facts.lines||[]).forEach(l=>{const d=normDate(l.dtm&&l.dtm['67']);if(!d||!/^\d{4}-\d{2}-\d{2}$/.test(d))return;if((Date.parse(d)-Date.parse(facts.docDate))/864e5>CONFIRMED_FAR_DAYS)hits.push(l.art||l.gtin||l.lineNo||'?');});
+  if(!hits.length)return;
+  const n=hits.length;
+  add('warn',fkey('confirmed-date-far')+`${label?label+' — ':''}<strong>Confirmed delivery date is more than ${CONFIRMED_FAR_DAYS} days after the message date</strong> <span class="seg">(DTM+67)</span> <span class="dim">(${n} line${n===1?'':'s'})</span>`+valueTagsHtml(hits,jumpCall,'items')+moreInfo(`The confirmed delivery date lies more than a year after the date the message was created. It can be right (a long lead time), or a date typed with the wrong year. Worth checking which date is meant.`),'message');
+}
+/* A reference that looks like a placeholder or a test value: TEST, DUMMY,
+   a run of one digit (0000) or a counting sequence (12345, 012345). Real
+   cases: order number 12345 on an invoice, 012345 on a DESADV and ORDRSP.
+   Generous (rule 7): only these shapes, at least 4 characters. An order
+   number or GLN that is text has its own check and is left out here. */
+function looksLikeTestValue(v){
+  const t=String(v==null?'':v).trim();
+  if(t.length<4)return false;
+  if(/^(test|dummy|unknown|onbekend|sample|example)\w{0,4}$|^x{4,}$/i.test(t))return true;
+  if(!/^\d+$/.test(t)||t.length>12)return false;
+  if(/^(\d)\1+$/.test(t))return true;
+  const seq=t.replace(/^0/,'');
+  return seq.length>=4&&'1234567890123'.startsWith(seq);
+}
+function checkTestValues(m,label,add,jumpCall){
+  if(!m)return;
+  const isInv=m.number!==undefined&&m.docNumber===undefined;
+  const num=v=>/^\d+$/.test(String(v||'').trim());
+  const rows=isInv
+    ?[['Invoice number',[m.number]],['Order',(m.orders||[]).filter(num)],['Packing reference',m.despatchNotes||[]]]
+    :[['Document number',[m.docNumber]],['Order',headerOrders(m).filter(num)],['Packing reference',[m.billOfLadingRef,...(m.deliveryNoteRefs||[])]]];
+  const hits=[];
+  rows.forEach(([lab,vals])=>[...new Set(vals.filter(Boolean).map(String))].forEach(v=>{if(looksLikeTestValue(v))hits.push([lab,v]);}));
+  if(!hits.length)return;
+  const v=x=>jumpCall?`<span class="clickable-val" onclick="${jumpCall(x)}">${esc(x)}</span>`:`<code>${esc(x)}</code>`;
+  add('warn',fkey('test-value')+`${label?label+' — ':''}<strong>Looks like a placeholder or test value</strong>: ${hits.map(([lab,x])=>`${esc(lab)} ${v(x)}`).join(', ')}.`+moreInfo(`A value like this usually comes from a test or from a default left in the sender's system. bol can't link it to a real order or document. Fine in a test; on a live message it is worth asking the sender for the real value.`),'message');
+}
+/* ---- Against the order response (optional ORDRSP file next to a DESADV) ----
+   The same optional slot as the order. What the supplier despatches set
+   against what it confirmed earlier: about the supplier's own messages, so
+   Message checks; in Compare on the supplier side. The order number is the
+   exception: each side is told when the response names an order number
+   and that side's DESADV has none (a real DESADV lost it in bol's output
+   while the ORDRSP of the same order carried it through). */
+function responseOrderHint(facts,ref,label,add){
+  if(!facts||facts.msgType!=='DESADV'||!ref||!ref.facts||ref.facts.msgType!=='ORDRSP')return;
+  if(headerOrders(facts).length||!(facts.lines||[]).length)return;
+  const ro=headerOrders(ref.facts);if(!ro.length)return;
+  add('warn',fkey('response-has-order')+`${label?label+' — ':''}<strong>The order response names an order number, this message doesn't</strong>: ${ro.map(o=>`<code>${esc(o)}</code>`).join(', ')}.`+moreInfo(`The order response you added (${esc(ref.facts.docNumber||'ORDRSP')}) carries this order number in RFF+ON. This despatch advice has none, so it can't be linked to the order.`),'message');
+}
+function checkAgainstResponse(facts,ref,label,add,jumpCall){
+  if(!facts||facts.msgType!=='DESADV'||!ref||!ref.facts||ref.facts.msgType!=='ORDRSP')return;
+  const resp=ref.facts,pre=label?label+' — ':'';
+  const jc=jumpCall||(()=>'');
+  const tag=(v,txt)=>`<li><span class="clickable-val" onclick="${jc(v)}">${esc(txt)}</span></li>`;
+  const list=lis=>{const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis.join('')}</ul>`;return lis.length>20?`<details><summary>Show ${lis.length} items</summary>${ul}</details>`:ul;};
+  const name=esc(resp.docNumber||'ORDRSP');
+  const mo=headerOrders(facts).map(o=>String(o).trim()),ro=headerOrders(resp).map(o=>String(o).trim());
+  if(mo.length&&ro.length&&!mo.some(o=>ro.includes(o))){
+    add('warn',fkey('response-other-order')+`${pre}<strong>The added order response is for a different order</strong>: this message refers to ${mo.map(o=>`<code>${esc(o)}</code>`).join(', ')}, the response to ${ro.map(o=>`<code>${esc(o)}</code>`).join(', ')}.`+moreInfo(`The order numbers (RFF+ON) of the two messages don't overlap, so they aren't compared any further.`),'message');
+    return;
+  }
+  const n=(l,k)=>{const v=parseFloat(l.qty&&l.qty[k]);return isNaN(v)?0:v;};
+  const conf=new Map();
+  (resp.lines||[]).forEach(l=>{const g=normalizeGtin(l.gtin);if(!g)return;const e=conf.get(g)||{qty:0,date:null};e.qty+=n(l,'12')+n(l,'83');const d=normDate(l.dtm&&l.dtm['67']);if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&(!e.date||d<e.date))e.date=d;conf.set(g,e);});
+  if(!conf.size)return;
+  const sent=new Map();
+  (facts.lines||[]).forEach(l=>{const g=normalizeGtin(l.gtin);if(!g)return;const e=sent.get(g)||{gtin:l.gtin,qty:0};e.qty+=n(l,'12');sent.set(g,e);});
+  const unknown=[...sent.keys()].filter(g=>!conf.has(g));
+  if(unknown.length)add('warn',fkey('despatched-not-confirmed')+`${pre}<strong>Despatched item not in the order response</strong> on ${unknown.length} item${unknown.length===1?'':'s'}. `+list(unknown.map(g=>tag(sent.get(g).gtin,`${sent.get(g).gtin} · ${fmtQty(sent.get(g).qty)} despatched`)))+moreInfo(`These EANs are in this despatch advice and not in the order response you added (${name}). It can be another EAN for the same product, or an item from another order.`),'message');
+  const zero=[...sent.keys()].filter(g=>conf.has(g)&&conf.get(g).qty===0&&sent.get(g).qty>0);
+  if(zero.length)add('warn',fkey('despatched-was-zero')+`${pre}<strong>Despatched, while the order response confirmed 0</strong> on ${zero.length} item${zero.length===1?'':'s'}. `+list(zero.map(g=>tag(sent.get(g).gtin,`${sent.get(g).gtin} · ${fmtQty(sent.get(g).qty)} despatched`)))+moreInfo(`The order response (${name}) confirmed nothing for ${zero.length===1?'this item':'these items'}, and this despatch advice ships ${zero.length===1?'it':'them'}. bol may have closed the order line after the response.`),'message');
+  const over=[...sent.keys()].filter(g=>conf.has(g)&&conf.get(g).qty>0&&sent.get(g).qty>conf.get(g).qty+1e-9);
+  if(over.length)add('warn',fkey('despatched-over-confirmed')+`${pre}<strong>More despatched than confirmed</strong> on ${over.length} item${over.length===1?'':'s'}. `+list(over.map(g=>tag(sent.get(g).gtin,`${sent.get(g).gtin} · ${fmtQty(sent.get(g).qty)} despatched, ${fmtQty(conf.get(g).qty)} confirmed`)))+moreInfo(`The despatched quantity (QTY+12) is higher than what the order response (${name}) confirmed (QTY+12 + QTY+83). Worth checking which of the two is right.`),'message');
+  const arr=facts.arrivalDate&&/^\d{4}-\d{2}-\d{2}/.test(facts.arrivalDate)?String(facts.arrivalDate).slice(0,10):null;
+  if(arr){
+    const late=[...sent.keys()].filter(g=>conf.has(g)&&conf.get(g).date&&arr>conf.get(g).date);
+    if(late.length)add('info',fkey('arrival-after-confirmed')+`${pre}<strong>Expected arrival is after the confirmed delivery date</strong> on ${late.length} item${late.length===1?'':'s'}. `+list(late.map(g=>tag(sent.get(g).gtin,`${sent.get(g).gtin} · arrival ${showDate(arr)}, confirmed ${showDate(conf.get(g).date)}`)))+moreInfo(`The order response (${name}) confirmed an earlier delivery date (DTM+67) than the arrival this despatch advice states.`),'info');
+  }
+}
 /* ORDRSP: confirmed delivery date (DTM+67) before the message date
    (DTM+137). A real test ORDRSP confirmed 28-10 in a message created 09-11.
    One grouped finding with the affected items as tags. */
@@ -3869,7 +3952,7 @@ function orderLineIndex(order){
 }
 function fmtQty(n){return Number.isInteger(n)?String(n):String(+n.toFixed(3));}
 function checkAgainstOrder(facts,orderRef,label,add,jumpCall){
-  if(!facts||!orderRef||!orderRef.facts)return;
+  if(!facts||!orderRef||!orderRef.facts||orderRef.facts.msgType!=='ORDERS')return;
   const type=facts.msgType;if(type!=='ORDRSP'&&type!=='DESADV')return;
   const order=orderRef.facts,orderNo=String(order.docNumber||'').trim();
   const pre=label?label+' — ':'';
@@ -4109,7 +4192,9 @@ function compare(bol,sup){
       checkNoOrderAnywhere('Supplier',add,{
         otherHtml:`<div style="margin-top:6px">bol's output has:${valueTagsHtml(headerOrders(bol),v=>`jumpToFactsSource('bol',${jsQuote(v)})`,'order numbers')}</div>`,
         otherInfo:`bol's output does carry an order number. It isn't in the supplier message, so it isn't counted as a transformation difference.`});
-    }else if(!bolHasAnyOrder&&bol.lines.length){
+    }else if(!bolHasAnyOrder&&bol.lines.length&&!(supHasAnyOrder&&orderDiffs.length)){
+      // Not when the grouped "No order number in bol's output" difference
+      // above already says exactly this.
       checkNoOrderAnywhere('Bol',add);
     }
   }
@@ -4272,6 +4357,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,(f,label,a,j)=>checkSomeLinesWithoutPrice(f,label,a,j,f===sup?supSkip:bolSkip),factsJump);
     perSideOnce(add,sup,bol,checkNetPriceIsLineTotal,factsJump);
     perSideOnce(add,sup,bol,checkConfirmedDateBeforeDocDate,factsJump);
+    perSideOnce(add,sup,bol,checkConfirmedDateFarAhead,factsJump);
     perSideOnce(add,sup,bol,checkRepeatedItemZero,factsJump);
   }
 
@@ -4290,6 +4376,7 @@ function compare(bol,sup){
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,factsJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,factsJump);
     perSideOnce(add,sup,bol,checkGlnNotNumeric,factsJump);
+    perSideOnce(add,sup,bol,checkTestValues,factsJump);
     perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
     const bolZeroExplained=compareZeroGtin(sup,bol,add);
     if(!bolZeroExplained.size)perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
@@ -4374,6 +4461,11 @@ function compare(bol,sup){
   }
 
   if(orderState.compare)checkAgainstOrder(sup,orderState.compare,'Supplier',add,factsJump('sup'));
+  if(orderState.compare){
+    checkAgainstResponse(sup,orderState.compare,'Supplier',add,factsJump('sup'));
+    responseOrderHint(sup,orderState.compare,'Supplier',add);
+    responseOrderHint(bol,orderState.compare,'Bol',add);
+  }
   // action matrix data
   const buckets=['accept','cancel','backorder'];
   const actionMatrix={};
@@ -6155,6 +6247,7 @@ function compareInvoice(sup,bol){
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkGlnNotNumeric,invJump);
+    perSideOnce(add,sup,bol,checkTestValues,invJump);
     checkLineAllowances(bol,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);
     // Deposit: the supplier's own block, with whether bol's output carries it.
     // Without a supplier deposit, bol's own (parity with Quick check).
@@ -7146,6 +7239,7 @@ function invoiceOverviewHtml(inv,opts={}){
   checkTestFlag(inv,'',qcAdd);
   checkSupplierIsBuyer(inv,'',qcAdd);
   checkGlnNotNumeric(inv,'',qcAdd);
+  checkTestValues(inv,'',qcAdd);
   // qty × net price vs. line amount — a message-own arithmetic check, run
   // independently of any comparison, so it's just as useful when
   // inspecting a single message with nothing to compare it against.
@@ -7306,9 +7400,12 @@ function factsOverviewHtml(facts){
   checkTestFlag(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkSupplierIsBuyer(facts,'',qcAdd);
   if(type==='ORDRSP'||type==='DESADV')checkGlnNotNumeric(facts,'',qcAdd);
+  if(type==='ORDRSP'||type==='DESADV')checkTestValues(facts,'',qcAdd,jumpCall);
   if(type==='ORDRSP')checkConfirmedDateBeforeDocDate(facts,'',qcAdd,jumpCall);
+  if(type==='ORDRSP')checkConfirmedDateFarAhead(facts,'',qcAdd,jumpCall);
   if(type==='ORDRSP')checkRepeatedItemZero(facts,'',qcAdd,jumpCall);
   if(orderState.quick)checkAgainstOrder(facts,orderState.quick,'',qcAdd,jumpCall);
+  if(orderState.quick){checkAgainstResponse(facts,orderState.quick,'',qcAdd,jumpCall);responseOrderHint(facts,orderState.quick,'',qcAdd);}
   if(lineChecks){const f=factsGs1Finding(facts,jumpCall);if(f)qcAdd('warn',f);}
   // Worth checking first (it goes into the Findings panel as its own group).
   let wcNotices=[];
@@ -8861,7 +8958,7 @@ document.getElementById('resetBtn').addEventListener('click',()=>{document.getEl
 function orderSetUi(mode){
   const st=orderState[mode],M=mode==='compare'?'Compare':'Quick';
   const nm=document.getElementById('orderName'+M);
-  nm.textContent=st?`Order ${st.facts.docNumber||'?'} · ${st.facts.lines.length} line${st.facts.lines.length===1?'':'s'} (${st.name})`:'';
+  nm.textContent=st?`${st.facts.msgType==='ORDRSP'?'Order response':'Order'} ${st.facts.docNumber||'?'} · ${st.facts.lines.length} line${st.facts.lines.length===1?'':'s'} (${st.name})`:'';
   nm.classList.toggle('hidden',!st);
   document.getElementById('orderClear'+M).classList.toggle('hidden',!st);
   document.getElementById('orderHint'+M).classList.toggle('hidden',!!st);
@@ -8874,9 +8971,9 @@ function orderLoad(mode,name,text){
   const say=(m,e)=>mode==='compare'?cSetStatus(m,e):quickSetStatus(m,e);
   let f=null;
   try{f=parseFactsList(text)[0];}catch(err){f=null;}
-  if(!f||f.msgType!=='ORDERS'||!f.lines.length){say(`"${name}" isn't an order (ORDERS) ECHO can read, so it wasn't added.`,true);return;}
+  if(!f||(f.msgType!=='ORDERS'&&f.msgType!=='ORDRSP')||!f.lines.length){say(`"${name}" isn't an order (ORDERS) or order response (ORDRSP) ECHO can read, so it wasn't added.`,true);return;}
   orderState[mode]={name,facts:f};orderSetUi(mode);
-  say(`Order ${f.docNumber||''} added: ${f.lines.length} line${f.lines.length===1?'':'s'}.`);
+  say(`${f.msgType==='ORDRSP'?'Order response':'Order'} ${f.docNumber||''} added: ${f.lines.length} line${f.lines.length===1?'':'s'}.`);
   orderRerun(mode);
 }
 // A ZIP from the order route usually holds the same order twice (bol's
@@ -8894,7 +8991,13 @@ async function orderLoadZip(mode,file){
       let f=null;try{f=parseFactsList(text)[0];}catch(err){f=null;}
       if(f&&f.msgType==='ORDERS'&&f.lines.length){orderLoad(mode,it.path.split('/').pop(),text);return;}
     }
-    say(`No order (ORDERS) found in "${file.name}", so nothing was added.`,true);
+    // No ORDERS in the ZIP: an order response will do (the supplier's first).
+    for(const it of entries.slice().reverse()){
+      const text=decodeFileBytes(await it.entry.async('uint8array'));
+      let f=null;try{f=parseFactsList(text)[0];}catch(err){f=null;}
+      if(f&&f.msgType==='ORDRSP'&&f.lines.length){orderLoad(mode,it.path.split('/').pop(),text);return;}
+    }
+    say(`No order (ORDERS) or order response found in "${file.name}", so nothing was added.`,true);
   }catch(err){say('Couldn\u2019t read the ZIP: '+err.message,true);}
 }
 function orderClear(mode){orderState[mode]=null;orderSetUi(mode);orderRerun(mode);}

@@ -73,3 +73,29 @@ test('the order can be added as a ZIP', async ({ page }) => {
   await expect(page.locator('#orderNameQuick')).toContainText('Order 8123458');
   await expect(page.locator('#quickOverview')).toContainText('EAN not in the order');
 });
+
+// The same slot takes the supplier's order response next to a DESADV.
+test('a DESADV against the order response: not confirmed, confirmed 0, more than confirmed, later arrival', async ({ page }) => {
+  const resp = path.join(FIX, 'ordrsp', 'response-for-desadv.edi');
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'desadv', 'against-response.edi'));
+  await page.locator('#orderInputQuick').setInputFiles(resp);
+  const ov = page.locator('#quickOverview');
+  await expect(page.locator('#orderNameQuick')).toContainText('Order response ORDRSP9530');
+  await expect(ov).toContainText('Despatched item not in the order response');
+  await expect(ov).toContainText('8712345610135 · 1 despatched');
+  await expect(ov).toContainText('Despatched, while the order response confirmed 0');
+  await expect(ov).toContainText('More despatched than confirmed');
+  await expect(ov).toContainText('8 despatched, 6 confirmed');
+  await expect(ov).toContainText('Expected arrival is after the confirmed delivery date');
+
+  // Compare: supplier side; bol's DESADV without an order number is told
+  // that the response names one.
+  await openApp(page);
+  await runCompareFixtures(page, path.join(FIX, 'desadv', 'against-response.edi'), path.join(FIX, 'desadv', 'against-response-no-order.edi'));
+  await page.locator('#orderInputCompare').setInputFiles(resp);
+  const res = page.locator('#results');
+  await expect(res).toContainText('Supplier — More despatched than confirmed');
+  await expect(res).toContainText("Bol — The order response names an order number, this message doesn't");
+  await expect(res).toContainText('8123470');
+});

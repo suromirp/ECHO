@@ -550,8 +550,9 @@ test('an order number only in bol\'s output is the supplier\'s Message check, no
 
 // The reverse: the supplier states an order number, bol's output has none.
 // A real transformation question, so it stays a difference — one grouped
-// finding, not one per item — next to bol's own Message check.
-test('an order number missing from bol\'s output is one grouped difference plus bol\'s Message check', async ({ page }) => {
+// finding, not one per item. bol's own "No order number" Message check
+// would say the same thing twice, so it stays out.
+test('an order number missing from bol\'s output is one grouped difference, without a second Message check', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, path.join(FIX, 'order-lost-in-bol.sup.edi'), path.join(FIX, 'order-lost-in-bol.bol.edi'));
   await expect(page.locator('#results')).toBeVisible();
@@ -562,8 +563,7 @@ test('an order number missing from bol\'s output is one grouped difference plus 
   expect(diff[0]).toContain('PO8302');
   expect(buckets.diff.some(t => /order numbers differ/.test(t))).toBe(false);
   const msg = buckets.message.filter(t => /No order number \(RFF\+ON\)/.test(t));
-  expect(msg).toHaveLength(1);
-  expect(msg[0]).toContain('Bol —');
+  expect(msg).toHaveLength(0);
   const transus = await page.evaluate(() => lastTransusTextEn);
   expect(transus).toContain("No order number in bol's output");
   await expect(page.locator('#lineTable tr.row-diff')).toHaveCount(3);
@@ -907,4 +907,29 @@ test('lines without an action code and an item repeated with quantity 0 are Mess
   await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
   await expect(page.locator('#quickOverview')).not.toContainText('Same item on more than one line');
   await expect(page.locator('#quickOverview')).not.toContainText('No action code');
+});
+
+// A confirmed delivery date more than a year after the message date, and
+// placeholder-looking references.
+test('a confirmed date over a year ahead and a test-looking order number are Message checks in both modes', async ({ page }) => {
+  const f = path.join(FIX, 'far-date-test-value.edi');
+  await openApp(page);
+  await runQuickFixture(page, f);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Confirmed delivery date is more than 365 days after the message date');
+  await expect(ov).toContainText('(1 line)');
+  await expect(ov).toContainText('Looks like a placeholder or test value');
+  await expect(ov).toContainText('Order 012345');
+
+  await openApp(page);
+  await runCompareFixtures(page, f, f);
+  const buckets = await findingsByCategory(page);
+  expect(buckets.message.filter(t => t.includes('more than 365 days after'))).toHaveLength(1);
+  expect(buckets.message.filter(t => t.includes('Looks like a placeholder or test value'))).toHaveLength(1);
+  expect(buckets.diff.some(t => /365 days|placeholder/.test(t))).toBe(false);
+
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'normal-accepted.edi'));
+  await expect(page.locator('#quickOverview')).not.toContainText('placeholder');
+  await expect(page.locator('#quickOverview')).not.toContainText('365 days');
 });

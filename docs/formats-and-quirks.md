@@ -629,6 +629,30 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   ORDRSP/DESADV pairs at hand: no hits, so Transus carries these normally.
   INVOIC needs nothing new: its header rows already count a one-sided
   value as a difference, except the ones UBL has no place for.
+- **Confirmed delivery date far ahead** (ORDRSP): `DTM+67` more than a
+  year after `DTM+137` is a grouped Message check, both modes
+  (`checkConfirmedDateFarAhead`, key `confirmed-date-far`). A year, not
+  the DESADV's 90 days: a response can confirm a delivery months out.
+- **Placeholder or test value** (order number `12345` on a real invoice,
+  `012345` on a real DESADV and ORDRSP): `TEST`/`DUMMY`-like words, a run
+  of one digit, or a counting sequence, at least 4 characters, in the
+  document number, order number or packing reference. One Message check,
+  all types, both modes (`checkTestValues`, key `test-value`). A text
+  order number and a text GLN keep their own checks.
+- **bol's "No order number" next to the grouped difference**: when the
+  supplier has an order number and bol's output has none, Compare said it
+  twice. The grouped Transformation difference stays; bol's own Message
+  check is left out in that case.
+- **DESADV against the order response**: the optional order slot also
+  takes an ORDRSP when the message is a DESADV (`checkAgainstResponse`).
+  Reported: a despatched item not in the response, despatched while the
+  response confirmed 0, more despatched than confirmed (QTY+12 + QTY+83),
+  and (info) an arrival after the confirmed date. Order numbers that don't
+  overlap stop the comparison with one note. A side whose DESADV has no
+  order number is told when the response names one
+  (`responseOrderHint`): a real DESADV lost its order number in bol's
+  output while the ORDRSP of the same order carried it through. Built on
+  synthetic fixtures.
 - **Empty envelope references** (same test ORDRSP): `UNB` without an
   interchange reference, `UNH++…`, `UNT+47'` and `UNZ+1'`. Message check on
   EDIFACT messages (`checkEnvelopeRefs`, key `envelope-ref`); in Compare the
