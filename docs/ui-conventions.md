@@ -431,6 +431,9 @@ part of the work, so the ZIP drop zone takes more than one package.
   one message shows `1`. **Check all** runs every unmarked package once
   and then opens the first one with a ⚠, else a !. During that run a
   single-message ZIP is only marked, it does not switch to Quick check.
+- **Empty start screen**: with nothing loaded only the drop areas and the
+  one status line show. The order row and the buttons (Compare, Reset,
+  Analyze, Clear, delimiters) come with the first file or pasted text.
 - **Install note for the Transus helper**: a closed line behind Settings,
   shown only while the helper has not marked the page (`data-pkg-bridge`
   on `<html>`). It says what the helper does and how to get it: the file

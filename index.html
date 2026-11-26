@@ -550,6 +550,8 @@
   .import-sum .role:first-child{margin-left:0;}
   .import-sum .role.sup{color:var(--elem);}
   #importPanel.collapsed{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:11px 16px;animation:fadeIn .25s ease-out backwards;}
+  #importPanel.empty>.order-opt,#importPanel.empty>.actions{display:none;}
+  #quickInput:placeholder-shown~.order-opt,#quickInput:placeholder-shown~.actions{display:none;}
   #importPanel.collapsed>h2,#importPanel.collapsed>.zip-drop,#importPanel.collapsed>.sep-or,#importPanel.collapsed>.drops,#importPanel.collapsed #orderHintCompare{display:none;}
   #importPanel.collapsed>.zip-queue{flex:1 1 100%;margin:0;}
   /* Folded, the block is the list and one line: no Compare, Reset or type
@@ -757,7 +759,7 @@
 
   <!-- ============ TAB: COMPARE — default active ============ -->
   <section class="panel-view active" id="viewCompare">
-    <div class="panel" id="importPanel">
+    <div class="panel empty" id="importPanel">
       <h2>Import both messages</h2>
       <div class="zip-drop" id="zipDrop">
         <svg class="ic drop-ic" aria-hidden="true"><use href="#i-box"/></svg><div class="t">Drop the package here</div>
@@ -9026,6 +9028,8 @@ function renderInvoiceCompare(res,notes){
 const cstate={bol:null,sup:null,source:null};
 function cSetStatus(m,e){const el=document.getElementById('compareStatus');el.textContent=m||'';el.className='status'+(e?' error':'');}
 function cRefresh(){document.getElementById('compareBtn').disabled=!(cstate.bol&&cstate.sup);
+  // Nothing loaded yet: only the drop areas, the rest comes with the first file.
+  document.getElementById('importPanel').classList.toggle('empty',!(cstate.bol||cstate.sup));
   const badge=document.getElementById('typeBadge');
   if(cstate.bol||cstate.sup){
     const t=(cstate.sup?detectMsgType(cstate.sup.text):null)||(cstate.bol?detectMsgType(cstate.bol.text):null);
