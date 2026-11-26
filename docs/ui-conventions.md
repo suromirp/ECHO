@@ -343,7 +343,9 @@ part of the work, so the ZIP drop zone takes more than one package.
   hidden elsewhere): pick the folder once, ECHO lists the newest 40
   packages, newest first, and checks every few seconds for new ones. A
   new package gets a dot and, with the checkbox on, opens by itself.
-  The folder is only read. The choice is remembered in the browser, so
+  The folder is only read. Chrome and Edge refuse the Downloads folder
+  itself ("contains system files") but accept a subfolder of it, so the
+  button's tooltip says to use one. The choice is remembered in the browser, so
   next time it is one click ("Watch … again") plus the browser's own
   permission question.
 - Nothing is uploaded: the packages are read from disk in the browser,
