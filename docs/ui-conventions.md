@@ -401,9 +401,9 @@ part of the work, so the ZIP drop zone takes more than one package.
   Order) in front of the file name, because a row of message IDs says
   nothing about what is in them.
 - **Details from where the package came from**: a helper in the browser
-  may hand over the trading partner, the portal's status and a link back
+  may hand over the supplier's name, the portal's status and a link back
   together with the file (`data-pkg-meta` on the ZIP input, keyed by file
-  name). The partner goes in front of the name in the list; status and
+  name). The supplier goes in front of the name in the list; status and
   "Open in Transus" go on the folded import line. They are shown as they
   came, never used in a check, and a link is only kept when it points at
   the Transus portal. "Get the order from Transus" is only visible when
