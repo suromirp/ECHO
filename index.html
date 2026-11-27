@@ -929,7 +929,7 @@
   </details>
   </details>
   <footer>
-    ECHO supports <strong>ORDRSP</strong>, <strong>DESADV</strong> and <strong>INVOIC</strong>. Messages are processed locally in your browser and are not sent to a server.<br>
+    ECHO supports <strong>ORDRSP</strong>, <strong>DESADV</strong>, <strong>INVOIC</strong> and <strong>ORDERS</strong>. Messages are processed locally in your browser and are not sent to a server.<br>
     Comparisons focus on normalized business data rather than cosmetic message differences.
   </footer>
 </div>
@@ -1108,11 +1108,6 @@ const pickQuickIntro=makeRotator([
   'ECHO is listening. Drop a message to start inspecting.',
   'One message, no drama yet. Drop it in to start inspecting.',
   'Drop or paste a message. ECHO will take a look.'
-]);
-const pickOrdersBlockMsg=makeRotator([
-  "Sure, ECHO could learn to read ORDERS — but an original purchase order looks exactly the same coming in as it does going out. Nothing gets transformed, so there'd be nothing to catch. Not worth checking.",
-  "ECHO could learn ORDERS, sure. But nothing gets transformed on the way in — so there's nothing to catch. Filed under: not worth it.",
-  "An ORDERS message in, an ORDERS message... still there. No transformation, no mismatch, no job for ECHO here."
 ]);
 
 /* Easter egg: the signal mark reacts to every click (small immediate
@@ -4339,7 +4334,7 @@ function compare(bol,sup){
   keys.forEach(k=>{
     const b=ba.get(k),s=sa.get(k);
     const row={key:k,art:(b&&b.art)||(s&&s.art)||'',gtin:(b&&b.gtin)||(s&&s.gtin)||''};
-    const quals=[...new Set([...(b?Object.keys(b.qty):[]),...(s?Object.keys(s.qty):[])])].filter(q=>q==='12'||q==='83'||q==='182');
+    const quals=[...new Set([...(b?Object.keys(b.qty):[]),...(s?Object.keys(s.qty):[])])].filter(q=>q==='12'||q==='83'||q==='182'||(type==='ORDERS'&&q==='21'));
     // treat absent and 0 as equivalent ("none"): only compare the effective numeric value
     const effVal=v=>{if(v===undefined||v===null||v==='')return 0;const n=parseInt(v,10);return isNaN(n)?v:n;};
     row.qtys=quals.map(q=>{
@@ -4416,9 +4411,9 @@ function compare(bol,sup){
       // under Message checks). Reporting it again here as a mapping miss
       // would wrongly point Transus at something outside their control.
       if(s&&s.noSscc)return;
-      missingItems.push({label,onlyIn:'supplier message but <strong>missing</strong> from the bol output'});
+      missingItems.push({label,onlyIn:type==='ORDERS'?"supplier's copy but <strong>missing</strong> from bol's order":'supplier message but <strong>missing</strong> from the bol output'});
     }
-    else if(!s)missingItems.push({label,onlyIn:'bol output but <strong>missing</strong> from the supplier message'});});
+    else if(!s)missingItems.push({label,onlyIn:type==='ORDERS'?"bol's order but <strong>missing</strong> from the supplier's copy":'bol output but <strong>missing</strong> from the supplier message'});});
   addCapped('err',missingItems,
     m=>fkey('item-one-side')+`Item <code>${esc(m.label)}</code> is present in the ${m.onlyIn}.`,
     rest=>fkey('item-one-side')+`<strong>${rest} more item(s) are missing on one side</strong> — see the Line comparison below for the full list.`);
@@ -4470,7 +4465,8 @@ function compare(bol,sup){
   // empty sides would otherwise pass silently). One side: that side's own
   // Message check, the same one Quick check runs (parity rule) — so the
   // reader sees it's about that message, not only a cross-side "—".
-  if(sup.lines.length||bol.lines.length){
+  // Not for ORDERS: the message is the order, its number is the BGM one.
+  if(type!=='ORDERS'&&(sup.lines.length||bol.lines.length)){
     if(!supHasAnyOrder&&!bolHasAnyOrder){
       add('warn',fkey('order-missing')+"Neither message references an order number (RFF+ON) anywhere — worth checking whether that's expected for this delivery.",'message');
     }else if(!supHasAnyOrder&&sup.lines.length){
@@ -4745,6 +4741,78 @@ function compare(bol,sup){
       rest=>`<strong>${rest} more item(s) also show a net price difference</strong> — see the Line comparison below for the full list.`);
   }
 
+  // ORDERS: bol's order against the copy the supplier received. The
+  // direction is the other way round (bol's file is the original), so the
+  // envelope checks run on bol's side. Compared: the order number (BGM),
+  // the header dates, and per item the requested delivery date (line
+  // DTM+2, else the header's) and the price.
+  let ordersCompared='';
+  if(type==='ORDERS'){
+    checkUnbSender(bol,'Bol',add,factsJump('bol'));
+    checkEnvelopeRefs(bol,'Bol',add);
+    checkTestFlag(bol,'Bol',add);
+    perSideOnce(add,sup,bol,checkDtmDuplicateQualifier,factsJump);
+    perSideOnce(add,sup,bol,checkZeroGtin,factsJump);
+    perSideOnce(add,sup,bol,(f,label,a,j)=>{const t=factsGs1Finding(f,j);if(t)a('warn',`${label} — ${t}`,'message');},factsJump);
+    const tagList=(items,what)=>{
+      const lis=items.map(d=>`<li><span class="clickable-val" onclick="jumpToFactsSource('both',${jsQuote(d.jump)})">${esc(d.label)}: ${esc(d.bol)} → ${esc(d.sup)}</span></li>`).join('');
+      const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis}</ul>`;
+      return items.length>20?`<details><summary>Show ${items.length} ${what}</summary>${ul}</details>`:ul;
+    };
+    if(bol.docNumber&&sup.docNumber&&bol.docNumber!==sup.docNumber)
+      add('err',fkey('order-diff')+`<strong>Order number differs</strong> <span class="seg">(BGM)</span>: bol <span class="val-bol">${esc(bol.docNumber)}</span> vs supplier's copy <span class="val-sup">${esc(sup.docNumber)}</span>.`,'diff');
+    // Header dates other than the requested delivery date (compared per
+    // item below). The document date (137) is left out: a copy may be
+    // stamped anew without that meaning anything.
+    const bH=bol.headerDtm||{},sH=sup.headerDtm||{};
+    const hd=q=>({'10':'requested shipment','11':'despatch','17':'estimated delivery','63':'latest delivery','64':'earliest delivery','69':'promised delivery'}[q]||'date');
+    const hDiff=[],hOne=[];
+    [...new Set([...Object.keys(bH),...Object.keys(sH)])].filter(q=>q!=='2'&&q!=='137').sort().forEach(q=>{
+      const b=bH[q]?(normDate(bH[q])||bH[q]):'',v=sH[q]?(normDate(sH[q])||sH[q]):'';
+      if(b&&v&&b!==v)hDiff.push({label:`DTM+${q} (${hd(q)})`,bol:showDate(b),sup:showDate(v),jump:bH[q]});
+      else if(!b||!v)hOne.push(`DTM+${q} (${hd(q)}) ${showDate(b||v)}: only in ${b?"bol's order":"the supplier's copy"}`);
+    });
+    if(hDiff.length)add('warn',`<strong>Header date differs</strong> between bol's order and the supplier's copy (bol → supplier).`+tagList(hDiff,'dates'),'diff',hDiff.length);
+    if(hOne.length)add('info',`<strong>Header date on one side only</strong>`+valueTagsHtml(hOne,null,'dates')+moreInfo(`A date in the header of one message that the other doesn't state. Often only a difference in how the two formats carry dates.`),'info');
+    const bucket=f=>{
+      const m=new Map(),h=f.headerDtm&&f.headerDtm['2'];
+      f.lines.forEach(l=>{
+        const k=keyFn(l);
+        if(!m.has(k))m.set(k,{dates:new Set(),net:null,gross:null,art:l.art,gtin:l.gtin});
+        const x=m.get(k),d=(l.dtm&&l.dtm['2'])||h;
+        if(d)x.dates.add(normDate(d)||d);
+        if(x.net===null&&l.netPrice!==null&&l.netPrice!==undefined)x.net=l.netPrice;
+        if(x.gross===null&&l.grossPrice!==null&&l.grossPrice!==undefined)x.gross=l.grossPrice;
+      });
+      return m;
+    };
+    const bB=bucket(bol),sB=bucket(sup);
+    const dateDiffs=[],priceDiffs=[];
+    let datesSeen=false,pricesSeen=false;
+    bB.forEach((b,k)=>{
+      const v=sB.get(k);if(!v)return;
+      const label=b.art||b.gtin||v.art||v.gtin||k,jump=b.gtin||v.gtin||b.art||v.art||'';
+      const ds=x=>[...x.dates].sort();
+      if(b.dates.size||v.dates.size){
+        datesSeen=true;
+        if(ds(b).join(',')!==ds(v).join(','))dateDiffs.push({key:k,label,bol:ds(b).map(showDate).join(', ')||'—',sup:ds(v).map(showDate).join(', ')||'—',jump});
+      }
+      // Net against net, gross against gross. One side stating only the
+      // net and the other only the gross price is two different values,
+      // not a difference.
+      [['net','net'],['gross','gross']].forEach(([f,name])=>{
+        if(b[f]===null||v[f]===null)return;
+        pricesSeen=true;
+        if(!amtEq(b[f],v[f]))priceDiffs.push({key:k,label:`${label} (${name})`,bol:b[f].toFixed(2),sup:v[f].toFixed(2),jump});
+      });
+    });
+    if(dateDiffs.length)add('err',`<strong>Requested delivery date</strong> <span class="seg">(DTM+2)</span> <strong>differs</strong> on ${dateDiffs.length} item${dateDiffs.length===1?'':'s'} (bol → supplier).`+tagList(dateDiffs,'items')+moreInfo(`The date bol asks delivery on, per item: the DTM+2 on the line, or the header's when the line has none. The first value is bol's order, the second the copy the supplier received.`),'diff',dateDiffs.length);
+    if(priceDiffs.length)add('err',`<strong>Price differs</strong> on ${priceDiffs.length} item${priceDiffs.length===1?'':'s'} (bol → supplier).`+tagList(priceDiffs,'items')+moreInfo(`Net price (PRI+AAA) against net, gross (PRI+AAB) against gross, per item. The first value is bol's order, the second the copy the supplier received.`),'diff',priceDiffs.length);
+    const hit=new Set([...dateDiffs,...priceDiffs].map(d=>d.key));
+    rows.forEach(r=>{if(hit.has(r.key))r.status='diff';});
+    ordersCompared=(datesSeen?', requested delivery dates':'')+(pricesSeen?', prices':'');
+  }
+
   if(orderState.compare)checkAgainstOrder(sup,orderState.compare,'Supplier',add,factsJump('sup'));
   if(orderState.compare){
     checkAgainstResponse(sup,orderState.compare,'Supplier',add,factsJump('sup'));
@@ -4770,10 +4838,10 @@ function compare(bol,sup){
   // never hides behind "!"); the wording comes from verdictModel().
   const verdict=findings.some(f=>f.level==='err')?'err':(findings.some(f=>f.level==='warn')?'warn':'ok');
   {
-    const lost=lostHeaderFields(sup,bol,type);
+    const lost=type==='ORDERS'?[]:lostHeaderFields(sup,bol,type);
     if(lost.length)add('warn',fkey('header-lost')+`<strong>In the supplier message, not in bol's output</strong> <span class="dim">(${lost.length} header field${lost.length===1?'':'s'})</span>`+valueTagsHtml(lost,null,'fields')+moreInfo(`The supplier message carries ${lost.length===1?'this value':'these values'} in its header, and bol's output has nothing in that place. Worth asking Transus whether the field is mapped.`),'diff');
   }
-  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+(supHasAnyOrder&&bolHasAnyOrder?', order numbers':'')+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
+  if(!findings.some(f=>isDiff(f)&&(f.level==='err'||f.level==='warn')))add('ok','All compared values match: the same items, quantities'+(type==='ORDRSP'?', actions':'')+ordersCompared+(supHasAnyOrder&&bolHasAnyOrder?', order numbers':'')+((bol.ssccs.length||sup.ssccs.length)&&!ssccResult.onlyBol.length&&!ssccResult.onlySup.length?" and SSCCs":'')+'.','diff');
 
   return {type,findings,rows,ssccResult,verdict,actionMatrix,flaggedActionItems,dateOnlyRemaps:rows.filter(r=>r.dateOnlyRemap).length,
     zeroLines,pacExplainsOnlySup,palletDiffSsccs,
@@ -7026,8 +7094,11 @@ function verdictModel(findings,opts){
   const msgs=acting.filter(f=>f.cat==='message');
   const infos=findings.filter(f=>f.level==='info');
   const level=acting.some(f=>f.level==='err')?'err':(acting.length?'warn':'ok');
-  const supN=inv?'the supplier invoice':'the supplier message';
-  const bolN=inv?"bol's invoice":"bol's output";
+  // ORDERS runs the other way: bol's order is the original, the supplier's
+  // file the copy that was delivered.
+  const ord=o.kind==='orders';
+  const supN=inv?'the supplier invoice':(ord?"the supplier's copy":'the supplier message');
+  const bolN=inv?"bol's invoice":(ord?"bol's order":"bol's output");
   const sides=new Set(msgs.map(findingSide).map(s=>s||'sup'));
   const msgWhere=sides.has('both')||(sides.has('sup')&&sides.has('bol'))
     ?'in both messages themselves'
@@ -7036,7 +7107,7 @@ function verdictModel(findings,opts){
   const link=(key,label)=>`<a href="#" onclick="return scrollToFindingsSection('${o.prefix||'cfc'}-${key}')">${label}</a>`;
   let title,play,where,quipLevel;
   if(diffs.length){
-    title=`${inv?"bol's invoice":"bol's output"} differs from ${supN}`;
+    title=ord?`${supN} differs from ${bolN}`:`${bolN} differs from ${supN}`;
     play=diffs.some(f=>f.level==='err')?'Something got lost in translation.':'Almost in sync.';
     quipLevel=diffs.some(f=>f.level==='err')?'err':'warn';
     where=`${link('diff','Transformation differences')} (${diffs.length}) — values that changed between ${supN} and ${bolN}, so a mapping question. "Copy for Transus" collects them.`
@@ -7047,7 +7118,7 @@ function verdictModel(findings,opts){
     quipLevel='warn';
     where=`${link('message','Message checks')} (${msgs.length}) — ${msgWhere}, not in the mapping. Nothing here for Transus.`;
   }else{
-    title=`${inv?"bol's invoice":"bol's output"} matches ${supN}`;
+    title=ord?`${supN} matches ${bolN}`:`${bolN} matches ${supN}`;
     play='Loud and clear.';
     quipLevel='ok';
     const ref=[];
@@ -8129,7 +8200,7 @@ function render(result,bol,sup,notes){
   const hasWC=wcSup.length>0||wcBol.length>0;
   // Verdict: descriptive headline, the playful line as subtitle, and a
   // "Where to look" line derived from the findings' cat (verdictModel).
-  const vm=verdictModel(result.findings,{kind:'facts',prefix:'cfc',wcCount:wcSup.length+wcBol.length});
+  const vm=verdictModel(result.findings,{kind:result.type==='ORDERS'?'orders':'facts',prefix:'cfc',wcCount:wcSup.length+wcBol.length});
   echoSignalReact(echoReactionFor(vm.quipLevel==='err'?'err':vm.level,hasWC));
   const verdictEl=document.getElementById('verdict');
   verdictEl.className='verdict '+vm.level;
@@ -9694,10 +9765,6 @@ function runCompare(){
   if(!cstate.bol||!cstate.sup){cSetStatus('Load both messages first.',true);return;}
   document.getElementById('compareBanner').innerHTML='';
   const tSup=detectMsgType(cstate.sup.text),tBol=detectMsgType(cstate.bol.text);
-  if(tSup==='ORDERS'||tBol==='ORDERS'){
-    cSetStatus(pickOrdersBlockMsg()+' To check a message against its order, use \u201cAdd the order\u201d below the two files.',true);
-    return;
-  }
   const isInvoice=(tSup==='INVOIC'||tBol==='INVOIC');
 
   if(isInvoice){

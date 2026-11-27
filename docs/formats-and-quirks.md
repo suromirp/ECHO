@@ -2,10 +2,19 @@
 
 ## Supported message types
 
-EDIFACT — ORDRSP, DESADV, INVOIC, and ORDERS (Quick check only; an
-outbound bol→supplier purchase order has nothing to compare against, so
-Compare still declines it — but Quick check reads it, since a supplier
-complaint about a malformed test order is a real, recurring use case).
+EDIFACT — ORDRSP, DESADV, INVOIC, and ORDERS. An ORDERS runs the other
+way (bol → supplier): in Compare, bol's file is the original and the
+supplier's file the copy that was delivered. Compare was first left out
+on the idea that nothing gets transformed; a question about which dates
+the supplier actually receives showed the two copies are worth laying
+side by side. Compared per item: ordered quantity (QTY+21), requested
+delivery date (line DTM+2, else the header's) and price (net against net,
+gross against gross; net on one side and gross on the other is not a
+difference). Also the BGM order number and the header dates: a different
+value is a difference, a date only one side states (DTM+10 requested
+shipment, say) is Good to know. The document date (DTM+137) is left out.
+The envelope checks run on bol's side. Built from synthetic pairs only;
+re-check against a real pair's raw data.
 Quick check runs the line-level checks on it (GS1 check digit, all-zeros
 EAN, duplicate `DTM` qualifier) just like ORDRSP/DESADV.
 

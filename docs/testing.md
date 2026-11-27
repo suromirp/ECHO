@@ -348,7 +348,10 @@ actual test fixtures, don't just keep this list as prose:
   invoice) stops Compare with a plain-language banner naming the line and
   column, and shows the same banner in Quick check, rather than an empty
   result or a wall of "missing" findings.
-- **ORDERS**: readable in Quick check; still declined in Compare.
+- **ORDERS**: readable in Quick check. In Compare an identical pair
+  matches (no missing-order-number note); a copy with another quantity,
+  requested delivery date and price reports each, and a header date on
+  one side only is Good to know.
 - **ORDERS**: Quick check runs the line-level checks too (GS1 check digit,
   all-zeros EAN, duplicate `DTM` qualifier), not only for ORDRSP/DESADV.
 - **ORDERS**: Quick check's Lines table shows the requested delivery date
@@ -541,6 +544,6 @@ the actual test suite in the same commit as the fix.
   first, non-ZIP files ignored, a package that appears later is picked
   up and opened. An opened package carries the level of its verdict
   card; "Check all" marks all four fixture ZIPs (a level for the pairs,
-  `·` for the ORDERS pair, `1` for the single message) and leaves the
+  the ORDERS pair included, `1` for the single message) and leaves the
   view on Compare. ZIPs arriving one at a time build the list from
   the second one on; the same ZIP twice does not.

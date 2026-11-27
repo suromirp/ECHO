@@ -4,8 +4,6 @@ const { openApp, runQuickFixture, runCompareFixtures } = require('../helpers');
 
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'orders', 'simple-orders.edi');
 
-// docs/testing.md: "ORDERS: readable in Quick check; still declined in
-// Compare."
 test('ORDERS is readable in Quick check', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, FIXTURE);
@@ -15,20 +13,38 @@ test('ORDERS is readable in Quick check', async ({ page }) => {
   await expect(overview).toContainText('ORD9001');
 });
 
-test('ORDERS is still declined in Compare', async ({ page }) => {
+// Compare reads ORDERS too: bol's order against the copy the supplier
+// received. An identical pair matches, without a note about a missing
+// order number (the message is the order).
+test('ORDERS in Compare: an identical pair matches', async ({ page }) => {
   await openApp(page);
   await runCompareFixtures(page, FIXTURE, FIXTURE);
+  await expect(page.locator('#results')).toBeVisible();
+  const txt = await page.locator('#results').innerText();
+  expect(txt).toContain('All compared values match');
+  expect(txt).not.toContain('references an order number');
+});
 
-  // Compare refuses to run at all: no results panel, and an explanatory
-  // status message referencing ORDERS instead.
-  await expect(page.locator('#results')).toBeHidden();
-  await expect(page.locator('#compareStatus')).toContainText('ORDERS');
-  await expect(page.locator('#compareStatus')).toHaveClass(/error/);
+// A copy with another quantity, requested delivery date and price on a
+// line, and a header date bol's order doesn't state.
+test('ORDERS in Compare: quantity, requested delivery date, price and header date', async ({ page }) => {
+  await openApp(page);
+  const dir = path.join(__dirname, '..', 'fixtures', 'orders');
+  await runCompareFixtures(page, path.join(dir, 'price-and-date-supplier-copy.edi'), path.join(dir, 'price-and-date.edi'));
+  await expect(page.locator('#results')).toBeVisible();
+  const txt = await page.locator('#results').innerText();
+  expect(txt).toContain('ordered quantity (QTY+21) differs');
+  expect(txt).toMatch(/Requested delivery date \(DTM\+2\) differs on 1 item/);
+  expect(txt).toMatch(/Price differs on 1 item/);
+  expect(txt).toContain('11.87 → 11.90');
+  expect(txt).toContain('Header date on one side only');
+  expect(txt).toContain('DTM+10');
+  expect(txt).not.toContain('All compared values match');
 });
 
 // Quick check limited the GS1 check-digit, all-zeros EAN and duplicate-DTM
 // checks to ORDRSP/DESADV; they only need the message's own LIN groups, so
-// ORDERS (Quick check only) gets them too.
+// ORDERS gets them too.
 test('ORDERS in Quick check gets the line-level checks: check digit, all-zeros EAN, duplicate DTM', async ({ page }) => {
   await openApp(page);
   await runQuickFixture(page, path.join(__dirname, '..', 'fixtures', 'orders', 'line-checks.edi'));

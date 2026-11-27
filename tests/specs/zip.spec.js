@@ -87,9 +87,9 @@ test('ZIPs arriving one by one build the package list', async ({ page }) => {
 });
 
 // "Check all" runs every unmarked package once, so the list shows which
-// ones are worth opening. A pair ECHO doesn't compare and a single message
-// get their own neutral mark instead of a level, and the single message
-// does not pull the view over to Quick check during the run.
+// ones are worth opening. A single message gets its own neutral mark
+// instead of a level, and does not pull the view over to Quick check
+// during the run. An order pair is compared like any other.
 test('Check all marks every package in the list', async ({ page }) => {
   const dir = path.join(__dirname, '..', 'fixtures', 'zip');
   await openApp(page);
@@ -103,7 +103,7 @@ test('Check all marks every package in the list', async ({ page }) => {
   await expect(page.locator('#zipQueue .zq-kind')).toHaveCount(4);
   await expect(items.nth(1).locator('.zq-kind')).toHaveText('Order');
   await expect(items.nth(0).locator('.zq-kind')).toHaveText(/Order response|Despatch advice|Invoice/);
-  await expect(items.nth(1).locator('.zq-lv')).toHaveClass(/\bna\b/);
+  await expect(items.nth(1).locator('.zq-lv')).toHaveClass(/\b(ok|warn|err)\b/);
   await expect(items.nth(2).locator('.zq-lv')).toHaveClass(/single/);
   await expect(items.nth(0).locator('.zq-lv')).toHaveClass(/\b(ok|warn|err)\b/);
   await expect(page.locator('#viewCompare')).toHaveClass(/active/);
