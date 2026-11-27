@@ -156,7 +156,7 @@ test('package details handed over with the file are shown; a foreign link is dro
   await page.evaluate(() => {
     document.documentElement.dataset.pkgBridge = '1';
     document.getElementById('zipInput').dataset.pkgMeta = JSON.stringify({
-      'Message_ID_100000001.zip': { supplier: 'Supplier Alfa', status: 'Delivered', url: 'https://online.transus.com/Messages/MessageDetails.aspx?mid=1' },
+      'Message_ID_100000001.zip': { supplier: 'Supplier Alfa', status: 'Delivery error', reason: 'Unit price is unknown; item EAN: <i>8700000000015</i>', url: 'https://online.transus.com/Messages/MessageDetails.aspx?mid=1' },
       'utf16-pair.zip': { supplier: 'Supplier <b>Bravo</b>', url: 'https://example.com/x' },
     });
   });
@@ -165,7 +165,8 @@ test('package details handed over with the file are shown; a foreign link is dro
   await expect(items.nth(0).locator('.zq-supplier')).toHaveText('Supplier Alfa');
   await expect(items.nth(1).locator('.zq-supplier')).toHaveText('Supplier <b>Bravo</b>');
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
-  await expect(page.locator('#importSum .pkg-status')).toHaveText('Transus: Delivered');
+  await expect(page.locator('#importSum .pkg-status')).toHaveText('Transus: Delivery error');
+  await expect(page.locator('#importSum .pkg-reason')).toHaveText('Transus says: Unit price is unknown; item EAN: <i>8700000000015</i>');
   await expect(page.locator('#importSum .pkg-link')).toHaveAttribute('href', /^https:\/\/online\.transus\.com\//);
   const btn = page.locator('#orderFetchBtn');
   await expect(btn).toBeVisible();

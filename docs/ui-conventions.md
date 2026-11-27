@@ -419,7 +419,10 @@ part of the work, so the ZIP drop zone takes more than one package.
   may hand over the supplier's name, the portal's status and a link back
   together with the file (`data-pkg-meta` on the ZIP input, keyed by file
   name). The supplier goes in front of the name in the list; status and
-  "Open in Transus" go on the folded import line. They are shown as they
+  "Open in Transus" go on the folded import line. When the portal shows
+  a text with the status (the reason of a delivery error), that goes on
+  its own line below, as "Transus says: …": quoted as it came, not a
+  finding of ECHO's and not a verdict. They are shown as they
   came, never used in a check, and a link is only kept when it points at
   the Transus portal. "Get the order from Transus" is only visible when
   such a helper announced itself (`data-pkg-bridge` on `<html>`) and the

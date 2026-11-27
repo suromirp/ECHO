@@ -213,6 +213,7 @@
   #zqPairOut{margin-top:8px;}
   .pkg-status{font-family:var(--sans);color:var(--text-dim);margin-left:8px;}
   .pkg-link{font-family:var(--sans);color:var(--accent);margin-left:8px;white-space:nowrap;}
+  .pkg-reason{display:block;margin-top:4px;font-family:var(--sans);font-size:12.5px;color:var(--text-dim);overflow-wrap:anywhere;}
   .zq-lv{color:var(--text-dim);}
   .zq-lv.ok{color:var(--ok);}.zq-lv.warn{color:var(--warn);}.zq-lv.err{color:var(--err);}
   @media(max-width:620px){.zq-item{grid-template-columns:18px minmax(0,1fr);}.zq-kind,.zq-note{display:none;}}
@@ -9411,7 +9412,8 @@ function importSync(){
     document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`
       +(pm.status||pm.url?` <span class="pkg-from">`
         +(pm.status?`<span class="pkg-status" title="Status of this message in Transus">Transus: ${esc(pm.status)}</span>`:'')
-        +(pm.url?`<a class="pkg-link" href="${esc(pm.url)}" target="_blank" rel="noopener noreferrer" title="Opens this message in the Transus portal">Open in Transus \u2197</a>`:'')+'</span>':'');
+        +(pm.url?`<a class="pkg-link" href="${esc(pm.url)}" target="_blank" rel="noopener noreferrer" title="Opens this message in the Transus portal">Open in Transus \u2197</a>`:'')+'</span>':'')
+      +(pm.reason?`<span class="pkg-reason" title="The text Transus shows with this status, as it came">Transus says: ${esc(pm.reason)}</span>`:'');
   }
   pkgOrderSync();
 }
@@ -9432,7 +9434,8 @@ zipDrop.addEventListener('dragleave',()=>zipDrop.classList.remove('over'));
 zipDrop.addEventListener('drop',e=>{e.preventDefault();zipDrop.classList.remove('over');zipTake([...e.dataTransfer.files]);});
 zipInput.addEventListener('change',e=>{pkgMetaTake();zipTake([...e.target.files]);e.target.value='';});
 /* What the place a package came from knows about it: supplier,
-   status, a link back. A helper in the browser may hand this over as JSON
+   status, the text shown with that status (a delivery error, say), a
+   link back. A helper in the browser may hand this over as JSON
    on the file input (data-pkg-meta, keyed by file name) together with the
    file. It is only shown, never used in a check, and a link is only kept
    when it points at the Transus portal. */
@@ -9446,6 +9449,7 @@ function pkgMetaTake(){
   Object.keys(m).slice(0,200).forEach(name=>{
     const v=m[name]||{},o={};
     ['supplier','status'].forEach(k=>{if(typeof v[k]==='string'&&v[k].trim())o[k]=v[k].trim().slice(0,120);});
+    if(typeof v.reason==='string'&&v.reason.trim())o.reason=v.reason.trim().replace(/\s+/g,' ').slice(0,400);
     if(typeof v.url==='string'&&PKG_LINK.test(v.url)&&v.url.length<600)o.url=v.url;
     if(Object.keys(o).length)pkgMeta[name]=Object.assign(pkgMeta[name]||{},o);
   });
