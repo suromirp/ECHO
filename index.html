@@ -6016,7 +6016,14 @@ function allowanceAlreadyInNetPrice(l){
   if(l.qty==null||l.netPrice==null||l.lineAmount==null)return false;
   const ch=(l.charges||[]).reduce((s,c)=>c.amount==null||c.kind!=='charge'?s:s+c.amount,0);
   const base=l.qty*l.netPrice;
-  return Math.abs(Math.abs(l.lineAmount)-Math.abs(base+ch))<0.015||Math.abs(Math.abs(l.lineAmount)-Math.abs(base))<0.015;
+  // A net price rounded to 2 decimals leaves a gap of up to quantity × half
+  // a cent (a line of 40 pieces can be 0.20 off). That wider margin only
+  // counts when the allowance itself is clearly larger than it, so a small
+  // discount can't hide inside it.
+  const allow=(l.charges||[]).reduce((s,c)=>c.amount==null||c.kind!=='allowance'?s:s+Math.abs(c.amount),0);
+  const round=Math.abs(l.qty)*0.005+0.015;
+  const tol=allow>round*2?round:0.015;
+  return Math.abs(Math.abs(l.lineAmount)-Math.abs(base+ch))<tol||Math.abs(Math.abs(l.lineAmount)-Math.abs(base))<tol;
 }
 function checkLineAllowances(inv,label,add,jumpCall){
   const items=lineAllowanceItems(inv);

@@ -1077,6 +1077,17 @@ test('an allowance already in the net price and a charge in the line amount are 
   await expect(ov).not.toContainText('of quantity × net price');
 });
 
+// The same with a net price rounded to 2 decimals: quantity × PRI+AAA is a
+// few cents off the line amount, while gross × quantity minus the allowance
+// gives it exactly. Still "already in the net price", not a warning.
+test('an allowance already in a rounded net price is info, not a warning', async ({ page }) => {
+  await openApp(page);
+  await runQuickFixture(page, path.join(FIX, 'allowance-in-rounded-net-price.sup.edi'));
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Discount listed as a line-level allowance, already in the net price');
+  await expect(ov).not.toContainText('Discount sent as a line-level allowance');
+});
+
 // EDIFACT written out as XML, one element per segment (real INVOIC, D01B).
 // Read by turning it back into EDIFACT. The same invoice also had MOA+176
 // inside each summary TAX group (the last one, 0.00, used to win), an

@@ -423,6 +423,9 @@ actual test fixtures, don't just keep this list as prose:
   and on the supplier side in Compare; an empty supplier-only `ALC+C` is
   "No amount, not forwarded" in the table, not a difference
   (`tests/fixtures/invoic/line-allowance.sup.edi` / `.bol.ubl.xml`).
+- **INVOIC**: an allowance already in a net price rounded to 2 decimals
+  (`allowance-in-rounded-net-price.sup.edi`) is the info variant, not the
+  warning.
 - **INVOIC (deposit block)**: a deposit gets one block in Quick check
   (supplier and bol file) and Compare, with VAT, the 0% group, per-item
   amount and the EN/NL copy text; an empty `TaxableAmount` on bol's lines

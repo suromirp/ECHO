@@ -810,6 +810,13 @@ Files are decoded from their raw bytes (`decodeFileBytes`), never with
   reconciles without deducting it, the Message check is info
   (`line-allowance-in-price`): "Discount listed as a line-level allowance,
   already in the net price".
+  A later real invoice had the same pattern with `PRI+AAA` rounded to 2
+  decimals (`ALC+A++1++RAA'MOA+23`, gross `PRI+AAB` × quantity − allowance =
+  `MOA+203` exactly, quantity × `PRI+AAA` nine cents off), and still got the
+  warning, which read as if the discount was missing from the price. The
+  check now allows quantity × half a cent, but only when the allowance is
+  clearly larger than that margin. The actual gap in that case was the
+  invoice price against the order price: a price agreement, not EDI.
 - **Deposit (statiegeld)**: a refundable deposit on cans, bottles or crates,
   sent as a line charge (`ALC+C++++RAD'MOA+8`, own `TAX` at 0% E, or no TAX
   at all). Colleagues and the matching & valuation team kept asking "is the
