@@ -194,7 +194,6 @@
   .zq-name{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .zq-note{font-size:11.5px;color:var(--text-faint);white-space:nowrap;}
   .zq-supplier{font-family:var(--sans);font-size:12.5px;color:var(--text);margin-right:10px;}
-  .pkg-from{display:inline-block;white-space:nowrap;}
   .zq-find{flex:1 1 180px;max-width:340px;margin-left:auto;padding:4px 10px;font:inherit;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);background:var(--panel-2);border:1px solid var(--border);border-radius:999px;}
   .zq-find:focus{outline:none;border-color:var(--accent);}
   .zq-none{padding:10px 12px;font-size:12.5px;color:var(--text-dim);}
@@ -211,9 +210,12 @@
   .zq-pair-part{margin:10px 0 4px;color:var(--text);}
   .zq-pair-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
   #zqPairOut{margin-top:8px;}
-  .pkg-status{font-family:var(--sans);color:var(--text-dim);margin-left:8px;}
-  .pkg-link{font-family:var(--sans);color:var(--accent);margin-left:8px;white-space:nowrap;}
-  .pkg-reason{display:block;margin-top:4px;font-family:var(--sans);font-size:12.5px;color:var(--text-dim);overflow-wrap:anywhere;}
+  .pkg-link{font-family:var(--sans);font-size:12.5px;color:var(--accent);margin-left:auto;white-space:nowrap;}
+  .tx-note{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:9px;padding:11px 14px;margin-bottom:12px;}
+  .tx-note-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;}
+  .tx-note-label{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-dim);}
+  .tx-note-status{font-size:15px;font-weight:700;color:var(--text);}
+  .tx-note-reason{margin-top:6px;font-size:14px;line-height:1.5;color:var(--text);overflow-wrap:anywhere;}
   .zq-lv{color:var(--text-dim);}
   .zq-lv.ok{color:var(--ok);}.zq-lv.warn{color:var(--warn);}.zq-lv.err{color:var(--err);}
   @media(max-width:620px){.zq-item{grid-template-columns:18px minmax(0,1fr);}.zq-kind,.zq-note{display:none;}}
@@ -7379,7 +7381,27 @@ function errPickMount(mode,slot,opts){
     </div>
     <div class="err-card hidden" id="errPickCard-${mode}" aria-live="polite"></div>
   </div>`;
-  setTimeout(()=>errMayTag(mode),0);
+  const st=errPick[mode];
+  // A package that came with a Transus status: say so right here, with the
+  // result, in Transus's own words. A text ECHO knows goes into the bar by
+  // itself, so its meaning and the related findings show at once.
+  const pm=mode==='compare'?pkgMeta[(cstate.source||{}).zip]||{}:{};
+  if(pm.status||pm.reason||pm.url){
+    slot.insertAdjacentHTML('afterbegin',`<div class="tx-note" id="txNote">
+      <div class="tx-note-head"><span class="tx-note-label">Transus status</span>${pm.status?`<span class="tx-note-status">${esc(pm.status)}</span>`:''}${pm.url?`<a class="pkg-link" href="${esc(pm.url)}" target="_blank" rel="noopener noreferrer" title="Opens this message in the Transus portal">Open in Transus \u2197</a>`:''}</div>
+      ${pm.reason?`<div class="tx-note-reason" title="The text Transus shows with this status, as it came">${esc(pm.reason)}</div>`:''}
+    </div>`);
+  }
+  setTimeout(()=>{
+    if(errPick[mode]!==st)return;
+    errMayTag(mode);
+    if(!pm.reason||!matchErrorText(pm.reason))return;
+    const box=document.getElementById('errPick-'+mode),inp=document.getElementById('errPickTxt-'+mode);
+    if(!box||!inp||inp.value)return;
+    st.open=true;box.classList.add('open');
+    inp.value=pm.reason;
+    errPickTyped(mode,true);
+  },0);
 }
 function errPickOpen(mode,on){
   const st=errPick[mode],box=document.getElementById('errPick-'+mode);if(!st||!box)return;
@@ -9408,12 +9430,7 @@ function importSync(){
   if(document.getElementById('legendDetails').open)helpRender();
   if(fold){
     const n=id=>esc(document.getElementById(id).textContent||'\u2014');
-    const pm=pkgMeta[(cstate.source||{}).zip]||{};
-    document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`
-      +(pm.status||pm.url?` <span class="pkg-from">`
-        +(pm.status?`<span class="pkg-status" title="Status of this message in Transus">Transus: ${esc(pm.status)}</span>`:'')
-        +(pm.url?`<a class="pkg-link" href="${esc(pm.url)}" target="_blank" rel="noopener noreferrer" title="Opens this message in the Transus portal">Open in Transus \u2197</a>`:'')+'</span>':'')
-      +(pm.reason?`<span class="pkg-reason" title="The text Transus shows with this status, as it came">Transus says: ${esc(pm.reason)}</span>`:'');
+    document.getElementById('importSumText').innerHTML=`<span class="role sup">Supplier</span> ${n('fnameSup')} <span class="role">bol</span> ${n('fnameBol')}`;
   }
   pkgOrderSync();
 }

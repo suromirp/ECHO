@@ -165,9 +165,15 @@ test('package details handed over with the file are shown; a foreign link is dro
   await expect(items.nth(0).locator('.zq-supplier')).toHaveText('Supplier Alfa');
   await expect(items.nth(1).locator('.zq-supplier')).toHaveText('Supplier <b>Bravo</b>');
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
-  await expect(page.locator('#importSum .pkg-status')).toHaveText('Transus: Delivery error');
-  await expect(page.locator('#importSum .pkg-reason')).toHaveText('Transus says: Unit price is unknown; item EAN: <i>8700000000015</i>');
-  await expect(page.locator('#importSum .pkg-link')).toHaveAttribute('href', /^https:\/\/online\.transus\.com\//);
+  // The Transus status and its text stand with the result, not on the
+  // folded import line; a text ECHO knows fills the error bar by itself.
+  await expect(page.locator('#txNote .tx-note-status')).toHaveText('Delivery error');
+  await expect(page.locator('#txNote .tx-note-reason')).toHaveText('Unit price is unknown; item EAN: <i>8700000000015</i>');
+  await expect(page.locator('#txNote .pkg-link')).toHaveAttribute('href', /^https:\/\/online\.transus\.com\//);
+  await expect(page.locator('#importSum .pkg-link')).toHaveCount(0);
+  await expect(page.locator('#errPick-compare')).toHaveClass(/open/);
+  await expect(page.locator('#errPickTxt-compare')).toHaveValue(/^Unit price is unknown/);
+  await expect(page.locator('#errPickCard-compare')).toBeVisible();
   const btn = page.locator('#orderFetchBtn');
   await expect(btn).toBeVisible();
   expect(await btn.getAttribute('data-order')).toMatch(/\d/);
@@ -175,7 +181,8 @@ test('package details handed over with the file are shown; a foreign link is dro
   await items.nth(1).click();
   await expect(items.nth(1)).toHaveClass(/active/);
   await expect(page.locator('#compareStatus')).toContainText('Comparison ready');
-  await expect(page.locator('#importSum .pkg-link')).toHaveCount(0);
+  await expect(page.locator('#txNote')).toHaveCount(0);
+  await expect(page.locator('#errPick-compare')).not.toHaveClass(/open/);
 });
 
 // Three ways to work through a longer list: step with the keyboard, search

@@ -418,10 +418,14 @@ part of the work, so the ZIP drop zone takes more than one package.
 - **Details from where the package came from**: a helper in the browser
   may hand over the supplier's name, the portal's status and a link back
   together with the file (`data-pkg-meta` on the ZIP input, keyed by file
-  name). The supplier goes in front of the name in the list; status and
-  "Open in Transus" go on the folded import line. When the portal shows
-  a text with the status (the reason of a delivery error), that goes on
-  its own line below, as "Transus says: …": quoted as it came, not a
+  name). The supplier goes in front of the name in the list. Status,
+  the text the portal shows with it (the reason of a delivery error) and
+  "Open in Transus" stand in their own block with the result,
+  directly above "Got an error message?": labelled "Transus
+  status", the text in normal size, quoted as it came. On the folded
+  import line it was small grey type that read as a footnote. When the
+  text is one ECHO knows, it is put in the error bar by itself (no focus
+  taken), so the meaning and the related findings show at once. Not a
   finding of ECHO's and not a verdict. They are shown as they
   came, never used in a check, and a link is only kept when it points at
   the Transus portal. "Get the order from Transus" is only visible when
