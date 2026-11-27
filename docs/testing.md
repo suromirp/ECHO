@@ -508,6 +508,17 @@ actual test fixtures, don't just keep this list as prose:
   file isn't accepted as the order. The order can also be added as a ZIP
   (`zip/order-pair.zip`, the same order in a bol and a supplier folder):
   the first ORDERS in it is used, the bol folder first.
+- **Invoice against the order** (`specs/against-order.spec.js`,
+  `orders/for-invoice.edi` with `invoic/against-order.sup.edi`): net price
+  differs from the order, invoiced more than ordered, invoiced EAN not in
+  the order; a different order gives one note and skips the rest. Both
+  modes; Compare runs it on the supplier's invoice. Real case behind it: an
+  invoice that reconciled in itself but was priced above the order. Less
+  than ordered is not mentioned (partial delivery), a cent per unit is
+  tolerated, credit notes are skipped (RFF+ON holds an RMA number).
+- **Package list, download and remove** (`specs/zip.spec.js`): one package
+  downloads under its own name, several as `echo-packages.zip`; removing
+  the open package clears its result; Remove all hides the list.
 - **ORDRSP**: supplier action 3 carried as bol action 6 with the same
   quantity and date is one Good-to-know note; a line whose quantity changed
   still shows the action difference; Quick check shows the info rule, not

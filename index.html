@@ -181,6 +181,10 @@
   .zq-head .btn{padding:4px 11px;font-size:12px;}
   .zq-list{max-height:204px;overflow:auto;padding:4px;display:flex;flex-direction:column;gap:1px;}
   .zq-item{display:grid;grid-template-columns:18px 124px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;text-align:left;font-size:12.5px;border:0;border-left:3px solid transparent;border-radius:6px;background:none;color:var(--text);padding:6px 10px;cursor:pointer;transition:background .12s,border-color .12s;}
+  .zq-row{display:flex;align-items:center;gap:2px;}
+  .zq-row .zq-item{flex:1 1 auto;min-width:0;width:auto;}
+  .zq-act{flex:none;width:26px;height:26px;border:0;border-radius:6px;background:none;color:var(--text-faint);font-size:14px;line-height:1;cursor:pointer;}
+  .zq-act:hover,.zq-act:focus-visible{background:var(--panel-3);color:var(--text);}
   .zq-item:hover{background:var(--panel-3);}
   .zq-item.opened{color:var(--text-dim);}
   .zq-item.active{background:var(--panel-3);border-left-color:var(--accent);color:var(--text);}
@@ -4302,6 +4306,53 @@ function checkAgainstOrder(facts,orderRef,label,add,jumpCall){
     add('info',fkey('date-before-requested')+`${pre}<strong>${head}</strong> <span class="seg">(${seg} vs order DTM+2)</span> on ${early.length} item${early.length===1?'':'s'}. `+list(early.map(x=>tag(x.gtin,`${x.gtin} · ${showDate(x.d)}, requested ${showDate(x.req)}`)))+moreInfo(`The order asks for delivery on the requested date (DTM+2); this message gives an earlier date. Delivering early can be agreed, but an earlier date in ${seg} can also be the supplier's pick or despatch day instead of the day the goods arrive at bol. A real supplier was taken off EDI over exactly that. Worth checking once which date the supplier sends.`),'message');
   }
 }
+/* ---- Invoice against the added order ----
+   Per EAN: the invoiced net price next to the order's PRI+AAA, and the
+   invoiced quantity next to the ordered one. Invoicing less than ordered
+   is everyday (partial delivery) and isn't mentioned. A price question is
+   one for purchasing, not EDI, so it only says what the two messages
+   state. Credit notes are left out: their RFF+ON holds an RMA number.
+   About one side's own message: both modes; Compare runs it on the
+   supplier's invoice. */
+function checkInvoiceAgainstOrder(inv,orderRef,label,add,jumpCall){
+  if(!inv||!orderRef||!orderRef.facts||orderRef.facts.msgType!=='ORDERS'||inv.docType==='credit')return;
+  const order=orderRef.facts,orderNo=String(order.docNumber||'').trim();
+  const pre=label?label+' — ':'',jc=jumpCall||(()=>'');
+  const tag=(v,txt)=>`<li><span class="clickable-val" onclick="${jc(v)}">${esc(txt)}</span></li>`;
+  const list=lis=>{const ul=`<ul class="wc-affected" style="margin-top:7px;">${lis.join('')}</ul>`;return lis.length>20?`<details><summary>Show ${lis.length} items</summary>${ul}</details>`:ul;};
+  const lineOrders=l=>[...(l.effectiveOrders||l.orders||[])].map(x=>String(x).trim()).filter(Boolean);
+  const invOrders=[...new Set([...(inv.headerOrders||[]),...(inv.orders||[]),...inv.lines.flatMap(lineOrders)].map(o=>String(o).trim()).filter(Boolean))];
+  if(orderNo&&invOrders.length&&!invOrders.includes(orderNo)){
+    add('warn',fkey('order-ref-other')+`${pre}<strong>The added order is a different order</strong>: this invoice refers to ${invOrders.map(o=>`<code>${esc(o)}</code>`).join(', ')}, the order is <code>${esc(orderNo)}</code>.`+moreInfo(`The order file you added (BGM ${esc(orderNo)}) isn't the order this invoice names. The order checks are skipped; add the matching order to run them.`),'message');
+    return;
+  }
+  const idx=new Map();
+  (order.lines||[]).forEach(l=>{
+    const g=normalizeGtin(l.gtin);if(!g)return;
+    const e=idx.get(g)||{gtin:l.gtin,qty:0,price:null};
+    const q=parseFloat(l.qty['21']!==undefined?l.qty['21']:l.qty['12']);if(!isNaN(q))e.qty+=q;
+    if(e.price===null&&l.netPrice!==null&&l.netPrice!==undefined)e.price=l.netPrice;
+    idx.set(g,e);
+  });
+  if(!idx.size)return;
+  const msg=new Map();
+  inv.lines.forEach(l=>{
+    const o=lineOrders(l);if(o.length&&orderNo&&!o.includes(orderNo))return;
+    const g=normalizeGtin(l.gtin);if(!g)return;
+    const e=msg.get(g)||{gtin:l.gtin,qty:0,prices:[]};
+    if(l.qty!=null&&!isNaN(l.qty))e.qty+=Math.abs(l.qty);
+    if(l.netPrice!=null&&!e.prices.some(p=>Math.abs(p-l.netPrice)<0.0005))e.prices.push(l.netPrice);
+    msg.set(g,e);
+  });
+  const cur=inv.currency||'';
+  const unknown=[...msg.keys()].filter(g=>!idx.has(g));
+  if(unknown.length)add('warn',fkey('inv-ean-not-in-order')+`${pre}<strong>Invoiced EAN not in the order</strong> on ${unknown.length} item${unknown.length===1?'':'s'}. `+list(unknown.map(g=>tag(msg.get(g).gtin,`${msg.get(g).gtin} · ${fmtQty(msg.get(g).qty)} invoiced`)))+moreInfo(`These EANs are on the invoice but not in the order you added (${esc(orderNo||'ORDERS')}). Often the EAN of another packaging level or a replacement item; an invoice covering more than one order shows up here too.`),'message');
+  // A cent of rounding per unit is left alone.
+  const price=[...msg.keys()].filter(g=>idx.has(g)&&idx.get(g).price!==null&&msg.get(g).prices.some(p=>Math.abs(p-idx.get(g).price)>0.0101));
+  if(price.length)add('warn',fkey('inv-price-vs-order')+`${pre}<strong>Net price differs from the order</strong> <span class="seg">(PRI+AAA)</span> on ${price.length} item${price.length===1?'':'s'}. `+list(price.map(g=>{const e=msg.get(g),o=idx.get(g);return tag(e.gtin,`${e.gtin} · ${e.prices.map(p=>fmtAmt(p,cur)).join(' / ')} invoiced, ${fmtAmt(o.price,cur)} in the order`);}))+moreInfo(`The net price per unit on the invoice isn't the net price in the order you added (${esc(orderNo||'ORDERS')}). ECHO only puts the two messages side by side: which price was agreed is a question for purchasing, not something the EDI connection changes. A price per another unit (per box instead of per piece) gives the same picture.`),'message');
+  const over=[...msg.keys()].filter(g=>idx.has(g)&&msg.get(g).qty>idx.get(g).qty+1e-9);
+  if(over.length)add('warn',fkey('inv-more-than-ordered')+`${pre}<strong>Invoiced more than ordered</strong> on ${over.length} item${over.length===1?'':'s'}. `+list(over.map(g=>tag(msg.get(g).gtin,`${msg.get(g).gtin} · ${fmtQty(msg.get(g).qty)} invoiced, ${fmtQty(idx.get(g).qty)} ordered`)))+moreInfo(`The invoiced quantity is higher than the quantity in the order you added. Sometimes a unit difference (boxes vs pieces), sometimes an over-delivery. Worth checking which quantity is meant.`),'message');
+}
 function perSideOnce(add,sup,bol,run,jumpFor){
   const cap=(facts,label,side)=>{const out=[];run(facts,label,(...a)=>out.push(a),jumpFor(side));return out;};
   const s=cap(sup,'Supplier','sup'),b=cap(bol,'Bol','bol');
@@ -6604,6 +6655,7 @@ function compareInvoice(sup,bol){
       else{checkOrderNotNumeric(supF,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);checkOrderNotNumeric(bolF,'Bol',add,v=>`jumpToInvSource(${jsQuote('bol')},${jsQuote(v)})`);}
     }
     checkLineAllowances(sup,'Supplier',add,v=>`jumpToInvSource(${jsQuote('sup')},${jsQuote(v)})`);
+    if(orderState.compare)checkInvoiceAgainstOrder(sup,orderState.compare,'Supplier',add,invJump('sup'));
     perSideOnce(add,sup,bol,checkDeliveryPartyIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkSupplierIsBuyer,invJump);
     perSideOnce(add,sup,bol,checkGlnNotNumeric,invJump);
@@ -7652,6 +7704,7 @@ function invoiceOverviewHtml(inv,opts={}){
     checkOrderNearMiss(af,'',note,jumpCall);
     if(inv.docType!=='credit')checkOrderNotNumeric(af,'',note,jumpCall);
     checkLineAllowances(inv,'',note,jumpCall);
+    if(orderState.quick)checkInvoiceAgainstOrder(inv,orderState.quick,'',note,jumpCall);
     checkDeposit(inv,'',note);
     {const t=emptyAmountText(inv,'');if(t)note('warn',t);}
     checkDeliveryPartyIsBuyer(inv,'',note);
@@ -9437,10 +9490,10 @@ function zipQRender(){
   const shown=zipQShown(),many=zipQ.length>1;
   const check=many&&zipQ.some(q=>!q.level)?`<button type="button" class="btn ghost zq-check" title="Runs every package in the list once, so each gets its mark. Nothing is sent anywhere."${zipQBusy?' disabled':''}>${zipQBusy?'Checking…':'Check all'}</button>`:'';
   const find=many?`<input type="search" class="zq-find" id="zqFind" value="${esc(zipQFind)}" placeholder="Find an EAN, SSCC or number in all packages" aria-label="Find in all packages" title="Shows only the packages that contain what you type (3 characters or more).">`:'';
-  box.innerHTML=`<div class="zq-head"><span title="${many?'Alt+↑ and Alt+↓ open the previous and next package. With a package selected, ↑ and ↓ do too.':''}">Packages (${shown.length<zipQ.length?shown.length+' of '+zipQ.length:zipQ.length})</span>${find}${check}</div><div class="zq-list">`+(shown.length?'':`<div class="zq-none">No package contains “${esc(zipQFind.trim())}”.</div>`)+zipQ.map((q,i)=>{
+  box.innerHTML=`<div class="zq-head"><span title="${many?'Alt+↑ and Alt+↓ open the previous and next package. With a package selected, ↑ and ↓ do too.':''}">Packages (${shown.length<zipQ.length?shown.length+' of '+zipQ.length:zipQ.length})</span>${find}${check}${many?`<button type="button" class="btn ghost zq-dl-all" title="Saves every package in the list as one ZIP on this computer.">Download all</button><button type="button" class="btn ghost zq-rm-all" title="Empties the list. The files on your computer stay where they are.">Remove all</button>`:''}</div><div class="zq-list">`+(shown.length?'':`<div class="zq-none">No package contains “${esc(zipQFind.trim())}”.</div>`)+zipQ.map((q,i)=>{
     if(!shown.includes(q))return '';
     const lv=ZQ_LEVEL[q.level];
-    return `<button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' · '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">●</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${(pkgMeta[q.name]||{}).supplier?`<span class="zq-supplier">${esc(pkgMeta[q.name].supplier)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button>`;
+    return `<div class="zq-row"><button type="button" class="zq-item${q.key===zipQActive?' active':q.opened?' opened':''}" data-i="${i}" title="${esc(q.name)}${lv?' · '+lv[1]:''}"><span class="zq-mark">${lv?`<span class="zq-lv ${q.level}">${lv[0]}</span>`:(q.fresh&&!q.opened?'<span class="zq-new">●</span>':'')}</span><span class="zq-kind">${esc(q.kind||'')}</span><span class="zq-name">${(pkgMeta[q.name]||{}).supplier?`<span class="zq-supplier">${esc(pkgMeta[q.name].supplier)}</span>`:''}${esc(q.name.replace(/\.zip$/i,''))}</span>${lv?`<span class="zq-note">${lv[1]}</span>`:''}</button><button type="button" class="zq-act zq-dl" data-i="${i}" title="Download this package" aria-label="Download ${esc(q.name)}">\u2193</button><button type="button" class="zq-act zq-rm" data-i="${i}" title="Remove this package from the list" aria-label="Remove ${esc(q.name)}">\u00d7</button></div>`;
   }).join('')+'</div>';
   if(inFind){const f=document.getElementById('zqFind');if(f){f.focus();try{f.setSelectionRange(pos,pos);}catch(err){}}}
   else if(inList){const a=box.querySelector('.zq-item.active');if(a)a.focus({preventScroll:true});}
@@ -9542,6 +9595,33 @@ async function zipQCheckAll(){
   const pick=zipQ.find(q=>q.level==='err')||zipQ.find(q=>q.level==='warn')||zipQ.find(q=>q.key===was)||zipQ[0];
   if(pick)await zipQOpen(pick);else zipQRender();
 }
+/* Packages back out of the list: one as it came in, several bundled in
+   one ZIP (a browser asks permission for a row of separate downloads).
+   Removing only empties the list; a file on disk is never touched. */
+function saveBlob(blob,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+async function zipQDownload(items){
+  if(!items.length)return;
+  try{
+    if(items.length===1){saveBlob(items[0].file||await items[0].handle.getFile(),items[0].name);return;}
+    if(typeof JSZip==='undefined'){cSetStatus('Bundling isn\u2019t available right now. Download the packages one by one.',true);return;}
+    const zip=new JSZip();
+    for(const q of items)zip.file(q.name,q.file||await q.handle.getFile());
+    saveBlob(await zip.generateAsync({type:'blob'}),'echo-packages.zip');
+    cSetStatus(`${items.length} packages saved as echo-packages.zip.`);
+  }catch(err){cSetStatus('Couldn\u2019t download: '+err.message,true);}
+}
+function zipQRemove(items){
+  if(zipQBusy||!items.length)return;
+  const gone=new Set(items),wasActive=items.some(q=>q.key===zipQActive);
+  for(let i=zipQ.length-1;i>=0;i--)if(gone.has(zipQ[i]))zipQ.splice(i,1);
+  if(!zipQ.length){zipSolo=null;zipQFind='';}
+  if(wasActive){zipQActive=null;document.getElementById('resetBtn').click();}
+  zipQRender();
+  cSetStatus(items.length===1?`Removed \u201c${items[0].name}\u201d from the list.`:`${items.length} packages removed from the list.`);
+}
 function zipQAdd(items,front){
   const have=new Set(zipQ.map(q=>q.key));
   const add=items.filter(q=>!have.has(q.key));
@@ -9591,6 +9671,10 @@ document.addEventListener('keydown',e=>{
 });
 document.getElementById('zipQueue').addEventListener('click',e=>{
   if(e.target.closest('.zq-check')){zipQCheckAll();return;}
+  if(e.target.closest('.zq-dl-all')){zipQDownload(zipQShown());return;}
+  if(e.target.closest('.zq-rm-all')){zipQRemove(zipQ.slice());return;}
+  const act=e.target.closest('.zq-act');
+  if(act){const q=zipQ[+act.dataset.i];if(q)(act.classList.contains('zq-dl')?zipQDownload:zipQRemove)([q]);return;}
   const b=e.target.closest('.zq-item');if(b&&!zipQBusy)zipQOpen(zipQ[+b.dataset.i]);
 });
 /* ---- BigQuery query for invoices ----
@@ -9858,7 +9942,7 @@ function orderSetUi(mode){
   if(mode==='compare'&&typeof pkgOrderSync==='function')pkgOrderSync();
 }
 function orderRerun(mode){
-  if(mode==='compare'){if(cstate.bol&&cstate.sup&&!document.getElementById('results').classList.contains('hidden'))runCompare();}
+  if(mode==='compare'){if(cstate.bol&&cstate.sup&&!(document.getElementById('results').classList.contains('hidden')&&document.getElementById('invoiceResults').classList.contains('hidden')))runCompare();}
   else if(document.getElementById('quickInput').value.trim())quickFormat();
 }
 function orderLoad(mode,name,text){

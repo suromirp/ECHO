@@ -249,3 +249,24 @@ test('install note for the Transus helper shows only without the helper', async 
   await page.evaluate(() => { document.documentElement.dataset.pkgBridge = '1'; });
   await expect(page.locator('#pkgHelp')).toBeHidden();
 });
+
+// Packages can be saved back out of the list and taken off it, one at a
+// time or all at once. Removing never touches a file on disk.
+test('packages can be downloaded and removed, one or all', async ({ page }) => {
+  const dir = path.join(__dirname, '..', 'fixtures', 'zip');
+  await openApp(page);
+  await page.locator('#zipInput').setInputFiles(['Message_ID_100000001.zip', 'order-pair.zip', 'utf16-pair.zip'].map(f => path.join(dir, f)));
+  const items = page.locator('#zipQueue .zq-item');
+  await expect(items).toHaveCount(3);
+  const [one] = await Promise.all([page.waitForEvent('download'), page.locator('#zipQueue .zq-dl').nth(1).click()]);
+  expect(one.suggestedFilename()).toBe('order-pair.zip');
+  const [all] = await Promise.all([page.waitForEvent('download'), page.locator('#zipQueue .zq-dl-all').click()]);
+  expect(all.suggestedFilename()).toBe('echo-packages.zip');
+  // Removing the open package clears its result.
+  await expect(page.locator('#zipQueue .zq-item.active')).toHaveCount(1);
+  await page.locator('#zipQueue .zq-row:has(.zq-item.active) .zq-rm').click();
+  await expect(items).toHaveCount(2);
+  await expect(page.locator('#results')).toBeHidden();
+  await page.locator('#zipQueue .zq-rm-all').click();
+  await expect(page.locator('#zipQueue')).toBeHidden();
+});

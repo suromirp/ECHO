@@ -99,3 +99,33 @@ test('a DESADV against the order response: not confirmed, confirmed 0, more than
   await expect(res).toContainText("Bol — The order response names an order number, this message doesn't");
   await expect(res).toContainText('8123470');
 });
+
+// An invoice next to its order: the invoiced net price and quantity per
+// EAN against what was ordered. Real case: an invoice that was consistent
+// in itself but priced higher than the order. Both modes (parity rule).
+test('an invoice checked against its order: price, more than ordered, EAN not in the order', async ({ page }) => {
+  const INV = path.join(FIX, 'invoic', 'against-order.sup.edi');
+  const ORD = path.join(FIX, 'orders', 'for-invoice.edi');
+  await openApp(page);
+  await runQuickFixture(page, INV);
+  await page.locator('#orderInputQuick').setInputFiles(ORD);
+  const ov = page.locator('#quickOverview');
+  await expect(ov).toContainText('Net price differs from the order');
+  await expect(ov).toContainText('8712345678906');
+  await expect(ov).toContainText('Invoiced more than ordered');
+  await expect(ov).toContainText('8712345678913 · 24 invoiced, 20 ordered');
+  await expect(ov).toContainText('Invoiced EAN not in the order');
+  await page.locator('#orderClearQuick').click();
+  await expect(ov).not.toContainText('Net price differs from the order');
+  // A different order: one note, no item checks.
+  await page.locator('#orderInputQuick').setInputFiles(ORDER);
+  await expect(ov).toContainText('The added order is a different order');
+  await expect(ov).not.toContainText('Net price differs from the order');
+
+  await openApp(page);
+  await runCompareFixtures(page, INV, INV);
+  await page.locator('#orderInputCompare').setInputFiles(ORD);
+  const res = page.locator('#invoiceResults');
+  await expect(res).toContainText('Supplier — Net price differs from the order');
+  await expect(res).toContainText('Supplier — Invoiced more than ordered');
+});
